@@ -222,6 +222,9 @@ interface CheckRunLike {
 
 type CheckVerdict = 'green' | 'red' | 'pending' | 'none'
 
+/** GitHub could not answer (no token scope, network, malformed); never a verdict about the check. */
+export class GitHubReadError extends Error {}
+
 /**
  * The newest run of the named check on one commit. Only a run created by
  * GitHub Actions counts: another GitHub App with `checks: write` could
@@ -233,12 +236,14 @@ function checkVerdict(get: GitHubGet, check: string, commit: string): CheckVerdi
     `commits/${commit}/check-runs?check_name=${encodeURIComponent(check)}&per_page=100`,
   ) as { total_count?: unknown; check_runs?: unknown } | null
   if (!body || !Array.isArray(body.check_runs)) {
-    throw new Error(
+    throw new GitHubReadError(
       `Could not read ${check} on ${commit} from GitHub (is GITHUB_TOKEN set with checks: read?); refusing to migrate`,
     )
   }
   if (typeof body.total_count === 'number' && body.total_count > body.check_runs.length) {
-    throw new Error(`${check} on ${commit} has more runs than one page; refusing to migrate`)
+    throw new GitHubReadError(
+      `${check} on ${commit} has more runs than one page; refusing to migrate`,
+    )
   }
   const runs = (body.check_runs as CheckRunLike[]).filter(
     (run) => run.name === check && run.app?.slug === 'github-actions',
@@ -276,7 +281,7 @@ export function assertCiGateGreen(
   }
   const pulls = get(`commits/${gate.sha}/pulls?per_page=30`)
   if (!Array.isArray(pulls)) {
-    throw new Error(
+    throw new GitHubReadError(
       `Could not list the pull requests of ${gate.sha} from GitHub; refusing to migrate`,
     )
   }
@@ -312,6 +317,12 @@ export interface MigrationContextProof {
   gate?: GateAttestation | null
   /** GitHub reader; defaults to the tool's curl reader over GITHUB_TOKEN. */
   get?: GitHubGet
+  /**
+   * `observe` (for `--check-context`) still refuses an unreadable GitHub but
+   * reports, instead of refusing, a check that is read and simply not green.
+   * Writes always `enforce`.
+   */
+  gateMode?: 'enforce' | 'observe'
 }
 
 /**
@@ -391,12 +402,13 @@ export function assertMigrationContext(
         `A ${event} migration reads ${gate.check} from GitHub and needs GITHUB_TOKEN (checks: read, pull-requests: read)`,
       )
     }
-    verified = assertCiGateGreen(
-      proof.get ?? githubGet(root, env),
-      gate,
-      plan.repository,
-      plan.productionBranch,
-    )
+    const get = proof.get ?? githubGet(root, env)
+    try {
+      verified = assertCiGateGreen(get, gate, plan.repository, plan.productionBranch)
+    } catch (error) {
+      if (proof.gateMode !== 'observe' || error instanceof GitHubReadError) throw error
+      verified = `context accepted; a write would be refused now: ${(error as Error).message}`
+    }
   } else {
     throw new Error(WORKFLOW_RUN_REFUSAL)
   }
@@ -463,7 +475,10 @@ export function parseDeploymentMigrationArgs(args: string[]): DeploymentMigratio
 
 /**
  * Runs only the context proof a write would run (event, ref, SHA, checkout, and
- * the gate check read from GitHub) and writes nothing. It needs no Cloudflare
+ * the gate check read from GitHub) and writes nothing. A check that GitHub
+ * answers for but that is not green is reported, not thrown, because on a run
+ * with nothing pending that is an ordinary state; a GitHub that cannot be read
+ * still throws, because that is a broken apply path. It needs no Cloudflare
  * credential, so a promote workflow can run it on a run with nothing pending
  * and find a broken apply path before a migration needs it.
  */
@@ -481,6 +496,7 @@ export function checkDeploymentMigrationContext(
     Boolean(options.bundle),
     {
       gate: options.gate ?? null,
+      gateMode: 'observe',
       ...proof,
     },
   )

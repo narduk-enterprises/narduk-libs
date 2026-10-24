@@ -414,6 +414,15 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
       expect(
         checkDeploymentMigrationContext({ ...options, cwd: t.f.root }, { get: t.green }),
       ).toContain('succeeded')
+      const notGreen = github({
+        [checkPath(t.f.sha)]: checks(run('failure', '2026-10-24T00:00:00Z')),
+      })
+      expect(
+        checkDeploymentMigrationContext({ ...options, cwd: t.f.root }, { get: notGreen }),
+      ).toContain('a write would be refused now')
+      expect(() =>
+        checkDeploymentMigrationContext({ ...options, cwd: t.f.root }, { get: github({}) }),
+      ).toThrow('Could not read')
       process.env.GITHUB_EVENT_NAME = 'pull_request'
       expect(() =>
         checkDeploymentMigrationContext({ ...options, cwd: t.f.root }, { get: t.green }),

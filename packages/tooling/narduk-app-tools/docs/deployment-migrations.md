@@ -177,7 +177,11 @@ The app's promote workflow must follow these steps in one serialized job:
 
    `--check-context` runs only that proof (event, ref, SHA, checkout and the
    check read) with no Cloudflare credential and no write, so a promote run with
-   nothing pending can still exercise the apply path:
+   nothing pending can still exercise the apply path. A check that GitHub
+   answers for but that is not green is reported
+   (`a write would be refused now`), not failed, since that is an ordinary state
+   when nothing is pending; an event, ref, SHA, token or GitHub read that would
+   refuse a write fails it:
    `narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --check-context`.
 
 5. Only on success, restore the separate promote credential, promote that exact
