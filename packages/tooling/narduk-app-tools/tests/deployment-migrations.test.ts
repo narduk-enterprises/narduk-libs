@@ -5,13 +5,22 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
 import {
+  assertCiGateGreen,
   assertMigrationContext,
+  checkDeploymentMigrationContext,
   planDeploymentMigrations,
   parseDeploymentMigrationArgs,
+  runDeploymentMigrations,
   writeDeploymentMigrationBundle,
 } from '../src/deployment-migrations.js'
 import { materializeMigrationBundle, readMigrationBundle } from '../src/migration-bundle.js'
-import { discoverMigrations, loadMigrationConfig } from '../src/migrations.js'
+import {
+  discoverMigrations,
+  loadMigrationConfig,
+  type MigrationExecutor,
+} from '../src/migrations.js'
+
+import type { GitHubGet } from '../src/commit-containment.js'
 
 const paths: string[] = []
 afterEach(() => {
@@ -129,6 +138,595 @@ describe('deployment migration targets and trust boundary', () => {
       ),
     ).not.toThrow()
   })
+})
+
+describe('push / workflow_dispatch migration context (operator-portal#2791)', () => {
+  const check = 'ci / Required'
+  const workflow = '.github/workflows/ci.yml'
+  const headSha = 'c'.repeat(40)
+  const tree = 'd'.repeat(40)
+  const checkPath = (commit: string) =>
+    `commits/${commit}/check-runs?check_name=${encodeURIComponent(check)}&filter=latest&per_page=100`
+  const runsPath = (commit: string) => `actions/runs?head_sha=${commit}&per_page=100`
+  const treePath = (commit: string) => `git/commits/${commit}`
+
+  /** One CI workflow run of `commit` and the check run it produced. */
+  interface Ev {
+    suite: number
+    number: number
+    conclusion?: string | null
+    event?: string
+    path?: string
+    branch?: string
+    repo?: string
+    app?: string
+    name?: string
+    startedAt?: string
+    /** The workflow run is in progress and has produced no gate check run yet. */
+    noCheckYet?: boolean
+    /** Overrides the workflow run's status (a re-run in flight keeps its old green check). */
+    runStatus?: string
+    /** Pull requests the workflow run belongs to; defaults to #7 for a pull_request run. */
+    pulls?: number[]
+  }
+  const ci = (commit: string, evs: Ev[]): Record<string, unknown> => ({
+    [checkPath(commit)]: {
+      total_count: evs.filter((e) => !e.noCheckYet).length,
+      check_runs: evs
+        .filter((e) => !e.noCheckYet)
+        .map((e) => ({
+          name: e.name ?? check,
+          status: e.conclusion === null ? 'in_progress' : 'completed',
+          conclusion: e.conclusion === undefined ? 'success' : e.conclusion,
+          started_at: e.startedAt ?? '2026-10-24T00:00:00Z',
+          app: { slug: e.app ?? 'github-actions' },
+          check_suite: { id: e.suite },
+        })),
+    },
+    [runsPath(commit)]: {
+      total_count: evs.length,
+      workflow_runs: evs.map((e) => ({
+        run_number: e.number,
+        path: e.path ?? workflow,
+        event: e.event ?? 'schedule',
+        head_sha: commit,
+        head_branch: e.branch ?? 'main',
+        check_suite_id: e.suite,
+        pull_requests: (e.pulls ?? (e.event === 'pull_request' ? [7] : [])).map((number) => ({
+          number,
+        })),
+        status:
+          e.runStatus ??
+          (e.conclusion === null || (e.noCheckYet && e.conclusion === undefined)
+            ? 'in_progress'
+            : 'completed'),
+        head_repository: { full_name: e.repo ?? 'example/app' },
+      })),
+    },
+  })
+  /** A GitHub whose answers are the table; any other path is a failed read (null). */
+  const github =
+    (...tables: Array<Record<string, unknown>>): GitHubGet =>
+    (path) =>
+      Object.assign({}, ...tables)[path] ?? null
+  const pull = (sha: string, extra: object = {}) => ({
+    number: 7,
+    merged_at: '2026-10-24T01:00:00Z',
+    merge_commit_sha: sha,
+    base: { ref: 'main' },
+    head: { sha: headSha, repo: { full_name: 'example/app' } },
+    ...extra,
+  })
+  const pullTables = (sha: string, p: object, headEvs: Ev[], headTree = tree) => [
+    ci(sha, []),
+    { [`commits/${sha}/pulls?per_page=30`]: [p] },
+    ci(headSha, headEvs),
+    { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: headTree } } },
+  ]
+  const prEv: Ev = { suite: 9, number: 4, event: 'pull_request', branch: 'feature' }
+
+  const setup = () => {
+    const f = fixture()
+    const plan = planDeploymentMigrations(f.root, 'production')
+    const gate = { check, sha: f.sha }
+    const env = (over: Record<string, string> = {}) => ({
+      GITHUB_ACTIONS: 'true',
+      GITHUB_EVENT_NAME: 'push',
+      GITHUB_REPOSITORY: 'example/app',
+      GITHUB_REF: 'refs/heads/main',
+      GITHUB_SHA: f.sha,
+      GITHUB_TOKEN: 'token',
+      ...over,
+    })
+    const green = github(ci(f.sha, [{ suite: 1, number: 10 }]))
+    const proof = (over: object = {}) => ({ gate, gateWorkflow: workflow, get: green, ...over })
+    return { f, plan, gate, env, green, proof }
+  }
+
+  it('accepts a push and a dispatch on the production branch with the gate green on the commit', () => {
+    const t = setup()
+    expect(assertMigrationContext(t.plan, t.f.sha, t.f.root, t.env(), false, t.proof())).toContain(
+      `${check} succeeded on ${t.f.sha}`,
+    )
+    expect(() =>
+      assertMigrationContext(
+        t.plan,
+        t.f.sha,
+        t.f.root,
+        t.env({ GITHUB_EVENT_NAME: 'workflow_dispatch' }),
+        false,
+        t.proof(),
+      ),
+    ).not.toThrow()
+  })
+
+  it('accepts a merged same-repository pull request that landed as the commit with an identical tree', () => {
+    const t = setup()
+    const get = github(...pullTables(t.f.sha, pull(t.f.sha), [prEv]))
+    expect(
+      assertMigrationContext(t.plan, t.f.sha, t.f.root, t.env(), false, t.proof({ get })),
+    ).toContain('with an identical tree')
+  })
+
+  it('refuses every event, ref and repository that is not a push or dispatch on the production branch', () => {
+    const t = setup()
+    for (const over of [
+      { GITHUB_EVENT_NAME: 'pull_request' },
+      { GITHUB_EVENT_NAME: 'pull_request_target' },
+      { GITHUB_EVENT_NAME: 'schedule' },
+      { GITHUB_EVENT_NAME: 'repository_dispatch' },
+      { GITHUB_EVENT_NAME: '' },
+      { GITHUB_REF: 'refs/heads/feature' },
+      { GITHUB_REF: 'refs/pull/7/merge' },
+      { GITHUB_REF: 'refs/tags/main' },
+      { GITHUB_REPOSITORY: 'fork/app' },
+      { GITHUB_ACTIONS: 'false' },
+    ] as Array<Record<string, string>>) {
+      expect(() =>
+        assertMigrationContext(t.plan, t.f.sha, t.f.root, t.env(over), false, t.proof()),
+      ).toThrow()
+    }
+  })
+
+  it('refuses a SHA that is not the one the run is for, and a gate for another commit', () => {
+    const t = setup()
+    const other = 'b'.repeat(40)
+    expect(() =>
+      assertMigrationContext(
+        t.plan,
+        t.f.sha,
+        t.f.root,
+        t.env({ GITHUB_SHA: other }),
+        false,
+        t.proof(),
+      ),
+    ).toThrow('only the commit it runs on')
+    expect(() =>
+      assertMigrationContext(
+        t.plan,
+        other,
+        t.f.root,
+        t.env({ GITHUB_SHA: other }),
+        false,
+        t.proof(),
+      ),
+    ).toThrow('--gate-verified names')
+    expect(() =>
+      assertMigrationContext(t.plan, t.f.sha, t.f.root, t.env(), false, t.proof({ gate: null })),
+    ).toThrow('needs --gate-verified')
+  })
+
+  it('binds the gate to deployment.promotion.gateCheck, never to the caller', () => {
+    const t = setup()
+    const get = github(ci(t.f.sha, [{ suite: 1, number: 10, name: 'red-main / reconcile' }]))
+    expect(() =>
+      assertMigrationContext(
+        t.plan,
+        t.f.sha,
+        t.f.root,
+        t.env(),
+        false,
+        t.proof({ gate: { check: 'red-main / reconcile', sha: t.f.sha }, get }),
+      ),
+    ).toThrow('only the declared gate')
+  })
+
+  it('needs the CI workflow file to be named', () => {
+    const t = setup()
+    for (const gateWorkflow of [null, '', 'ci.yml', '../ci.yml', '.github/workflows/a/b.yml']) {
+      expect(() =>
+        assertMigrationContext(
+          t.plan,
+          t.f.sha,
+          t.f.root,
+          t.env(),
+          false,
+          t.proof({ gateWorkflow }),
+        ),
+      ).toThrow('--gate-workflow')
+    }
+  })
+
+  it('refuses a GH_REPO that points the reader at another repository', () => {
+    const t = setup()
+    expect(() =>
+      assertMigrationContext(
+        t.plan,
+        t.f.sha,
+        t.f.root,
+        t.env({ GH_REPO: 'attacker/fork' }),
+        false,
+        t.proof(),
+      ),
+    ).toThrow('GH_REPO')
+    expect(() =>
+      assertMigrationContext(
+        t.plan,
+        t.f.sha,
+        t.f.root,
+        t.env({ GH_REPO: 'example/app' }),
+        false,
+        t.proof(),
+      ),
+    ).not.toThrow()
+  })
+
+  it('refuses without a GitHub token rather than skipping the proof', () => {
+    const t = setup()
+    expect(() =>
+      assertMigrationContext(
+        t.plan,
+        t.f.sha,
+        t.f.root,
+        t.env({ GITHUB_TOKEN: '' }),
+        false,
+        t.proof(),
+      ),
+    ).toThrow('GITHUB_TOKEN')
+  })
+
+  it('never lets a push or dispatch write a preview database or a bundle', () => {
+    const t = setup()
+    const preview = planDeploymentMigrations(t.f.root, 'preview')
+    expect(() =>
+      assertMigrationContext(preview, t.f.sha, t.f.root, t.env(), false, t.proof()),
+    ).toThrow('cannot migrate preview')
+    expect(() =>
+      assertMigrationContext(t.plan, t.f.sha, t.f.root, t.env(), true, t.proof()),
+    ).toThrow('cannot migrate preview')
+  })
+
+  it('refuses a checkout that is not the migrated commit', () => {
+    const t = setup()
+    writeFileSync(join(t.f.root, 'later'), 'x')
+    execFileSync('git', ['add', '.'], { cwd: t.f.root })
+    execFileSync(
+      'git',
+      ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-qm', 'later'],
+      { cwd: t.f.root },
+    )
+    expect(() =>
+      assertMigrationContext(t.plan, t.f.sha, t.f.root, t.env(), false, t.proof()),
+    ).toThrow('HEAD differs')
+  })
+
+  describe('the gate is read from GitHub as CI evidence, not taken on trust', () => {
+    const sha = 'a'.repeat(40)
+    const gate = {
+      check,
+      sha,
+      workflow,
+      repository: 'example/app',
+      productionBranch: 'main',
+    }
+    const pullsPath = `commits/${sha}/pulls?per_page=30`
+    const refusal = (get: GitHubGet) => () => assertCiGateGreen(get, gate)
+    const direct = (...evs: Ev[]) => github(ci(sha, evs), { [pullsPath]: [] })
+
+    it('refuses red, cancelled, pending, missing and unreadable answers', () => {
+      expect(refusal(direct({ suite: 1, number: 1, conclusion: 'failure' }))).toThrow(
+        'did not succeed',
+      )
+      expect(refusal(direct({ suite: 1, number: 1, conclusion: 'cancelled' }))).toThrow(
+        'did not succeed',
+      )
+      expect(refusal(direct({ suite: 1, number: 1, conclusion: null }))).toThrow('still running')
+      expect(refusal(direct())).toThrow('not green')
+      expect(refusal(github({}))).toThrow('Could not read')
+      expect(refusal(github({ [checkPath(sha)]: { check_runs: 'nope' } }))).toThrow(
+        'Could not read',
+      )
+      expect(
+        refusal(github(ci(sha, [{ suite: 1, number: 1 }]), { [runsPath(sha)]: null })),
+      ).toThrow('Could not read')
+      expect(refusal(github(ci(sha, []), { [pullsPath]: 'nope' }))).toThrow('Could not list')
+      expect(
+        refusal(
+          github(ci(sha, [{ suite: 1, number: 1 }]), {
+            [runsPath(sha)]: { total_count: 101, workflow_runs: [] },
+          }),
+        ),
+      ).toThrow('more entries than one page')
+    })
+
+    it('lets the newest GitHub run_number decide, in both directions', () => {
+      const rerunGreen = direct(
+        { suite: 1, number: 1, conclusion: 'failure' },
+        { suite: 2, number: 2 },
+      )
+      const rerunRed = direct(
+        { suite: 1, number: 1 },
+        { suite: 2, number: 2, conclusion: 'failure' },
+      )
+      expect(assertCiGateGreen(rerunGreen, gate)).toContain('succeeded')
+      expect(refusal(rerunRed)).toThrow('did not succeed')
+    })
+
+    it('does not order by started_at, which the run creator sets', () => {
+      const get = direct(
+        { suite: 1, number: 2, conclusion: 'failure', startedAt: '2020-01-01T00:00:00Z' },
+        { suite: 2, number: 1, startedAt: '2099-01-01T00:00:00Z' },
+      )
+      expect(refusal(get)).toThrow('did not succeed')
+    })
+
+    it('lets a pending newest run refuse over an older red or green, and never falls through to a pull request', () => {
+      for (const older of ['failure', 'success']) {
+        const get = direct(
+          { suite: 1, number: 1, conclusion: older },
+          { suite: 2, number: 2, conclusion: null },
+        )
+        expect(refusal(get)).toThrow('still running')
+      }
+      const withPull = github(
+        ci(sha, [{ suite: 1, number: 2, conclusion: null }]),
+        { [pullsPath]: [pull(sha)] },
+        ci(headSha, [prEv]),
+        { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: tree } } },
+      )
+      expect(refusal(withPull)).toThrow('still running')
+    })
+
+    it('treats a newer CI run that has produced no gate check run yet as pending, not as nothing and not as a reason to try the pull request', () => {
+      for (const older of ['failure', 'success']) {
+        expect(
+          refusal(
+            direct(
+              { suite: 1, number: 1, conclusion: older },
+              { suite: 2, number: 2, noCheckYet: true },
+            ),
+          ),
+        ).toThrow('still running')
+      }
+      const withPull = github(
+        ci(sha, [{ suite: 2, number: 2, noCheckYet: true }]),
+        { [pullsPath]: [pull(sha)] },
+        ci(headSha, [prEv]),
+        { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: tree } } },
+      )
+      expect(refusal(withPull)).toThrow('still running')
+      // A finished newest run that never produced the gate check proves nothing
+      // and does not hand authority back to an older green one.
+      expect(
+        refusal(
+          direct(
+            { suite: 1, number: 1 },
+            { suite: 2, number: 2, noCheckYet: true, conclusion: 'skipped' },
+          ),
+        ),
+      ).toThrow('did not succeed')
+    })
+
+    it('does not accept a green gate check while its workflow run is being re-run', () => {
+      expect(refusal(direct({ suite: 1, number: 1, runStatus: 'in_progress' }))).toThrow(
+        'still running',
+      )
+      expect(refusal(direct({ suite: 1, number: 1, runStatus: 'queued' }))).toThrow('still running')
+    })
+
+    it('binds the fallback to the pull request that merged, not to another pull request of the same head', () => {
+      const answers = (...headEvs: Ev[]) => github(...pullTables(sha, pull(sha), headEvs))
+      // A newer green run of a release-branch pull request must not override this one's red run.
+      expect(
+        refusal(
+          answers(
+            { ...prEv, suite: 9, number: 4, conclusion: 'failure' },
+            { ...prEv, suite: 10, number: 5, pulls: [8] },
+          ),
+        ),
+      ).toThrow('not green')
+      // Evidence from a run of some other pull request alone is not evidence.
+      expect(refusal(answers({ ...prEv, pulls: [8] }))).toThrow('not green')
+      expect(refusal(answers({ ...prEv, pulls: [] }))).toThrow('not green')
+      expect(assertCiGateGreen(answers({ ...prEv, pulls: [7, 8] }), gate)).toContain('#7')
+    })
+
+    it('refuses a tie that holds any red, and accepts only a tie that agrees', () => {
+      expect(
+        refusal(direct({ suite: 1, number: 3 }, { suite: 2, number: 3, conclusion: 'failure' })),
+      ).toThrow('did not succeed')
+      expect(
+        refusal(direct({ suite: 1, number: 3, conclusion: null }, { suite: 2, number: 3 })),
+      ).toThrow('still running')
+      expect(
+        assertCiGateGreen(direct({ suite: 1, number: 3 }, { suite: 2, number: 3 }), gate),
+      ).toContain('succeeded')
+    })
+
+    it('does not let a pull request overrule a red run on the commit itself', () => {
+      const get = github(
+        ci(sha, [{ suite: 1, number: 2, conclusion: 'failure' }]),
+        { [pullsPath]: [pull(sha)] },
+        ci(headSha, [prEv]),
+        { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: tree } } },
+      )
+      expect(refusal(get)).toThrow('did not succeed')
+    })
+
+    it('ignores a green check of the same name from another workflow, app, event, branch or repository', () => {
+      const foreign: Ev[] = [
+        { suite: 1, number: 5, path: '.github/workflows/e2e.yml' },
+        { suite: 2, number: 5, path: '.github/workflows/ci.yml.evil.yml' },
+        { suite: 3, number: 5, app: 'other-app' },
+        { suite: 4, number: 5, event: 'pull_request' },
+        { suite: 5, number: 5, event: 'pull_request_target' },
+        { suite: 6, number: 5, branch: 'feature' },
+        { suite: 7, number: 5, repo: 'fork/app' },
+      ]
+      for (const ev of foreign) expect(refusal(direct(ev))).toThrow('refusing to migrate')
+      // A CI run whose only gate check came from another App has no gate at all.
+      expect(refusal(direct({ suite: 3, number: 5, app: 'other-app' }))).toThrow('did not succeed')
+    })
+
+    it('is not fooled by a green non-CI workflow next to a red CI run', () => {
+      const get = direct(
+        { suite: 1, number: 1, conclusion: 'failure' },
+        {
+          suite: 2,
+          number: 99,
+          path: '.github/workflows/e2e.yml',
+          startedAt: '2099-01-01T00:00:00Z',
+        },
+      )
+      expect(refusal(get)).toThrow('did not succeed')
+    })
+
+    it('accepts the workflow path spelled with the production branch ref', () => {
+      const get = direct({ suite: 1, number: 1, path: `${workflow}@refs/heads/main` })
+      expect(assertCiGateGreen(get, gate)).toContain('succeeded')
+    })
+
+    it('accepts only a pull request that merged into the production branch as this commit, from this repository, with an identical tree', () => {
+      const ok = (p: object, headTree = tree, evs: Ev[] = [prEv]) =>
+        github(...pullTables(sha, p, evs, headTree))
+      expect(assertCiGateGreen(ok(pull(sha)), gate)).toContain('#7')
+      const bad = [
+        ok(pull(sha, { merged_at: null })),
+        ok(pull(sha, { merge_commit_sha: 'b'.repeat(40) })),
+        ok(pull(sha, { base: { ref: 'release' } })),
+        ok(pull(sha, { head: { sha: headSha, repo: { full_name: 'fork/app' } } })),
+        ok(pull(sha, { head: { sha: headSha, repo: null } })),
+        ok(pull(sha, { head: { sha: 'short', repo: { full_name: 'example/app' } } })),
+        ok(pull(sha), 'e'.repeat(40)),
+        ok(pull(sha), tree, [{ ...prEv, conclusion: 'failure' }]),
+        ok(pull(sha), tree, [{ ...prEv, conclusion: null }]),
+        ok(pull(sha), tree, [{ ...prEv, event: 'schedule' }]),
+        ok(pull(sha), tree, [{ ...prEv, repo: 'fork/app' }]),
+        ok(pull(sha), tree, [{ ...prEv, path: '.github/workflows/e2e.yml' }]),
+      ]
+      for (const get of bad) expect(refusal(get)).toThrow('not green')
+    })
+
+    it('treats an unreadable tree as a failed read, not a match', () => {
+      const get = github(ci(sha, []), { [pullsPath]: [pull(sha)] }, ci(headSha, [prEv]), {
+        [treePath(sha)]: { tree: { sha: tree } },
+      })
+      expect(refusal(get)).toThrow('Could not read the tree')
+    })
+  })
+
+  describe('the write path enforces the gate; --check-context only reports it', () => {
+    const reached = new Error('executor reached')
+    const executor = (() => {
+      throw reached
+    }) as unknown as MigrationExecutor
+    const withEnv = (env: Record<string, string>, run: () => void) => {
+      const before = { ...process.env }
+      Object.assign(process.env, env)
+      try {
+        run()
+      } finally {
+        for (const key of Object.keys(process.env)) if (!(key in before)) delete process.env[key]
+        Object.assign(process.env, before)
+      }
+    }
+    const args = (t: ReturnType<typeof setup>, extra: string[] = []) =>
+      parseDeploymentMigrationArgs([
+        '--target',
+        'production',
+        '--sha',
+        t.f.sha,
+        '--gate-verified',
+        `${check}@${t.f.sha}`,
+        '--gate-workflow',
+        workflow,
+        ...extra,
+      ])
+
+    it('a write in push context reaches the executor only when the gate is green', () => {
+      const t = setup()
+      const options = { ...args(t), cwd: t.f.root }
+      const red = github(ci(t.f.sha, [{ suite: 1, number: 1, conclusion: 'failure' }]))
+      withEnv({ ...t.env(), CLOUDFLARE_API_TOKEN: 'token' }, () => {
+        expect(() => runDeploymentMigrations(options, executor, { get: red })).toThrow(
+          'did not succeed',
+        )
+        expect(() => runDeploymentMigrations(options, executor, { get: github({}) })).toThrow(
+          'Could not read',
+        )
+        expect(() => runDeploymentMigrations(options, executor, { get: t.green })).toThrow(reached)
+      })
+      withEnv(
+        { ...t.env({ GITHUB_EVENT_NAME: 'pull_request' }), CLOUDFLARE_API_TOKEN: 'token' },
+        () =>
+          expect(() => runDeploymentMigrations(options, executor, { get: t.green })).toThrow(
+            'workflow_run',
+          ),
+      )
+    })
+
+    it('--check-context reads without a Cloudflare credential, reports a red gate, and fails an unreadable GitHub or wrong context', () => {
+      const t = setup()
+      const options = { ...args(t, ['--check-context']), cwd: t.f.root }
+      expect(options).toMatchObject({ checkContext: true, gateWorkflow: workflow })
+      const red = github(ci(t.f.sha, [{ suite: 1, number: 1, conclusion: 'failure' }]))
+      withEnv(t.env(), () => {
+        delete process.env.CLOUDFLARE_API_TOKEN
+        expect(checkDeploymentMigrationContext(options, { get: t.green })).toContain('succeeded')
+        expect(checkDeploymentMigrationContext(options, { get: red })).toContain(
+          'a write would be refused now',
+        )
+        expect(() => checkDeploymentMigrationContext(options, { get: github({}) })).toThrow(
+          'Could not read',
+        )
+        process.env.GH_REPO = 'attacker/fork'
+        expect(() => checkDeploymentMigrationContext(options, { get: t.green })).toThrow('GH_REPO')
+      })
+      withEnv(t.env({ GITHUB_EVENT_NAME: 'pull_request' }), () =>
+        expect(() => checkDeploymentMigrationContext(options, { get: t.green })).toThrow(),
+      )
+    })
+
+    it('parses and validates the flags', () => {
+      const t = setup()
+      expect(() =>
+        parseDeploymentMigrationArgs(['--target', 'production', '--check-context']),
+      ).toThrow('--check-context')
+      expect(() =>
+        parseDeploymentMigrationArgs([
+          '--target',
+          'production',
+          '--sha',
+          t.f.sha,
+          '--gate-verified',
+          `${check}@${'b'.repeat(40)}`,
+        ]),
+      ).toThrow('must name the --sha')
+      expect(() =>
+        parseDeploymentMigrationArgs([
+          '--target',
+          'production',
+          '--sha',
+          t.f.sha,
+          '--gate-workflow',
+          'ci.yml',
+        ]),
+      ).toThrow()
+    })
+  })
+})
+
+describe('deployment migration bundles', () => {
   it('round trips SQL as data without retaining paths or executable files', () => {
     const f = fixture()
     const path = join(f.root, 'bundle.json')
