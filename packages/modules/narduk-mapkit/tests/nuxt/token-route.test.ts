@@ -493,6 +493,21 @@ describe('local-setup hints in the server console', () => {
     expect(warnings[0]).not.toContain('KEY1234567')
   })
 
+  it('does not blame allowedHosts for a bare probe that lacks same-origin evidence', async () => {
+    const config = {
+      appleKeyId: 'KEY1234567',
+      applePrivateKey: await createTestPrivateKeyPem(),
+      appleTeamId: 'TEAM123456',
+      nardukMapKit: { allowedHosts: ['app.example'] },
+    }
+    const warnings = await warningsFrom(async () => {
+      await withBinding(config, undefined, async (url) => {
+        expect((await fetch(url)).status).toBe(403)
+      })
+    })
+    expect(warnings).toEqual([])
+  })
+
   it('stays quiet for a forged non-loopback host and for a token it minted', async () => {
     const config = {
       appleKeyId: 'KEY1234567',

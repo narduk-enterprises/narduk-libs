@@ -12,7 +12,7 @@
  */
 import { useRuntimeConfig } from '#imports';
 import { defineEventHandler, getRequestHeaders, getRequestURL } from 'h3';
-import { isMapKitHostAllowed, mapKitRoutedOrigin, mapKitTokenResponse, } from '../../../server/handler.js';
+import { isMapKitHostAllowed, isMapKitRequestSameOrigin, mapKitRoutedOrigin, mapKitTokenResponse, } from '../../../server/handler.js';
 import { createMapKitFixedWindowRateLimit } from './rate-limit.js';
 /** Read known keys directly: Cloudflare bindings may not enumerate. */
 function readRuntimeString(sources, keys, fallback) {
@@ -105,13 +105,17 @@ function resolveRateLimit(event, config) {
 }
 export const MAPKIT_LOCAL_RUNBOOK_URL = 'https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/modules/narduk-mapkit/docs/local-development.md';
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
-/** Each hint prints once per server process: they name a setup, not a request. */
+/**
+ * Each hint prints once per server process: they name a setup, not a request.
+ * Capped, because a forged loopback `Host` can name any port.
+ */
 const printedHints = new Set();
+const MAX_PRINTED_HINTS = 16;
 export function resetMapKitLocalSetupHintsForTests() {
     printedHints.clear();
 }
 function hintOnce(key, lines) {
-    if (printedHints.has(key))
+    if (printedHints.has(key) || printedHints.size >= MAX_PRINTED_HINTS)
         return;
     printedHints.add(key);
     console.warn([...lines, `Runbook: ${MAPKIT_LOCAL_RUNBOOK_URL}`].join('\n'));
@@ -122,7 +126,7 @@ function hintOnce(key, lines) {
  * the fix is named here. Names only, never values. A host refusal is reported
  * for loopback hosts only: anywhere else it is a forged `Host`, not a setup.
  */
-function hintLocalSetup(status, self, credentials, allowedHosts) {
+function hintLocalSetup(status, request, self, credentials, allowedHosts) {
     if (status === 503) {
         const missing = [
             credentials.teamId ? null : 'APPLE_TEAM_ID',
@@ -138,12 +142,14 @@ function hintLocalSetup(status, self, credentials, allowedHosts) {
     }
     else if (status === 500) {
         hintOnce('signing-failed', [
-            '[narduk-mapkit] The MapKit token route could not sign: APPLE_PRIVATE_KEY must be a',
-            'PKCS#8 PEM ("BEGIN PRIVATE KEY"). A stale value in wrangler vars or .dev.vars wins over',
-            'the process environment, so check those first.',
+            '[narduk-mapkit] The MapKit token route answered 500. The usual cause is an APPLE_PRIVATE_KEY',
+            'that is not a PKCS#8 PEM ("BEGIN PRIVATE KEY"). A stale value in wrangler vars or .dev.vars',
+            'wins over the process environment, so check those first.',
         ]);
     }
-    else if (status === 403 && self) {
+    else if (status === 403 && self && isMapKitRequestSameOrigin(request, self)) {
+        // Same-origin and still refused: the host list is the reason, not a
+        // missing `Sec-Fetch-Site` on a bare probe.
         const { host, hostname } = new URL(self);
         if (LOOPBACK_HOSTNAMES.has(hostname) && !isMapKitHostAllowed(self, allowedHosts)) {
             const listed = typeof allowedHosts === 'string' ? allowedHosts : (allowedHosts ?? []).join(', ');
@@ -170,7 +176,8 @@ export default defineEventHandler(async (event) => {
     // The routed origin, never a forwarded host header nor a request line that
     // names its own host (§e.1).
     const self = routedOrigin(event);
-    const response = await mapKitTokenResponse(requestFromEvent(event), {
+    const request = requestFromEvent(event);
+    const response = await mapKitTokenResponse(request, {
         ...(allowedHosts === undefined ? {} : { allowedHosts }),
         doppler: false,
         ...credentials,
@@ -178,7 +185,12 @@ export default defineEventHandler(async (event) => {
         ...(rateLimit ? { rateLimit } : {}),
         self,
     });
-    hintLocalSetup(response.status, self, credentials, allowedHosts);
+    try {
+        hintLocalSetup(response.status, request, self, credentials, allowedHosts);
+    }
+    catch {
+        // A hint must never turn an answer into a 500.
+    }
     return response;
 });
 //# sourceMappingURL=mapkit-token.get.js.map

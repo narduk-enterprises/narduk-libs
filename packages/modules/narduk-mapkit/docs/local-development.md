@@ -90,6 +90,9 @@ design. Neither is a setup fault.
 | `500`  | The key did not sign                                         | `APPLE_PRIVATE_KEY` must be PKCS#8 PEM (`BEGIN PRIVATE KEY`). See "Stale values" below.                                                                                                           |
 | `404`  | No route at this path                                        | Check `nardukMapKit.tokenRoute` and `tokenRoutePath`, and that the app registers `@narduk-enterprises/narduk-mapkit/nuxt`.                                                                        |
 
+`405` (not a GET) and `429` (the app's opt-in rate limit) are the other two
+answers; neither is a setup fault.
+
 From the narduk-mapkit release after 3.0.1, the route also prints a one-line fix
 with a link to this page in the dev server's console the first time it answers
 `503`, `500`, or `403` for a loopback host.

@@ -15,6 +15,7 @@ import { defineEventHandler, getRequestHeaders, getRequestURL } from 'h3'
 
 import {
   isMapKitHostAllowed,
+  isMapKitRequestSameOrigin,
   mapKitRoutedOrigin,
   mapKitTokenResponse,
 } from '../../../server/handler.js'
@@ -131,15 +132,19 @@ export const MAPKIT_LOCAL_RUNBOOK_URL =
 
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
-/** Each hint prints once per server process: they name a setup, not a request. */
+/**
+ * Each hint prints once per server process: they name a setup, not a request.
+ * Capped, because a forged loopback `Host` can name any port.
+ */
 const printedHints = new Set<string>()
+const MAX_PRINTED_HINTS = 16
 
 export function resetMapKitLocalSetupHintsForTests(): void {
   printedHints.clear()
 }
 
 function hintOnce(key: string, lines: string[]): void {
-  if (printedHints.has(key)) return
+  if (printedHints.has(key) || printedHints.size >= MAX_PRINTED_HINTS) return
   printedHints.add(key)
   console.warn([...lines, `Runbook: ${MAPKIT_LOCAL_RUNBOOK_URL}`].join('\n'))
 }
@@ -152,6 +157,7 @@ function hintOnce(key: string, lines: string[]): void {
  */
 function hintLocalSetup(
   status: number,
+  request: Request,
   self: string | null,
   credentials: { keyId: string; privateKey: string; teamId: string },
   allowedHosts: string[] | string | undefined,
@@ -170,11 +176,13 @@ function hintLocalSetup(
     ])
   } else if (status === 500) {
     hintOnce('signing-failed', [
-      '[narduk-mapkit] The MapKit token route could not sign: APPLE_PRIVATE_KEY must be a',
-      'PKCS#8 PEM ("BEGIN PRIVATE KEY"). A stale value in wrangler vars or .dev.vars wins over',
-      'the process environment, so check those first.',
+      '[narduk-mapkit] The MapKit token route answered 500. The usual cause is an APPLE_PRIVATE_KEY',
+      'that is not a PKCS#8 PEM ("BEGIN PRIVATE KEY"). A stale value in wrangler vars or .dev.vars',
+      'wins over the process environment, so check those first.',
     ])
-  } else if (status === 403 && self) {
+  } else if (status === 403 && self && isMapKitRequestSameOrigin(request, self)) {
+    // Same-origin and still refused: the host list is the reason, not a
+    // missing `Sec-Fetch-Site` on a bare probe.
     const { host, hostname } = new URL(self)
     if (LOOPBACK_HOSTNAMES.has(hostname) && !isMapKitHostAllowed(self, allowedHosts)) {
       const listed =
@@ -207,9 +215,10 @@ export default defineEventHandler(async (event) => {
   // The routed origin, never a forwarded host header nor a request line that
   // names its own host (§e.1).
   const self = routedOrigin(event)
+  const request = requestFromEvent(event)
 
   const response = await mapKitTokenResponse(
-    requestFromEvent(event),
+    request,
     {
       ...(allowedHosts === undefined ? {} : { allowedHosts }),
       doppler: false,
@@ -220,6 +229,10 @@ export default defineEventHandler(async (event) => {
       self,
     },
   )
-  hintLocalSetup(response.status, self, credentials, allowedHosts)
+  try {
+    hintLocalSetup(response.status, request, self, credentials, allowedHosts)
+  } catch {
+    // A hint must never turn an answer into a 500.
+  }
   return response
 })
