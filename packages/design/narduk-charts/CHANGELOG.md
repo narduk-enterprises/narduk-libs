@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.12.2
+
+### Patch Changes
+
+- d18d969: Update the line chart classic-output snapshots for happy-dom 21,
+  which now serializes the legend dot inline colour styles that happy-dom 20
+  dropped. No rendered change: `ChartLegend` has always bound those styles.
+
 ## 2.12.1
 
 ### Patch Changes
