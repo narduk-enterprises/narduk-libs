@@ -228,7 +228,7 @@
     "@vue/test-utils": "2.4.11",
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
-    "happy-dom": "20.10.6",
+    "happy-dom": "21.0.4",
     "miniflare": "5.20260921.0-alpha",
     "prettier": "^3.8.3",
     "typescript": "~6.0.3",

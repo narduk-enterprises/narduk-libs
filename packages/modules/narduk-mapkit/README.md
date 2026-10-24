@@ -154,6 +154,12 @@ the Worker `env` binding. No option, log line, or `runtimeConfig.public` key
 ever carries a value. Missing signing material returns `503` with
 `{"error": "unconfigured"}`; a request that is not same-origin returns `403`.
 
+**Running a map locally:** start the dev server under the shared signing
+persona, `narduk-app dev --mapkit -- nuxt dev --host 127.0.0.1` (or
+`nvault run -p apple -e prd -c mapkit-signing -- pnpm dev`). A bare `pnpm dev`
+gets `503`. The [local development runbook](docs/local-development.md) has the
+probe, the symptom table and what changed.
+
 ### Content-Security-Policy
 
 MapKit JS 6.1 compiles a WebAssembly module (`astc-loader.wasm`, from
@@ -491,7 +497,8 @@ Narduk projects source these values from nvault (the shared signing persona is
 nvault run -p apple -e prd -c mapkit-signing -- pnpm dev
 ```
 
-Doppler is retired for this: do not use `doppler run`.
+Doppler is retired for this: do not use `doppler run`. For a local dev server,
+see the [local development runbook](docs/local-development.md).
 
 Cloudflare Workers should receive the same names through Worker secrets or
 bindings. Recognized runtime names:
