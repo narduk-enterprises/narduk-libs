@@ -164,6 +164,10 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     startedAt?: string
     /** The workflow run is in progress and has produced no gate check run yet. */
     noCheckYet?: boolean
+    /** Overrides the workflow run's status (a re-run in flight keeps its old green check). */
+    runStatus?: string
+    /** Pull requests the workflow run belongs to; defaults to #7 for a pull_request run. */
+    pulls?: number[]
   }
   const ci = (commit: string, evs: Ev[]): Record<string, unknown> => ({
     [checkPath(commit)]: {
@@ -188,10 +192,14 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         head_sha: commit,
         head_branch: e.branch ?? 'main',
         check_suite_id: e.suite,
+        pull_requests: (e.pulls ?? (e.event === 'pull_request' ? [7] : [])).map((number) => ({
+          number,
+        })),
         status:
-          e.conclusion === null || (e.noCheckYet && e.conclusion === undefined)
+          e.runStatus ??
+          (e.conclusion === null || (e.noCheckYet && e.conclusion === undefined)
             ? 'in_progress'
-            : 'completed',
+            : 'completed'),
         head_repository: { full_name: e.repo ?? 'example/app' },
       })),
     },
@@ -507,6 +515,30 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
           ),
         ),
       ).toThrow('did not succeed')
+    })
+
+    it('does not accept a green gate check while its workflow run is being re-run', () => {
+      expect(refusal(direct({ suite: 1, number: 1, runStatus: 'in_progress' }))).toThrow(
+        'still running',
+      )
+      expect(refusal(direct({ suite: 1, number: 1, runStatus: 'queued' }))).toThrow('still running')
+    })
+
+    it('binds the fallback to the pull request that merged, not to another pull request of the same head', () => {
+      const answers = (...headEvs: Ev[]) => github(...pullTables(sha, pull(sha), headEvs))
+      // A newer green run of a release-branch pull request must not override this one's red run.
+      expect(
+        refusal(
+          answers(
+            { ...prEv, suite: 9, number: 4, conclusion: 'failure' },
+            { ...prEv, suite: 10, number: 5, pulls: [8] },
+          ),
+        ),
+      ).toThrow('not green')
+      // Evidence from a run of some other pull request alone is not evidence.
+      expect(refusal(answers({ ...prEv, pulls: [8] }))).toThrow('not green')
+      expect(refusal(answers({ ...prEv, pulls: [] }))).toThrow('not green')
+      expect(assertCiGateGreen(answers({ ...prEv, pulls: [7, 8] }), gate)).toContain('#7')
     })
 
     it('refuses a tie that holds any red, and accepts only a tie that agrees', () => {

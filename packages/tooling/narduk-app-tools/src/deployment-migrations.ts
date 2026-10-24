@@ -231,6 +231,7 @@ interface WorkflowRunLike {
   head_branch?: unknown
   check_suite_id?: unknown
   status?: unknown
+  pull_requests?: Array<{ number?: unknown }> | null
   head_repository?: { full_name?: unknown } | null
 }
 
@@ -287,6 +288,7 @@ function ciVerdict(
   commit: string,
   events: ReadonlySet<string>,
   branch: string | null,
+  pullNumber: number | null = null,
 ): CheckVerdict {
   const checkRuns = listOf(
     get(
@@ -320,7 +322,15 @@ function ciVerdict(
       run.head_repository?.full_name !== gate.repository ||
       typeof run.event !== 'string' ||
       !events.has(run.event) ||
-      (branch !== null && run.head_branch !== branch)
+      (branch !== null && run.head_branch !== branch) ||
+      // Pull-request evidence belongs to the pull request that merged: the
+      // same head can sit in pull requests onto other bases, whose runs test
+      // other merge results.
+      (pullNumber !== null &&
+        !(
+          Array.isArray(run.pull_requests) &&
+          run.pull_requests.some((pull) => pull?.number === pullNumber)
+        ))
     ) {
       return []
     }
@@ -332,16 +342,21 @@ function ciVerdict(
         { number: run.run_number, verdicts: [run.status === 'completed' ? 'red' : 'pending'] },
       ]
     }
+    // A successful gate check on a workflow run that has not finished is a
+    // re-run in flight (re-runs keep their run_number) and does not count.
     return [
       {
         number: run.run_number,
-        verdicts: checks.map((check) =>
-          check.status !== 'completed'
-            ? 'pending'
-            : check.conclusion === 'success'
-              ? 'green'
-              : 'red',
-        ),
+        verdicts: [
+          ...(run.status === 'completed' ? [] : ['pending']),
+          ...checks.map((check) =>
+            check.status !== 'completed'
+              ? 'pending'
+              : check.conclusion === 'success'
+                ? 'green'
+                : 'red',
+          ),
+        ],
       },
     ]
   })
@@ -401,7 +416,9 @@ export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
     head?: { sha?: unknown; repo?: { full_name?: unknown } | null } | null
   }>) {
     const headSha = pull.head?.sha
+    const pullNumber = pull.number
     if (
+      typeof pullNumber !== 'number' ||
       !pull.merged_at ||
       pull.merge_commit_sha !== gate.sha ||
       pull.base?.ref !== gate.productionBranch ||
@@ -411,7 +428,7 @@ export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
     ) {
       continue
     }
-    if (ciVerdict(get, gate, headSha, PULL_CI_EVENTS, null) !== 'green') continue
+    if (ciVerdict(get, gate, headSha, PULL_CI_EVENTS, null, pullNumber) !== 'green') continue
     if (treeOf(get, headSha) !== treeOf(get, gate.sha)) continue
     return `${gate.check} succeeded on #${String(pull.number)} head ${headSha}, merged as ${gate.sha} with an identical tree`
   }
