@@ -23,7 +23,7 @@ diagnostics, performance budgets, and favicon assets.
 ## Local development (`narduk-app dev`)
 
 ```sh
-narduk-app dev [--credentials <none|nvault>] [--project <name>] \
+narduk-app dev [--mapkit | --credentials <none|nvault>] [--project <name>] \
   [--environment <name>] [--config <name>] [--dry-run] -- <command...>
 ```
 
@@ -39,6 +39,15 @@ stay process-local for that one run and are never written to a file (company-hq
 plane 4 "Local workstation overlay"). A partial selector is refused by name
 rather than resolved to some nearby scope. `--dry-run` prints the exact command
 without running it.
+
+`--mapkit` is that route with the shared MapKit JS signing persona already
+selected (`apple/prd/mapkit-signing`, which sets `APPLE_TEAM_ID`, `APPLE_KEY_ID`
+and `APPLE_PRIVATE_KEY`), so a map app's script is
+`narduk-app dev --mapkit -- nuxt dev --host 127.0.0.1`. It refuses
+`--credentials` and a selector beside it; an app that also needs its own secrets
+nests the second route in the child. The narduk-mapkit
+[local development runbook](../../modules/narduk-mapkit/docs/local-development.md)
+covers the rest of a working local map.
 
 ### Migrating off the retired Doppler wrapper
 

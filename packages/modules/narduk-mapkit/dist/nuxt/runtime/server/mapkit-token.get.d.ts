@@ -4,6 +4,8 @@
  * get a fresh one is a second module instance, which no supported runtime has.
  */
 export declare function resetMapKitRateLimitForTests(): void;
+export declare const MAPKIT_LOCAL_RUNBOOK_URL = "https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/modules/narduk-mapkit/docs/local-development.md";
+export declare function resetMapKitLocalSetupHintsForTests(): void;
 declare const _default: import("h3").EventHandler<import("h3").EventHandlerRequest, Promise<Response>>;
 export default _default;
 //# sourceMappingURL=mapkit-token.get.d.ts.map
