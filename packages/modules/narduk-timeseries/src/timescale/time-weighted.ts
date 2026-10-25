@@ -7,7 +7,10 @@
  * library refreshes `telemetry_numeric_tw` itself, in two statements per
  * window:
  *
- *  1. **1-minute rows from raw.** `lead(ts)` gives each primary row its hold,
+ *  1. **1-minute rows from raw.** Rows tagged `quality = 3` (import
+ *     provenance, `IMPORT_OVERLAY_QUALITY`) are left out before `lead()`, as
+ *     the 1m continuous aggregate leaves them out (migration 0008), so the row
+ *     before one holds across its time. `lead(ts)` gives each primary row its hold,
  *     capped at `maxHoldMs` and clipped to the window; the hold is split at
  *     minute boundaries with `generate_series`; each minute's integral, covered
  *     seconds, extremes and last value are upserted. Raw is read from
@@ -83,6 +86,7 @@ export const TIME_WEIGHTED_MINUTE_SQL = [
   `         lead(ts) OVER (PARTITION BY vessel_id, series_id ORDER BY ts) AS next_ts`,
   `    FROM ${NUMERIC_TABLE}`,
   `   WHERE installation_role = 0`,
+  `     AND quality <> 3`,
   `     AND ts >= $2::timestamptz - $4::interval`,
   `     AND ts <  $3::timestamptz`,
   `     AND ($1::text IS NULL OR vessel_id = $1::uuid)`,

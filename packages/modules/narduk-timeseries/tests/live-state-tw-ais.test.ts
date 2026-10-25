@@ -1,5 +1,5 @@
 /**
- * The live suite for migrations 0004-0007: `telemetry_state`, time-weighted
+ * The live suite for migrations 0004-0008: `telemetry_state`, time-weighted
  * rollups, the AIS tables and the "raw never swept" mode, against a real
  * TimescaleDB + PostGIS. Skipped, for the same named reason as
  * live-integration.test.ts, unless NARDUK_TIMESERIES_LIVE_DSN is set.
@@ -114,7 +114,7 @@ describe.skipIf(!dsn)(`live TimescaleDB, migrations 0004-0007 (${SKIP_REASON})`,
     await client.end()
   })
 
-  it('applies 0004-0007 on top of an applied 0001-0003, then is a no-op', async () => {
+  it('applies 0004-0008 on top of an applied 0001-0003, then is a no-op', async () => {
     const migrations = await loadMigrationsFromDirectory(timescaleMigrationsUrl)
     await applyMigrations(client, migrations)
     const second = await applyMigrations(client, migrations)
@@ -146,6 +146,13 @@ describe.skipIf(!dsn)(`live TimescaleDB, migrations 0004-0007 (${SKIP_REASON})`,
     expect(await check('history_reader', 'telemetry_numeric_tw', 'SELECT')).toBe(true)
     expect(await check('history_reader', 'telemetry_state', 'INSERT')).toBe(false)
     expect(await check('ops', 'telemetry_numeric_tw', 'UPDATE')).toBe(true)
+    // 0008 dropped and recreated the four rollup views; its re-issued grants
+    // are the only reason these still hold.
+    for (const view of ['1m', '15m', '1h', '1d']) {
+      expect(await check('history_reader', `telemetry_numeric_${view}`, 'SELECT')).toBe(true)
+      expect(await check('ops', `telemetry_numeric_${view}`, 'SELECT')).toBe(true)
+      expect(await check('history_reader', `telemetry_numeric_${view}`, 'INSERT')).toBe(false)
+    }
   })
 
   describe('telemetry_state', () => {
@@ -258,6 +265,7 @@ describe.skipIf(!dsn)(`live TimescaleDB, migrations 0004-0007 (${SKIP_REASON})`,
         readings.map((reading) => ({
           installationRole: role,
           path,
+          quality: reading.quality,
           ts: reading.ts,
           value: reading.value,
           vesselId: id,
@@ -362,6 +370,60 @@ describe.skipIf(!dsn)(`live TimescaleDB, migrations 0004-0007 (${SKIP_REASON})`,
       })
       await assertLadderEqualsReference(id, seriesId, HELD_VALUE_FIXTURE, refresh.range!)
     }, 120_000)
+
+    it('leaves import-overlay rows (quality 3) out of both ladders, and counts stale and suspect ones', async () => {
+      // mybo-at-v2 D-152 (#280): the 30 s import overlay stays in raw, tagged
+      // quality = 3, and migration 0008 plus the refresh's raw read drop it.
+      const id = vessel()
+      const readings: TimeWeightedReading[] = [
+        ...HELD_VALUE_FIXTURE,
+        { quality: 3, ts: new Date(HELD_VALUE_T0 + 30_000), value: 999 },
+        { quality: 3, ts: new Date(HELD_VALUE_T0 + 90_000), value: 999 },
+        // Untagged by 3: a suspect and a stale row still move both ladders.
+        { quality: 2, ts: new Date(HELD_VALUE_T0 + 120_000), value: 50 },
+        { quality: 1, ts: new Date(HELD_VALUE_T0 + 240_000), value: 70 },
+      ]
+      const seriesId = await writeSeries(id, 'environment.wind.speedApparent', readings)
+      const refresh = await store.refreshTimeWeighted({
+        maxHoldMs: HOLD,
+        range: { end: new Date(HELD_VALUE_T0 + 240_001), start: new Date(HELD_VALUE_T0) },
+        vesselId: id,
+      })
+      await assertLadderEqualsReference(id, seriesId, readings, refresh.range!)
+      const tw = await store.queryTimeWeightedRollup({
+        bucket: '1m',
+        range: { end: new Date(HELD_VALUE_T0 + 180_000), start: new Date(HELD_VALUE_T0) },
+        seriesIds: [seriesId],
+        tierWindowMs: 'unrestricted',
+        vesselId: id,
+      })
+      // Minute 0 as if the overlay row were absent; minute 2 moved by the suspect row.
+      expect(tw.rows[0]!.avg).toBeCloseTo(700 / 60, 9)
+      expect(tw.rows[2]!.avg).toBeCloseTo(50, 9)
+
+      await client.query(
+        "CALL refresh_continuous_aggregate('telemetry_numeric_1m', $1::timestamptz, $2::timestamptz)",
+        [new Date(HELD_VALUE_T0), new Date(HELD_VALUE_T0 + 600_000)],
+      )
+      const sample = await store.queryRollup({
+        bucket: '1m',
+        range: { end: new Date(HELD_VALUE_T0 + 300_000), start: new Date(HELD_VALUE_T0) },
+        seriesIds: [seriesId],
+        tierWindowMs: 'unrestricted',
+        vesselId: id,
+      })
+      const byMinute = new Map(
+        sample.rows.map((row) => [(row.bucket.getTime() - HELD_VALUE_T0) / 60_000, row]),
+      )
+      // 15 and n 2, not (10 + 20 + 999) / 3: the overlay row is not counted.
+      expect(byMinute.get(0)?.avg).toBe(15)
+      expect(byMinute.get(0)?.n).toBe(2)
+      // Minute 1 held only an overlay row and 30: 30 alone.
+      expect(byMinute.get(1)?.avg).toBe(30)
+      expect(byMinute.get(1)?.n).toBe(1)
+      expect(byMinute.get(2)?.avg).toBe(50)
+      expect(byMinute.get(4)?.avg).toBe(70)
+    }, 60_000)
 
     it('equals the reference on a seeded random change-only series, and after a late row', async () => {
       const id = vessel()

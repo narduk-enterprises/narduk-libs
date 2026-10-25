@@ -11,7 +11,7 @@ import { createProtocolFake } from '@narduk-enterprises/narduk-postgres/testing'
 import { describe, expect, it } from 'vitest'
 
 import { NardukTimeseriesError } from '../src/errors.js'
-import { timeWeightedBuckets } from '../src/time-weighted.js'
+import { IMPORT_OVERLAY_QUALITY, timeWeightedBuckets } from '../src/time-weighted.js'
 import {
   MAX_TIME_WEIGHTED_HOLD_MS,
   TIME_WEIGHTED_COARSE_SQL,
@@ -94,6 +94,45 @@ describe('the held-value fixture', () => {
     const held = minutes.reduce((sum, bucket) => sum + bucket.heldMs, 0)
     expect(weighted).toBeCloseTo(coarse!.weightedSum, 6)
     expect(held).toBe(coarse!.heldMs)
+  })
+})
+
+describe('import-overlay rows (quality 3)', () => {
+  const range = { end: at(300), start: at(0) }
+  const options = { bucketMs: 60_000, maxHoldMs: 600_000, range }
+
+  it('are not readings: the buckets equal the fixture without them', () => {
+    // mybo-at-v2 D-152: a half-minute import row duplicating the 1-minute
+    // import stays in raw, tagged 3, and moves no rollup.
+    const withOverlay = [
+      ...HELD_VALUE_FIXTURE,
+      { quality: IMPORT_OVERLAY_QUALITY, ts: at(30), value: 999 },
+      { quality: IMPORT_OVERLAY_QUALITY, ts: at(90), value: 999 },
+    ]
+    expect(timeWeightedBuckets(withOverlay, options)).toEqual(
+      timeWeightedBuckets(HELD_VALUE_FIXTURE, options),
+    )
+    expect(timeWeightedBuckets(withOverlay, options)[0]!.mean).toBeCloseTo(700 / 60, 12)
+  })
+
+  it('do not displace a good reading that shares their timestamp', () => {
+    const buckets = timeWeightedBuckets(
+      [...HELD_VALUE_FIXTURE, { quality: IMPORT_OVERLAY_QUALITY, ts: at(0), value: 999 }],
+      options,
+    )
+    expect(buckets[0]).toMatchObject({ min: 10, n: 2 })
+  })
+
+  it('leave stale (1) and suspect (2) readings counted, as untagged ones are', () => {
+    for (const quality of [0, 1, 2]) {
+      const buckets = timeWeightedBuckets(
+        [...HELD_VALUE_FIXTURE, { quality, ts: at(30), value: 100 }],
+        options,
+      )
+      // 10 for 30 s, 100 for 20 s, 20 for 10 s.
+      expect(buckets[0]!.mean).toBeCloseTo((10 * 30 + 100 * 20 + 20 * 10) / 60, 12)
+      expect(buckets[0]!.n).toBe(3)
+    }
   })
 })
 
@@ -256,6 +295,12 @@ describe('planTimeWeightedRefresh', () => {
 
   it('reads primary raw only and upserts, so a re-run is idempotent', () => {
     expect(TIME_WEIGHTED_MINUTE_SQL).toContain('installation_role = 0')
+    // Import-overlay rows (mybo-at-v2 D-152) are left out BEFORE lead(), so
+    // the row before one holds across its time, as the reference does.
+    expect(TIME_WEIGHTED_MINUTE_SQL).toMatch(
+      /WHERE installation_role = 0\s+AND quality <> 3\s+AND ts >=[\s\S]*\), pieces AS/u,
+    )
+    expect(IMPORT_OVERLAY_QUALITY).toBe(3)
     expect(TIME_WEIGHTED_MINUTE_SQL).toContain(
       'lead(ts) OVER (PARTITION BY vessel_id, series_id ORDER BY ts)',
     )

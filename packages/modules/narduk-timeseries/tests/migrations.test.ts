@@ -432,3 +432,100 @@ describe('0007_history_roles_additions.sql', () => {
     for (const line of lines) expect(line).toMatch(/^GRANT /u)
   })
 })
+
+describe('0008_rollups_exclude_import_overlay.sql', () => {
+  // mybo-at-v2 D-152 (#280): rows tagged quality = 3 (import provenance) stay
+  // in raw and reach no rollup. A CAgg's query cannot be altered, so the
+  // ladder is dropped and recreated.
+  const sql = read('0008_rollups_exclude_import_overlay.sql')
+  const lines = executableOf(sql)
+  const statementsOf = (text: string): string[] =>
+    executableOf(text)
+      .join('\n')
+      .split(/;\n?/u)
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0)
+  const ladderOf = (text: string): string[] =>
+    statementsOf(text).filter((statement) =>
+      /^(?:CREATE MATERIALIZED VIEW|SELECT add_continuous_aggregate_policy)/u.test(statement),
+    )
+
+  it('declares itself non-transactional, because a CAgg cannot be created in one', () => {
+    expect(sql.startsWith(NO_TRANSACTION_DIRECTIVE)).toBe(true)
+    expect(parseMigrationDirectives(sql).transactional).toBe(false)
+  })
+
+  it('drops the ladder coarsest first, since each level reads the one below', () => {
+    expect(lines.filter((line) => line.startsWith('DROP'))).toEqual([
+      'DROP MATERIALIZED VIEW IF EXISTS telemetry_numeric_1d;',
+      'DROP MATERIALIZED VIEW IF EXISTS telemetry_numeric_1h;',
+      'DROP MATERIALIZED VIEW IF EXISTS telemetry_numeric_15m;',
+      'DROP MATERIALIZED VIEW IF EXISTS telemetry_numeric_1m;',
+    ])
+    const executable = lines.join('\n')
+    expect(executable.lastIndexOf('DROP MATERIALIZED VIEW')).toBeLessThan(
+      executable.indexOf('CREATE MATERIALIZED VIEW'),
+    )
+  })
+
+  it('filters the 1m level on the primary installation and quality <> 3', () => {
+    // quality is SMALLINT NOT NULL DEFAULT 0 (0001), so no NULL can slip
+    // through `<>`; 1 stale and 2 suspect stay counted.
+    expect(read('0001_history_core.sql')).toMatch(/quality\s+SMALLINT NOT NULL DEFAULT 0/u)
+    expect(sql).toMatch(/FROM telemetry_numeric\s+WHERE installation_role = 0 AND quality <> 3\s/u)
+    expect(
+      executableOf(sql)
+        .join('\n')
+        .match(/quality/gu),
+    ).toHaveLength(1)
+  })
+
+  it("recreates 0002's views and policies unchanged except the 1m filter", () => {
+    const before = ladderOf(read('0002_history_rollups.sql'))
+    const after = ladderOf(sql)
+    expect(after).toHaveLength(8)
+    expect(after).toEqual(
+      before.map((statement) =>
+        statement.replace(
+          'WHERE installation_role = 0\n',
+          'WHERE installation_role = 0 AND quality <> 3\n',
+        ),
+      ),
+    )
+    expect(after).not.toEqual(before)
+  })
+
+  it("re-issues 0003's SELECT grants on the four views, which the DROP lost", () => {
+    const viewGrants = historyRoleGrantStatements().filter((line) =>
+      /"telemetry_numeric_(?:1m|15m|1h|1d)"/u.test(line),
+    )
+    expect(viewGrants).toHaveLength(8)
+    expect(lines.filter((line) => line.startsWith('GRANT'))).toEqual(viewGrants)
+    // 0007 grants nothing on these views, so nothing else was lost.
+    expect(
+      historyRoleAdditionGrantStatements().filter((line) =>
+        /"telemetry_numeric_(?:1m|15m|1h|1d)"/u.test(line),
+      ),
+    ).toEqual([])
+  })
+
+  it('reaches the database one statement per round trip', async () => {
+    const set = await createMigrationSet([{ name: '0008_rollups_exclude_import_overlay.sql', sql }])
+    const database = createProtocolFake()
+      .respondTo(/to_regclass/u, [{ exists: false }])
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true }])
+      .respondTo(/pg_advisory_unlock/u, [{ unlocked: true }])
+    await applyMigrations(database, set)
+
+    const runnerOwn = /to_regclass|pg_try_advisory_lock|pg_advisory_unlock|schema_migrations/u
+    // The header comment travels with the first statement; compare code only.
+    const sent = database.texts
+      .filter((text) => !runnerOwn.test(text))
+      .map((text) => executableOf(text).join('\n'))
+    // Four drops, four views, four policies, eight grants.
+    expect(sent).toHaveLength(20)
+    expect(sent.filter((text) => text.startsWith('DROP MATERIALIZED VIEW'))).toHaveLength(4)
+    expect(sent.filter((text) => text.startsWith('CREATE MATERIALIZED VIEW'))).toHaveLength(4)
+    for (const statement of sent) expect(statement).not.toContain('BEGIN')
+  })
+})
