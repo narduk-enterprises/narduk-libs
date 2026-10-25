@@ -112,6 +112,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'AuthExchangePanel',
       'AuthLoginCard',
       'AuthPasskeysPanel',
+      'AuthProviderButtons',
       'AuthRegisterCard',
     ],
   },
