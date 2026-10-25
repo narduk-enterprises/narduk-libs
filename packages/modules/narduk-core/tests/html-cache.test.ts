@@ -6,6 +6,7 @@ import {
   isStorableHtml,
   normalizeHtmlCachePath,
   resolveHtmlCacheOptions,
+  restampNonce,
 } from '../runtime/shared/html-cache'
 
 const { runtime } = vi.hoisted(() => ({
@@ -167,6 +168,14 @@ describe('html cache options and keys', () => {
     expect(isStorableHtml('<meta name="robots" content="noindex, nofollow">')).toBe(false)
     expect(isStorableHtml('<meta name="robots" content="index, follow">')).toBe(true)
   })
+  it('restampNonce swaps every occurrence, passes through without a stored nonce, and refuses a nonce-less request', () => {
+    const stored = { body: '<a nonce="o+1/"></a><b nonce="o+1/">', nonce: 'o+1/' }
+    expect(restampNonce(stored, 'new')).toBe('<a nonce="new"></a><b nonce="new">')
+    expect(restampNonce(stored, 'o+1/')).toBe(stored.body)
+    expect(restampNonce(stored, undefined)).toBeNull()
+    expect(restampNonce({ body: '<p>x</p>', nonce: null }, 'n')).toBe('<p>x</p>')
+    expect(restampNonce({ body: '<p>x</p>', nonce: null }, undefined)).toBe('<p>x</p>')
+  })
 })
 
 describe('html-cache plugin', () => {
@@ -217,20 +226,31 @@ describe('html-cache plugin', () => {
       runtime.nardukSecurityHeaders.mode = 'enforce'
     })
 
-    it('stores the nonce with the page and restores it on a hit', async () => {
+    it('stamps every hit with its own nonce, matching the CSP source built from it', async () => {
       const first = await request('/food', {}, { security: { nonce: NONCE_OLD } })
       await first.respond({
         statusCode: 200,
-        body: '<script nonce="nonce-old"></script>',
+        body: '<script nonce="nonce-old"></script><link nonce="nonce-old"><style nonce="nonce-old">',
         headers: {},
       })
+      // The stored copy keeps the original nonce.
       expect([...cache.values.values()][0]?.headers.get('x-narduk-html-nonce')).toBe(NONCE_OLD)
 
-      const context = { security: { nonce: NONCE_FRESH } }
-      const second = await request('/food', {}, context)
-      expect(second.hit?.body).toBe('<script nonce="nonce-old"></script>')
-      // The CSP header is built from this nonce in render:response, so it matches the HTML.
-      expect(context.security.nonce).toBe(NONCE_OLD)
+      const bodies: string[] = []
+      for (const nonce of ['nonce-a', 'nonce-b']) {
+        const context = { security: { nonce } }
+        const hit = (await request('/food', {}, context)).hit
+        expect(hit?.headers['x-html-cache']).toBe('hit')
+        // nuxt-security builds the CSP header from context.security.nonce in render:response:
+        // it is still this request's own nonce, and it is the one in every nonce= attribute.
+        expect(context.security.nonce).toBe(nonce)
+        expect(hit?.body).toBe(
+          `<script nonce="${nonce}"></script><link nonce="${nonce}"><style nonce="${nonce}">`,
+        )
+        expect(hit?.body).not.toContain(NONCE_OLD)
+        bodies.push(hit?.body ?? '')
+      }
+      expect(bodies[0]).not.toBe(bodies[1])
     })
 
     it('never serves a cookie request from the cache and keeps its fresh nonce', async () => {

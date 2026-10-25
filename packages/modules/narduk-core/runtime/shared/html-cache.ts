@@ -10,8 +10,9 @@
  * It works under a nonce CSP too (D-HTML-CACHE-PUBLIC-1, Logan 2026-10-25, which
  * amends the 2026-09-18 "Refuse HTML caching on nonce apps", narduk-libs#435): only
  * anonymous requests (no Cookie, no Authorization) are served or stored, so no
- * session exists to take, and the page is stored with the nonce it was rendered
- * with, so the HTML and its CSP header still agree. Sign-in ends in a full page
+ * session exists to take. The page is stored with the nonce it was rendered with and
+ * every hit is re-stamped with the nonce minted for that request (`restampNonce`), so
+ * no two responses share a nonce and the HTML still matches its own CSP header. Sign-in ends in a full page
  * load (narduk-auth), so no script from a cached page survives into a session.
  *
  * Framework-free: the module reads it at build time and the plugin at request time.
@@ -213,4 +214,23 @@ export function isStorableHtml(html: string): boolean {
   return !(html.match(META_TAG) ?? []).some(
     (tag) => /\bname=["']?robots\b/iu.test(tag) && /\bnoindex\b/iu.test(tag),
   )
+}
+
+export interface StoredHtml {
+  body: string
+  /** The nonce the render was stamped with; null when it carried none. */
+  nonce: string | null
+}
+
+/**
+ * Swap the nonce a stored render carries for the one minted for this request, in every
+ * place it appears (each `nonce=` attribute). nuxt-security builds the CSP header from the
+ * request's own nonce, so after this the body and the header name the same one. A stored
+ * nonce page cannot answer a request that minted no nonce (its scripts would run under no
+ * CSP nonce): null, so the request renders.
+ */
+export function restampNonce(stored: StoredHtml, nonce: string | undefined): string | null {
+  if (!stored.nonce) return stored.body
+  if (!nonce) return null
+  return nonce === stored.nonce ? stored.body : stored.body.replaceAll(stored.nonce, nonce)
 }

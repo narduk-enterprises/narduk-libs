@@ -7,6 +7,7 @@ import {
   isStorableHtml,
   type ResolvedHtmlCache,
   resolveHtmlCacheOptions,
+  restampNonce,
 } from '../../shared/html-cache'
 import { isNuxtPayloadPath } from '../../shared/utils/nonce-csp'
 
@@ -24,13 +25,13 @@ import type { H3Event } from 'h3'
  * build's chunks. Responses carry `x-html-cache: hit | miss`.
  *
  * Nonce-CSP apps (D-HTML-CACHE-PUBLIC-1, amending narduk-libs#435): nuxt-security
- * mints the nonce in the `request` hook and stamps it into the HTML, then builds the
- * CSP header from `event.context.security.nonce` in `render:response`. The page is
- * stored with the nonce it was rendered with, and a hit puts that nonce back on the
- * event, so the cached HTML and the CSP header still match. The nonce is never
- * rewritten per hit (that would stamp it onto an injected script). A request with a
- * Cookie or Authorization header never reads the cache and keeps its own fresh
- * nonce; `nonce-csp-cache` still forces `no-store` on every response. A no-op in
+ * mints a nonce per request in the `request` hook, stamps it into the HTML, and builds
+ * the CSP header from `event.context.security.nonce` in `render:response`. The page is
+ * stored with the nonce it was rendered with; a hit swaps that nonce for the one minted
+ * for the requesting visitor, so no two responses share a nonce and the CSP header
+ * still matches the HTML (the riverstatus#663 scheme). A request with a Cookie or
+ * Authorization header never reads the cache and gets a fresh render; `nonce-csp-cache`
+ * still forces `no-store` on every response. A no-op in
  * Node (dev, tests) and anywhere `caches.default` does not exist.
  */
 
@@ -57,7 +58,7 @@ function stateOf(event: H3Event): HtmlCacheState {
 }
 
 export interface CachedHtml {
-  html: string
+  body: string
   /** The CSP nonce the page was rendered with; null on an app without one. */
   nonce: string | null
 }
@@ -71,7 +72,7 @@ export async function readCachedHtml(
   try {
     const hit = await store?.match(key)
     if (!hit?.ok) return null
-    return { html: await hit.text(), nonce: hit.headers.get(NONCE_HEADER) }
+    return { body: await hit.text(), nonce: hit.headers.get(NONCE_HEADER) }
   } catch {
     return null
   }
@@ -162,16 +163,19 @@ export default defineNitroPlugin((nitro) => {
     stateOf(event).key = key
     const cached = await readCachedHtml(key)
     if (cached === null) return
+    // A hit gets this request's own nonce, so no two responses share one. nuxt-security
+    // builds the CSP header from the same nonce in render:response, so header and HTML match.
     const security = (event.context as { security?: { nonce?: unknown } }).security
-    const minted = typeof security?.nonce === 'string' && security.nonce.length > 0
-    // An entry stored without a nonce cannot answer a request that minted one.
-    if (minted && !cached.nonce) return
-    // The page and its CSP header are stored together: the header is built from this
-    // nonce in render:response, so it matches the nonce stamped into the HTML.
-    if (minted && security && cached.nonce) security.nonce = cached.nonce
+    const requestNonce =
+      typeof security?.nonce === 'string' && security.nonce.length > 0 ? security.nonce : undefined
+    // An entry stored without a nonce has no attribute to re-stamp, so it cannot answer
+    // a request that minted one.
+    if (requestNonce && !cached.nonce) return
+    const html = restampNonce(cached, requestNonce)
+    if (html === null) return
     stateOf(event).hit = true
     ctx.response = {
-      body: cached.html,
+      body: html,
       statusCode: 200,
       statusMessage: 'OK',
       headers: { 'content-type': HTML, 'x-html-cache': 'hit' },
