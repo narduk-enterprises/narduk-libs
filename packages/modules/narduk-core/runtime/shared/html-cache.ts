@@ -147,6 +147,43 @@ function toRegExp(pattern: string): RegExp {
 }
 
 /**
+ * The path patterns and the per-route TTL overrides. `seeded` is the `routeTtls` of an
+ * already-resolved option (the module seeds it, the plugin resolves it again).
+ */
+function resolveRoutes(
+  routes: unknown[],
+  seeded: unknown,
+): { paths: string[]; routeTtls: Array<{ path: string; ttlSeconds: number }> } {
+  const paths: string[] = []
+  const routeTtls: Array<{ path: string; ttlSeconds: number }> = []
+  for (const entry of routes) {
+    const route = entryOf(entry)
+    toRegExp(route.path)
+    // The first entry for a path decides its TTL, as it does when matching.
+    if (route.ttlSeconds !== undefined && !paths.includes(route.path)) {
+      routeTtls.push({ path: route.path, ttlSeconds: route.ttlSeconds })
+    }
+    paths.push(route.path)
+  }
+  if (seeded === undefined) return { paths, routeTtls }
+  if (!Array.isArray(seeded)) {
+    throw new TypeError('[narduk-core] nardukCore.htmlCache.routeTtls must be an array.')
+  }
+  for (const entry of seeded as unknown[]) {
+    const route = entryOf(entry)
+    if (route.ttlSeconds === undefined || !paths.includes(route.path)) {
+      throw new TypeError(
+        '[narduk-core] nardukCore.htmlCache.routeTtls entries must be { path, ttlSeconds } for a listed route.',
+      )
+    }
+    if (!routeTtls.some((seen) => seen.path === route.path)) {
+      routeTtls.push({ path: route.path, ttlSeconds: route.ttlSeconds })
+    }
+  }
+  return { paths, routeTtls }
+}
+
+/**
  * Normalise the option (or its runtime-config copy). `undefined`, `null` and
  * `false` mean off and return null; a wrong shape throws.
  */
@@ -165,17 +202,7 @@ export function resolveHtmlCacheOptions(input?: unknown): ResolvedHtmlCache | nu
   if (!isPositiveInteger(ttlSeconds, true)) {
     throw new TypeError('[narduk-core] nardukCore.htmlCache.ttlSeconds must be a positive integer.')
   }
-  const paths: string[] = []
-  const routeTtls: Array<{ path: string; ttlSeconds: number }> = []
-  for (const entry of routes as unknown[]) {
-    const route = entryOf(entry)
-    toRegExp(route.path)
-    // The first entry for a path decides its TTL, as it does when matching.
-    if (route.ttlSeconds !== undefined && !paths.includes(route.path)) {
-      routeTtls.push({ path: route.path, ttlSeconds: route.ttlSeconds })
-    }
-    paths.push(route.path)
-  }
+  const { paths, routeTtls } = resolveRoutes(routes as unknown[], options.routeTtls)
   const { queryKeys, requireIndexable } = options
   if (
     queryKeys !== undefined &&
@@ -240,7 +267,7 @@ function normalizeEscapes(path: string): string {
 /**
  * The request path with dot segments resolved and percent-encoding normalized, and
  * its query reduced to the allowed keys (sorted). Null when it has a query key that
- * is not allowed or is not an absolute path, or is longer than {@link HTML_CACHE_MAX_PATH_LENGTH}, so `/a/../b` and `/b` share one key.
+ * is not allowed or is not an absolute path, or is longer than {@link HTML_CACHE_MAX_PATH_LENGTH}. `/a/../b` and `/b` share one key.
  */
 export function normalizeHtmlCachePath(
   raw: string,

@@ -429,6 +429,25 @@ describe('per-route ttlSeconds', () => {
     })
   })
 
+  it('is idempotent: resolving the seeded (resolved) option keeps the overrides', () => {
+    const once = resolveHtmlCacheOptions({
+      routes: ['/map', { path: '/stations', ttlSeconds: 120 }],
+    })
+    expect(resolveHtmlCacheOptions(JSON.parse(JSON.stringify(once)))).toEqual(once)
+    expect(() =>
+      resolveHtmlCacheOptions({ ...once, routeTtls: [{ path: '/nope', ttlSeconds: 5 }] }),
+    ).toThrow('routeTtls')
+  })
+
+  it('the plugin applies the TTL from the resolved shape the module seeds', async () => {
+    runtime.nardukHtmlCache = resolveHtmlCacheOptions({
+      routes: ['/map', { path: '/stations', ttlSeconds: 120 }],
+    })
+    const r = await request('/stations')
+    await r.respond({ statusCode: 200, body: HTML_BODY, headers: {} })
+    expect([...cache.values.values()][0]?.headers.get('cache-control')).toBe('public, max-age=120')
+  })
+
   it('rejects a bad entry at setup', () => {
     expect(() => resolveHtmlCacheOptions({ routes: [{ ttlSeconds: 5 }] })).toThrow('string `path`')
     expect(() => resolveHtmlCacheOptions({ routes: [{ path: 'nope', ttlSeconds: 5 }] })).toThrow(
