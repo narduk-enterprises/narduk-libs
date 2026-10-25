@@ -42,6 +42,16 @@ describe('stampScriptNonce', () => {
     expect(out).toContain('<scripty>no</scripty>')
   })
 
+  it('stays linear and leaves a tag with an unclosed quote alone', () => {
+    const hostile = `<script src="${'"x'.repeat(50_000)}`
+    const started = Date.now()
+    expect(stampScriptNonce(hostile, 'N')).toBe(hostile)
+    expect(Date.now() - started).toBeLessThan(500)
+    expect(stampScriptNonce('<SCRIPT src="a">x</SCRIPT>', 'N')).toBe(
+      '<SCRIPT nonce="N" src="a">x</SCRIPT>',
+    )
+  })
+
   it('leaves an already-stamped script alone', () => {
     const tag = '<script nonce="other" src="/x.js"></script>'
     expect(stampScriptNonce(tag, 'N')).toBe(tag)
@@ -80,7 +90,7 @@ describe('buildSecurityHeaders with a nonce', () => {
 })
 
 describe('installCspNonce', () => {
-  const render = async (optIn: boolean) => {
+  const render = async (optIn: boolean, routeRules?: Record<string, unknown>) => {
     const handlers: Record<string, Array<(...args: never[]) => void>> = {}
     const hooks = {
       hook: (name: string, handler: (...args: never[]) => void) =>
@@ -93,6 +103,7 @@ describe('installCspNonce', () => {
     const app = createApp()
     app.use(
       eventHandler(async (event) => {
+        if (routeRules) event.context._nitro = { routeRules }
         const nonce = optIn ? getCspNonce(event) : undefined
         applySecurityHeaders(event, { csp: { 'script-src': ["'self'"] } }, { nonce })
         event.node.res.setHeader('content-type', 'text/html')
@@ -100,7 +111,7 @@ describe('installCspNonce', () => {
         const html: RenderHtmlParts = {
           head: ['<script type="module" src="/_nuxt/e.js"></script>'],
           bodyPrepend: [],
-          body: ['<div id="__nuxt"></div>'],
+          body: ['<div id="__nuxt"><script>steal()</script></div>'],
           bodyAppend: [
             '<script type="application/json" id="__NUXT_DATA__">[]</script><script>window.__NUXT__={}</script>',
           ],
@@ -118,9 +129,23 @@ describe('installCspNonce', () => {
     const { response, body } = await render(true)
     const nonce = /'nonce-([^']+)'/.exec(response.headers.get('content-security-policy')!)![1]
     const tags = body.match(/<script\b[^>]*>/g)!
-    expect(tags).toHaveLength(3)
-    for (const tag of tags) expect(tag).toContain(`nonce="${nonce}"`)
+    expect(tags).toHaveLength(4)
+    expect(tags.filter((tag) => tag.includes(`nonce="${nonce}"`))).toHaveLength(3)
+    expect(body).toContain('<div id="__nuxt"><script>steal()</script></div>')
     expect(response.headers.get('cache-control')).toBe('private, no-store')
+  })
+
+  it('refuses a route that is cached or prerendered, since the nonce would be replayed', async () => {
+    for (const rules of [
+      { swr: 60 },
+      { cache: { maxAge: 5 } },
+      { isr: true },
+      { prerender: true },
+    ]) {
+      const { response, body } = await render(true, rules)
+      expect(response.status).toBe(500)
+      expect(body).not.toContain('nonce=')
+    }
   })
 
   it('does nothing for a request that never asked for a nonce', async () => {
@@ -138,7 +163,7 @@ describe('installCspNonce', () => {
 })
 
 describe('a rendered Nuxt page', () => {
-  // Captured from `nuxi build` of tests/fixtures/nonce-app (Nuxt 4.5), nonces removed.
+  // Captured from `nuxi build` of tests/fixtures/nonce-app (Nuxt 4.5), nonces and the fixture's v-html payload removed.
   const page = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), 'fixtures/nuxt-rendered.html'),
     'utf8',

@@ -68,8 +68,14 @@ try {
     first.headers.get('cache-control') ?? '',
   )
 
-  const tags = html.match(/<script\b[^>]*>/gi) ?? []
+  const tags = (html.match(/<script\b[^>]*>/gi) ?? []).filter((tag) => !tag.includes('data-xss'))
   const unstamped = tags.filter((tag) => !tag.includes(`nonce="${nonce}"`))
+  const injected = /<script[^>]*data-xss[^>]*>/i.exec(html)?.[0]
+  check(
+    Boolean(injected) && !injected.includes('nonce='),
+    'a v-html <script> in the app markup is rendered but NOT stamped',
+    injected ?? 'injected script missing from the page',
+  )
   check(tags.length > 0, 'the page has script tags to check', `${tags.length} found`)
   check(unstamped.length === 0, 'every script tag carries the served nonce', unstamped.join(' | '))
   const payload = tags.find((tag) => tag.includes('__NUXT_DATA__'))
