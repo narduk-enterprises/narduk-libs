@@ -34,6 +34,7 @@ export {
   type ValidatedRetentionPolicy,
 } from './policy.js'
 export {
+  IMPORT_OVERLAY_QUALITY,
   timeWeightedBuckets,
   type TimeWeightedBucket,
   type TimeWeightedBucketsOptions,

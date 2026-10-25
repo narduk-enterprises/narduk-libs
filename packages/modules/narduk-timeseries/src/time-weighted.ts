@@ -17,6 +17,10 @@
  *  - A bucket's mean is `weightedSum / heldMs` over the covered time only.
  *  - Only the window `[range.start, range.end)` is reported; a row before the
  *    window whose hold reaches into it is carried in.
+ *  - A reading tagged `quality: IMPORT_OVERLAY_QUALITY` (3, import
+ *    provenance) is not a reading here: it is dropped before holds are
+ *    computed, so the reading before it holds across its time. Quality 0
+ *    good, 1 stale and 2 suspect all count.
  *
  * It lives in the root entry because it carries no SQL. A consumer reading
  * raw rows for a short range can call it directly.
@@ -24,7 +28,17 @@
 import { NardukTimeseriesError } from './errors.js'
 import type { TimeRange } from './types.js'
 
+/**
+ * `telemetry_numeric.quality` of a row a history import carried that
+ * duplicates another import's rows for the same minute (mybo-at-v2 D-152).
+ * Such rows stay in raw and reach no rollup: neither the 1m continuous
+ * aggregate (migration 0008) nor the time-weighted refresh counts them.
+ */
+export const IMPORT_OVERLAY_QUALITY = 3
+
 export interface TimeWeightedReading {
+  /** `telemetry_numeric.quality`; omitted is 0. `IMPORT_OVERLAY_QUALITY` is skipped. */
+  quality?: number
   ts: Date
   value: number
 }
@@ -64,7 +78,8 @@ function assertPositive(label: string, value: number): void {
 /**
  * Time-weighted buckets over `range`, from readings in any order (one series).
  * Buckets with no covered time are absent. Readings that share a timestamp
- * keep the last one given, as a redelivery would leave one row.
+ * keep the last one given, as a redelivery would leave one row. Readings
+ * tagged `IMPORT_OVERLAY_QUALITY` are skipped, as the SQL refresh skips them.
  */
 export function timeWeightedBuckets(
   readings: readonly TimeWeightedReading[],
@@ -81,6 +96,7 @@ export function timeWeightedBuckets(
 
   const byTs = new Map<number, number>()
   for (const reading of readings) {
+    if (reading.quality === IMPORT_OVERLAY_QUALITY) continue
     const ts = reading.ts.getTime()
     if (Number.isFinite(ts) && Number.isFinite(reading.value)) byTs.set(ts, reading.value)
   }

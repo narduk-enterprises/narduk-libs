@@ -137,10 +137,11 @@ continuous aggregate allows neither a window function nor a look at another
 bucket. The library refreshes it:
 
 - `refreshTimeWeighted({ range, maxHoldMs, vesselId? })` (or the pure
-  `planTimeWeightedRefresh`) recomputes 1-minute rows from primary raw with
-  `lead()`, splitting each hold at minute boundaries, then sums 15m, 1h and 1d
-  rows from the 1-minute rows over the UTC days touched. Summing is exact,
-  because each 1-minute row is the integral over exactly that minute.
+  `planTimeWeightedRefresh`) recomputes 1-minute rows from primary raw (less
+  import-overlay rows, `quality = 3`; see "Import-overlay rows") with `lead()`,
+  splitting each hold at minute boundaries, then sums 15m, 1h and 1d rows from
+  the 1-minute rows over the UTC days touched. Summing is exact, because each
+  1-minute row is the integral over exactly that minute.
 - `maxHoldMs` is **required**: it is the product's heartbeat contract. A gap
   longer than it is no data, not a held value; `heldMs` on a row is the covered
   time and the mean is over that time only. 1 s to 6 h.
@@ -362,7 +363,7 @@ every other tier; the storage is the price of rollups that stay whole.
 
 ## Migrations
 
-Seven files, applied through the narduk-postgres runner. The target is
+Eight files, applied through the narduk-postgres runner. The target is
 **TimescaleDB 2.30 on PostgreSQL 17** and the DDL uses that version's APIs:
 `by_range()` for the time dimension (the positional `create_hypertable` form is
 deprecated since 2.13) and the columnstore API (`enable_columnstore`,
@@ -402,9 +403,16 @@ and `add_compression_policy` in 2.18.
   `ais_encounter`, and fully mutate `ais_encounter_open`; it gets nothing on
   `telemetry_numeric_tw`. `history_reader` reads every new table; `ops` reads
   and mutates them.
+- `0008_rollups_exclude_import_overlay.sql` -- drops the four rollup views (1d,
+  1h, 15m, 1m) and recreates 0002's ladder unchanged except the 1m filter, now
+  `WHERE installation_role = 0 AND quality <> 3`; re-adds 0002's four refresh
+  policies and re-issues 0003's SELECT grants on the views, which the DROP takes
+  with it. `-- narduk:no-transaction`, like 0002. See "Import-overlay rows
+  (quality 3) live in raw only" for what it costs to apply.
 
 0004-0007 are additive: on a database at 0003 they create empty tables and
-grants, schedule no job, and change no existing table, view or policy.
+grants, schedule no job, and change no existing table, view or policy. 0008 is
+not: it empties the rollup views, which then have to be refreshed.
 
 ```ts
 import { loadMigrationsFromDirectory } from '@narduk-enterprises/narduk-postgres/node'
@@ -430,11 +438,13 @@ jobs, `segmentby` carrying `installation_role`, replay idempotency, the shadow
 row excluded from the 1m average, and a retention sweep through a session-pinned
 connection.
 
-`tests/live-state-tw-ais.test.ts` covers 0004-0007. Last run 2026-10-23:
-PostgreSQL 17.11 + TimescaleDB 2.30.1 + PostGIS 3.6.0, 9/9 passing, both as an
-upgrade of a database already at 0003 and from an empty database (all seven
-applied, a re-run a no-op); `live-integration.test.ts` 11/11 on the same
-instance. Removing the refresh's forward widening fails two of them.
+`tests/live-state-tw-ais.test.ts` covers 0004-0008 (0008's cases — the overlay
+rows left out of both ladders, the view grants after the DROP — have not yet run
+live). Last run 2026-10-23, before 0008: PostgreSQL 17.11 + TimescaleDB 2.30.1 +
+PostGIS 3.6.0, 9/9 passing, both as an upgrade of a database already at 0003 and
+from an empty database (all seven applied, a re-run a no-op);
+`live-integration.test.ts` 11/11 on the same instance. Removing the refresh's
+forward widening fails two of them.
 
 Also run on 2026-09-25 for narduk-libs#939: PostgreSQL 16.13 + TimescaleDB
 2.30.1 + PostGIS 3.4.2, 9/9 passing, including the densely filled decimated
@@ -507,6 +517,51 @@ installation exists to be compared against the primary, so folding both into one
 bucket would produce a mean of two instruments and present it as the vessel's
 value. Shadow history is readable in `telemetry_numeric`; it is deliberately
 absent from every rollup level.
+
+### Import-overlay rows (quality 3) live in raw only
+
+Since 0008 the 1m continuous aggregate reads
+`WHERE installation_role = 0 AND quality <> 3`, and every coarser level, built
+on 1m, inherits it. `telemetry_numeric.quality` is
+`SMALLINT NOT NULL DEFAULT 0`:
+
+| `quality` | Meaning                        | In rollups |
+| --------- | ------------------------------ | ---------- |
+| 0         | good, or unmarked              | yes        |
+| 1         | stale                          | yes        |
+| 2         | suspect                        | yes        |
+| 3         | import provenance (an overlay) | **no**     |
+
+Quality 3 marks a row a history import carried that duplicates another import's
+rows for the same minute: production Tideye's 30 s Influx import, whose `:30`
+rows sit beside the 1-minute import's `:00` rows (mybo-at-v2 D-152, #280).
+Counted, they make every 1m bucket over those minutes a mean with the second
+half of the minute counted twice. They are kept and tagged, not deleted, so they
+stay readable in raw. The time-weighted refresh leaves them out too, before
+`lead()`, so the row before one holds across its time; `timeWeightedBuckets`
+skips a reading with `quality: IMPORT_OVERLAY_QUALITY` (exported, 3) the same
+way.
+
+**Applying 0008 empties the rollups.** A continuous aggregate's query cannot be
+altered, so 0008 drops the ladder and recreates it `WITH NO DATA`. The policies
+rebuild their own windows (7 days below 1d, 30 days at 1d); everything older
+stays empty until `ops` refreshes it bottom-up with `refreshRollupsStatements`
+(see "Backfill older than the refresh window"), over the whole range raw holds.
+A bucket can be rebuilt only while raw holds its minutes: a deployment that
+sweeps raw (`globalRawWindowMs` a number) loses rollup history older than its
+raw window when it applies 0008. Under `globalRawWindowMs: 'never'` (mybo-at-v2
+D-140) nothing is lost. Until the backfill reaches it, the 1d bucket straddling
+the 7-day edge is built from a partial day of 1h rows, so it is wrong rather
+than absent; between the DROP and the first policy run every level reads empty;
+and a grant on the views made outside these migrations is lost (0008 re-issues
+0003's only).
+
+`telemetry_numeric_tw` is a table that 0008 does not touch. Time-weighted rows
+refreshed before the tag was applied keep counting the overlay until
+`refreshTimeWeighted` is re-run over the tagged range. The refresh is an upsert
+and deletes nothing, so a minute whose only covered time came from tagged rows
+(no untagged row holds into it within `maxHoldMs`) keeps its old row; `ops`
+deletes the range's `telemetry_numeric_tw` rows first when that matters.
 
 ### Rollup lag, per level
 
