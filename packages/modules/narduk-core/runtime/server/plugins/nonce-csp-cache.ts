@@ -127,7 +127,7 @@ export default defineNitroPlugin((nitro) => {
     const event = context?.event as H3Event | undefined
     if (!event) return
     if (isNuxtPayloadPath(event.path)) return
-    const config = useRuntimeConfig(event) as { nardukSecurityHeaders?: { mode?: unknown } }
+    const config = useRuntimeConfig() as { nardukSecurityHeaders?: { mode?: unknown } }
     if (!hasMintedNonce(event) && !isNonceCspMode(config.nardukSecurityHeaders?.mode)) return
     markNonceCspHtml(event)
   })

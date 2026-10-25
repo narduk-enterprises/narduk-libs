@@ -150,12 +150,13 @@ export default defineNitroPlugin((nitro) => {
       },
       config.app?.buildId ?? '',
       matches,
+      options.queryKeys,
     )
     if (!key) return
     // The robots module marks a request it will not index (blockNonSeoBots): its
     // noindex render is never served from, or stored in, the shared cache.
     const robots = (event.context as { robots?: { indexable?: boolean } }).robots
-    if (robots && robots.indexable !== true) return
+    if (options.requireIndexable ? robots?.indexable !== true : robots?.indexable === false) return
     stateOf(event).key = key
     const cached = await readCachedHtml(key)
     if (cached === null) return
