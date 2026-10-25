@@ -841,9 +841,11 @@ export default defineNuxtConfig({
   path and everything under it, matched against the normalized path.
 - **Key and query:** the path is normalized (dot segments resolved, unreserved
   escapes decoded, the rest upper-cased), so `/a/../b`, `/b` and `/%62` share
-  one key. A request with a query string always renders unless every parameter
-  is in `queryKeys`; those are sorted into the key, so random query strings
-  never add keys.
+  one key (the key helper normalizes), but Nuxt renders the raw path, so only a
+  request whose path is already canonical is served or stored; an alias such as
+  `/a/../b` always renders. A request with a query string always renders unless
+  every parameter is in `queryKeys`; those are sorted into the key, so random
+  query strings never add keys.
 - **Opt-in per route and indexable only:** only the listed routes are cached,
   and only when `event.context.robots.indexable === true` (set by
   `@nuxtjs/robots` for a request it will index; `requireIndexable: false` skips

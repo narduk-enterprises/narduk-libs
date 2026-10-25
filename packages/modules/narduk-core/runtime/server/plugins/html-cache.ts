@@ -3,6 +3,7 @@ import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 import {
   createHtmlCacheMatcher,
   htmlCacheKey,
+  isCanonicalHtmlCachePath,
   isStorableHtml,
   type ResolvedHtmlCache,
   resolveHtmlCacheOptions,
@@ -141,6 +142,7 @@ export default defineNitroPlugin((nitro) => {
     const { matches, options } = settings()
     if (!options || isNuxtPayloadPath(event.path)) return
     const config = useRuntimeConfig() as { app?: { buildId?: string } }
+    if (!isCanonicalHtmlCachePath(event.path, options.queryKeys)) return
     const key = htmlCacheKey(
       {
         headers: new Headers(event.node.req.headers as Record<string, string>),

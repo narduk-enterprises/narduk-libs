@@ -137,6 +137,9 @@ describe('html cache options and keys', () => {
       path: '/b',
       query: '?page=2&sort=a',
     })
+    // Repeated names keep their value order: ?page=2&page=1 is a different request than ?page=1&page=2.
+    expect(normalizeHtmlCachePath('/b?page=2&page=1', ['page'])?.query).toBe('?page=2&page=1')
+    expect(normalizeHtmlCachePath('/b?page=1&page=2', ['page'])?.query).toBe('?page=1&page=2')
     expect(normalizeHtmlCachePath('/b?sort=a&page=2', ['page', 'sort'])).toEqual({
       path: '/b',
       query: '?page=2&sort=a',
@@ -307,9 +310,10 @@ describe('html-cache plugin', () => {
     const open = await request('/food', {}, { robots: undefined })
     await open.respond({ statusCode: 200, body: HTML_BODY, headers: {} })
     expect(cache.values.size).toBe(1)
-    const noindex = await request('/places/x', {}, { robots: { indexable: false } })
+    cache.values.clear()
+    const noindex = await request('/food', {}, { robots: { indexable: false } })
     await noindex.respond({ statusCode: 200, body: HTML_BODY, headers: {} })
-    expect(cache.values.size).toBe(1)
+    expect(cache.values.size).toBe(0)
   })
 
   it('stores through waitUntil, 200s only, and refuses Set-Cookie on res or response.headers', async () => {
@@ -348,16 +352,29 @@ describe('html-cache plugin', () => {
     expect(waits).toHaveLength(1)
   })
 
-  it('keys a normalized path: dot segments and encoding share one key', async () => {
-    const first = await request('/places/a/../b')
+  it('only canonical paths are cached: aliases that normalize elsewhere always render', async () => {
+    const first = await request('/places/b')
     await first.respond({ statusCode: 200, body: '<html>b</html>', headers: {} })
     expect([...cache.values.keys()]).toEqual([
       'https://example.test/__narduk/html-cache/build-1/places/b',
     ])
     expect((await request('/places/b')).hit?.body).toBe('<html>b</html>')
-    expect((await request('/places/%62')).hit?.body).toBe('<html>b</html>')
-    // Traversal out of a covered route lands on its normalized path, which is not covered.
-    expect((await request('/places/../admin')).hit).toBeUndefined()
-    expect(cache.values.size).toBe(1)
+    // Nuxt renders the raw path, so an alias must neither read nor write the canonical key.
+    for (const alias of [
+      '/places/a/../b',
+      '/places/%62',
+      '/places/%2e%2e/places/b',
+      '/places/./b',
+      '/places/../admin',
+      '/places/%2e%2e/admin',
+    ]) {
+      const r = await request(alias)
+      expect(r.hit, alias).toBeUndefined()
+      await r.respond({ statusCode: 200, body: '<html>alias</html>', headers: {} })
+    }
+    const slash = await request('/places/a%2Fb')
+    await slash.respond({ statusCode: 200, body: '<html>slash</html>', headers: {} })
+    expect([...cache.values.keys()]).toHaveLength(2)
+    expect((await request('/places/b')).hit?.body).toBe('<html>b</html>')
   })
 })

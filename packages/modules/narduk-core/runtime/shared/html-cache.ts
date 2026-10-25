@@ -170,11 +170,22 @@ export function normalizeHtmlCachePath(
     if (!allowed.has(name)) return null
     pairs.push([name, value])
   }
-  pairs.sort(([a, x], [b, y]) => (a === b ? x.localeCompare(y) : a.localeCompare(b)))
+  // By name only, stable: the order of a repeated name's values is part of the key.
+  pairs.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   const query = pairs
     .map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`)
     .join('&')
   return { path: normalizeEscapes(url.pathname), query: query === '' ? '' : `?${query}` }
+}
+
+/**
+ * Whether the raw request path is already its normalized form. The key is built from
+ * the normalized path but Nuxt renders the raw one, so a request that normalizes to
+ * something else (`/a/../b`, `/%62`) always renders and is never stored or served.
+ */
+export function isCanonicalHtmlCachePath(raw: string, queryKeys: readonly string[] = []): boolean {
+  const normalized = normalizeHtmlCachePath(raw, queryKeys)
+  return normalized !== null && (raw.split('?')[0] ?? raw) === normalized.path
 }
 
 /** The cache key for an anonymous GET of a cacheable page, or null when the request must render. */
