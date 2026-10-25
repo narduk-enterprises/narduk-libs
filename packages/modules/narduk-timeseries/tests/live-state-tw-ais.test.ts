@@ -77,7 +77,7 @@ describe('the live L3 suite is skipped for a named reason', () => {
   })
 })
 
-describe.skipIf(!dsn)(`live TimescaleDB, migrations 0004-0007 (${SKIP_REASON})`, () => {
+describe.skipIf(!dsn)(`live TimescaleDB, migrations 0004-0008 (${SKIP_REASON})`, () => {
   let client: LiveClient
   let store: TimescaleHistoryStore
   const vessels: string[] = []

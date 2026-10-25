@@ -16,3 +16,5 @@ at 1d) windows, and older buckets need an `ops` refresh bottom-up with
 `refreshRollupsStatements`. A deployment that sweeps raw loses rollup history
 older than its raw window; see the README section "Import-overlay rows
 (quality 3) live in raw only".
+`telemetry_numeric_tw` is untouched by 0008: re-run `refreshTimeWeighted` over
+the tagged range to drop the overlay from rows refreshed before the tag.

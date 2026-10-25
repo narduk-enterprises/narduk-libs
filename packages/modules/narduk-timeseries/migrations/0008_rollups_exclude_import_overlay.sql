@@ -18,8 +18,8 @@
 -- is dropped coarsest first (each level reads the one below) and recreated
 -- from 0002's four definitions unchanged except the 1m level's filter, which
 -- every coarser level inherits. 0002's comments hold for every level here.
--- `IF NOT EXISTS` stays on each CREATE so a re-run after a partial failure
--- still converges; the DROPs make the CREATEs real on a first run.
+-- The CREATEs keep 0002's `IF NOT EXISTS` only because they are copied
+-- verbatim; the DROPs above run first on every run, so the clause never fires.
 --
 -- WHAT THE DROP COSTS. A dropped CAgg loses its materialized buckets, and the
 -- views are recreated `WITH NO DATA`. The scheduled policies rebuild the last
@@ -30,7 +30,15 @@
 -- its minutes, so a deployment that sweeps raw (`globalRawWindowMs` a number)
 -- loses rollup history older than its raw window when this runs. The
 -- deployment this was written for keeps raw forever (mybo-at-v2 D-140,
--- `globalRawWindowMs: 'never'`).
+-- `globalRawWindowMs: 'never'`). Until that refresh, a 1d bucket straddling
+-- the 7-day edge is materialized from a partial day of 1h rows: wrong, not
+-- only absent. Between the DROP and the first policy run a read sees no
+-- bucket at all. Any grant on the views made outside these migrations is
+-- lost and is not re-issued here.
+--
+-- `telemetry_numeric_tw` (0005) is a table, so this file does not touch it:
+-- rows an earlier time-weighted refresh computed over tagged minutes keep
+-- their values until `refreshTimeWeighted` is re-run over that range.
 --
 -- A DROP ALSO LOSES THE GRANTS, so 0003's SELECT grants on the four views are
 -- re-issued below, line for line as `historyRoleGrantStatements()` emits them

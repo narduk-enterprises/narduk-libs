@@ -438,11 +438,13 @@ jobs, `segmentby` carrying `installation_role`, replay idempotency, the shadow
 row excluded from the 1m average, and a retention sweep through a session-pinned
 connection.
 
-`tests/live-state-tw-ais.test.ts` covers 0004-0007. Last run 2026-10-23:
-PostgreSQL 17.11 + TimescaleDB 2.30.1 + PostGIS 3.6.0, 9/9 passing, both as an
-upgrade of a database already at 0003 and from an empty database (all seven
-applied, a re-run a no-op); `live-integration.test.ts` 11/11 on the same
-instance. Removing the refresh's forward widening fails two of them.
+`tests/live-state-tw-ais.test.ts` covers 0004-0008 (0008's cases — the overlay
+rows left out of both ladders, the view grants after the DROP — have not yet run
+live). Last run 2026-10-23, before 0008: PostgreSQL 17.11 + TimescaleDB 2.30.1 +
+PostGIS 3.6.0, 9/9 passing, both as an upgrade of a database already at 0003 and
+from an empty database (all seven applied, a re-run a no-op);
+`live-integration.test.ts` 11/11 on the same instance. Removing the refresh's
+forward widening fails two of them.
 
 Also run on 2026-09-25 for narduk-libs#939: PostgreSQL 16.13 + TimescaleDB
 2.30.1 + PostGIS 3.4.2, 9/9 passing, including the densely filled decimated
@@ -548,7 +550,18 @@ stays empty until `ops` refreshes it bottom-up with `refreshRollupsStatements`
 A bucket can be rebuilt only while raw holds its minutes: a deployment that
 sweeps raw (`globalRawWindowMs` a number) loses rollup history older than its
 raw window when it applies 0008. Under `globalRawWindowMs: 'never'` (mybo-at-v2
-D-140) nothing is lost.
+D-140) nothing is lost. Until the backfill reaches it, the 1d bucket straddling
+the 7-day edge is built from a partial day of 1h rows, so it is wrong rather
+than absent; between the DROP and the first policy run every level reads empty;
+and a grant on the views made outside these migrations is lost (0008 re-issues
+0003's only).
+
+`telemetry_numeric_tw` is a table that 0008 does not touch. Time-weighted rows
+refreshed before the tag was applied keep counting the overlay until
+`refreshTimeWeighted` is re-run over the tagged range. The refresh is an upsert
+and deletes nothing, so a minute whose only covered time came from tagged rows
+(no untagged row holds into it within `maxHoldMs`) keeps its old row; `ops`
+deletes the range's `telemetry_numeric_tw` rows first when that matters.
 
 ### Rollup lag, per level
 
