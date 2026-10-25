@@ -26,6 +26,9 @@
     "./server/security-headers": {
       "import": "./src/server/security-headers.ts"
     },
+    "./server/csp-nonce": {
+      "import": "./src/server/csp-nonce.ts"
+    },
     "./server/request-id": {
       "import": "./src/server/request-id.ts"
     },
@@ -47,6 +50,7 @@
   ],
   "scripts": {
     "build": "pnpm run typecheck",
+    "prove:nonce": "node scripts/prove-nonce.mjs",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "lint": "narduk-lint",
@@ -65,6 +69,7 @@
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "4.1.6",
     "eslint": "^10.8.0",
+    "nuxt": "^4.5.2",
     "prettier": "^3.8.3",
     "typescript": "~6.0.3",
     "vitest": "^4.1.11",

@@ -28,6 +28,23 @@ export interface SecurityHeadersConfig {
   robots?: string
 }
 
+const UNSAFE_INLINE = "'unsafe-inline'"
+
+/**
+ * `directives` with `'nonce-<nonce>'` on `script-src`. A nonce makes browsers
+ * ignore `'unsafe-inline'`, so it is dropped from the output rather than left to
+ * read as a policy that allows inline scripts. A policy without `script-src` is
+ * returned as is.
+ */
+export function withScriptNonce(directives: CspDirectives, nonce: string): CspDirectives {
+  const scriptSrc = directives['script-src']
+  if (!scriptSrc) return directives
+  return {
+    ...directives,
+    'script-src': [...scriptSrc.filter((source) => source !== UNSAFE_INLINE), `'nonce-${nonce}'`],
+  }
+}
+
 export function serializeCsp(directives: CspDirectives): string {
   return Object.entries(directives)
     .map(([name, sources]) => [name, ...sources].join(' '))
@@ -45,14 +62,15 @@ const ONE_YEAR_SECONDS = 31_536_000
 /**
  * The baseline response headers for one request, lower-cased. Pure: the app
  * resolves per-request differences (a framed route, a dev-only source) into
- * the config it passes.
+ * the config it passes. A `request.nonce` (see `getCspNonce` in `./csp-nonce`)
+ * goes on `script-src` of both CSPs, replacing `'unsafe-inline'` there.
  *
  * Set them early in the request (a Nitro `request` hook), so a route that sets
  * one of these headers deliberately replaces the baseline value.
  */
 export function buildSecurityHeaders(
   config: SecurityHeadersConfig,
-  request: { https: boolean },
+  request: { https: boolean; nonce?: string },
 ): Record<string, string> {
   const headers: Record<string, string> = {
     'x-content-type-options': 'nosniff',
@@ -62,9 +80,16 @@ export function buildSecurityHeaders(
   if (config.permissionsPolicy) {
     headers['permissions-policy'] = serializePermissionsPolicy(config.permissionsPolicy)
   }
-  if (config.csp) headers['content-security-policy'] = serializeCsp(config.csp)
+  const { nonce } = request
+  if (config.csp) {
+    headers['content-security-policy'] = serializeCsp(
+      nonce ? withScriptNonce(config.csp, nonce) : config.csp,
+    )
+  }
   if (config.reportOnlyCsp) {
-    headers['content-security-policy-report-only'] = serializeCsp(config.reportOnlyCsp)
+    headers['content-security-policy-report-only'] = serializeCsp(
+      nonce ? withScriptNonce(config.reportOnlyCsp, nonce) : config.reportOnlyCsp,
+    )
   }
   if (request.https && config.hsts !== false) {
     const maxAge = config.hsts?.maxAgeSeconds ?? ONE_YEAR_SECONDS
@@ -77,9 +102,16 @@ export function buildSecurityHeaders(
 }
 
 /** {@link buildSecurityHeaders} applied to an h3 event, https read from the request. */
-export function applySecurityHeaders(event: H3Event, config: SecurityHeadersConfig): void {
+export function applySecurityHeaders(
+  event: H3Event,
+  config: SecurityHeadersConfig,
+  options: { nonce?: string } = {},
+): void {
   setResponseHeaders(
     event,
-    buildSecurityHeaders(config, { https: getRequestProtocol(event) === 'https' }),
+    buildSecurityHeaders(config, {
+      https: getRequestProtocol(event) === 'https',
+      nonce: options.nonce,
+    }),
   )
 }
