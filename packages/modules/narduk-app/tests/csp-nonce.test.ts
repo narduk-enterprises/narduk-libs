@@ -32,7 +32,7 @@ describe('stampScriptNonce', () => {
       '<scripty>no</scripty>',
     ].join('')
     const out = stampScriptNonce(html, 'N')
-    expect(out.match(/<script\b[^>]*>/g)).toEqual([
+    expect(out.match(/<script\b[^>]*>/gi)).toEqual([
       '<script nonce="N">',
       '<script nonce="N" type="application/json" data-nuxt-data="nuxt-app" id="__NUXT_DATA__">',
       '<script nonce="N" type="module" src="/_nuxt/entry.js" crossorigin>',
@@ -128,7 +128,7 @@ describe('installCspNonce', () => {
   it('stamps every script with the nonce the header carries, and no-stores the page', async () => {
     const { response, body } = await render(true)
     const nonce = /'nonce-([^']+)'/.exec(response.headers.get('content-security-policy')!)![1]
-    const tags = body.match(/<script\b[^>]*>/g)!
+    const tags = body.match(/<script\b[^>]*>/gi)!
     expect(tags).toHaveLength(4)
     expect(tags.filter((tag) => tag.includes(`nonce="${nonce}"`))).toHaveLength(3)
     expect(body).toContain('<div id="__nuxt"><script>steal()</script></div>')
@@ -170,10 +170,10 @@ describe('a rendered Nuxt page', () => {
   )
 
   it('has inline scripts, and every one carries the nonce once stamped', () => {
-    const before = page.match(/<script\b[^>]*>/g)!
+    const before = page.match(/<script\b[^>]*>/gi)!
     expect(before.some((tag) => tag.includes('__NUXT_DATA__'))).toBe(true)
     expect(before.some((tag) => tag === '<script>')).toBe(true)
-    const tags = stampScriptNonce(page, 'N').match(/<script\b[^>]*>/g)!
+    const tags = stampScriptNonce(page, 'N').match(/<script\b[^>]*>/gi)!
     expect(tags).toHaveLength(before.length)
     for (const tag of tags) expect(tag).toContain('nonce="N"')
   })
