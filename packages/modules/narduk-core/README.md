@@ -878,10 +878,13 @@ The rules that make it safe:
 - Only anonymous requests (no `Cookie`, no `Authorization`) are ever served from
   or stored in the cache, and a response with `Set-Cookie` is never stored. A
   request carrying a cookie always gets a fresh render with its own nonce.
-- On a nonce app the page is stored with the nonce it was rendered with, and a
-  hit puts that nonce back on the request, so the cached HTML and the CSP header
-  nuxt-security builds from it still match. The nonce is never rewritten per
-  hit: that would stamp it onto an injected script.
+- On a nonce app the page is stored with the nonce it was rendered with, and
+  every hit is re-stamped with the nonce nuxt-security minted for that request:
+  the stored nonce is replaced in every `nonce=` attribute, and the CSP header
+  is built from the request's own nonce, so the body and header match and no two
+  responses share a nonce (the riverstatus#663 scheme). A stored nonce page
+  cannot answer a request that minted no nonce, and a stored page without a
+  nonce cannot answer one that did; those requests render.
 - `nonce-csp-cache` keeps forcing `Cache-Control: private, no-store` on every
   HTML response, covered route or not, so no browser or intermediary stores a
   nonce page; the Worker's own `caches.default` entry is the only copy.

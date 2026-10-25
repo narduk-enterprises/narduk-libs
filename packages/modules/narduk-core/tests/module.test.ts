@@ -359,6 +359,27 @@ describe('narduk-core databaseBackend declaration', () => {
       })
     })
 
+    it.each([
+      [{ routes: ['/food'], queryKeys: 'page' }, 'queryKeys must be an array of names'],
+      [{ routes: ['/food'], queryKeys: [''] }, 'queryKeys must be an array of names'],
+      [{ routes: ['/food'], queryKeys: [1] }, 'queryKeys must be an array of names'],
+      [{ routes: ['/food'], requireIndexable: 'no' }, 'requireIndexable must be a boolean'],
+    ])('fails the build on htmlCache %j', async (htmlCache, message) => {
+      const { setup } = await loadCoreModule()
+      await expect(setup({ htmlCache })).rejects.toThrow(message)
+    })
+
+    it('carries queryKeys and requireIndexable to runtimeConfig', async () => {
+      const { nuxt, setup } = await loadCoreModule()
+      await setup({
+        htmlCache: { routes: ['/food'], queryKeys: ['page'], requireIndexable: false },
+      })
+      expect(nuxt.options.runtimeConfig.nardukHtmlCache).toMatchObject({
+        queryKeys: ['page'],
+        requireIndexable: false,
+      })
+    })
+
     it.each(['enforce', 'report-only'])(
       'is allowed on a nonce-CSP app (security.headers mode %s, D-HTML-CACHE-PUBLIC-1)',
       async (mode) => {
