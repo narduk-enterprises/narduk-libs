@@ -46,6 +46,8 @@ export default [
       'packages/modules/narduk-mapkit-nuxt/.nuxt/**',
       'packages/modules/narduk-mapkit-nuxt/playground/.nuxt/**',
       'packages/modules/narduk-mapkit-nuxt/dist/**',
+      // A standalone Nuxt app built by scripts/prove-nonce.mjs; its .vue files have no project here.
+      'packages/modules/narduk-app/tests/fixtures/nonce-app/**',
     ],
   },
   {
