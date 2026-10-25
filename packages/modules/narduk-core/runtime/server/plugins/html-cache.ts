@@ -2,14 +2,17 @@ import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 
 import {
   createHtmlCacheMatcher,
+  createHtmlCacheTtlResolver,
   htmlCacheKey,
   isCanonicalHtmlCachePath,
+  isHtmlCacheSkipped,
   isStorableHtml,
   type ResolvedHtmlCache,
   resolveHtmlCacheOptions,
   restampNonce,
 } from '../../shared/html-cache'
 import { isNuxtPayloadPath } from '../../shared/utils/nonce-csp'
+import { isPreferencesInfluenced } from '../../shared/utils/preferences'
 
 import type { H3Event } from 'h3'
 
@@ -33,6 +36,11 @@ import type { H3Event } from 'h3'
  * Authorization header never reads the cache and gets a fresh render; `nonce-csp-cache`
  * still forces `no-store` on every response. A no-op in
  * Node (dev, tests) and anywhere `caches.default` does not exist.
+ *
+ * Never read or written: a request with `runtimeConfig.public.previewSafeMode`, a path
+ * over `HTML_CACHE_MAX_PATH_LENGTH`. Never stored: a render that read preferences
+ * (`event.context.nardukPreferencesInfluenced`) or that a page marked with
+ * `skipHtmlCache(event)` / `useSkipHtmlCache()` (`x-html-cache: skip`).
  */
 
 export interface HtmlCacheStore {
@@ -43,6 +51,7 @@ export interface HtmlCacheStore {
 interface HtmlCacheState {
   hit?: boolean
   key?: string
+  ttlSeconds?: number
 }
 
 const STATE_KEY = '~nardukHtmlCache'
@@ -115,7 +124,12 @@ function resolveOrNull(source: unknown): ResolvedHtmlCache | null {
 }
 
 let configured:
-  | { matches: (path: string) => boolean; options: ResolvedHtmlCache | null; source: unknown }
+  | {
+      matches: (path: string) => boolean
+      options: ResolvedHtmlCache | null
+      source: unknown
+      ttlFor: (path: string) => number | undefined
+    }
   | undefined
 
 /** Built once per isolate: `useRuntimeConfig()` without an event is the shared object. */
@@ -128,6 +142,7 @@ function settings() {
     matches: options ? createHtmlCacheMatcher(options.routes) : () => false,
     options,
     source,
+    ttlFor: options ? createHtmlCacheTtlResolver(options) : () => {},
   }
   return configured
 }
@@ -140,9 +155,14 @@ export default defineNitroPlugin((nitro) => {
   nitro.hooks.hook('render:before', async (ctx) => {
     const event = ctx?.event as H3Event | undefined
     if (!event) return
-    const { matches, options } = settings()
+    const { matches, options, ttlFor } = settings()
     if (!options || isNuxtPayloadPath(event.path)) return
-    const config = useRuntimeConfig() as { app?: { buildId?: string } }
+    const config = useRuntimeConfig() as {
+      app?: { buildId?: string }
+      public?: { previewSafeMode?: unknown }
+    }
+    // A preview-safe-mode deployment neither reads nor writes the shared cache.
+    if (config.public?.previewSafeMode === true) return
     if (!isCanonicalHtmlCachePath(event.path, options.queryKeys)) return
     const key = htmlCacheKey(
       {
@@ -160,7 +180,9 @@ export default defineNitroPlugin((nitro) => {
     // noindex render is never served from, or stored in, the shared cache.
     const robots = (event.context as { robots?: { indexable?: boolean } }).robots
     if (options.requireIndexable ? robots?.indexable !== true : robots?.indexable === false) return
-    stateOf(event).key = key
+    const state = stateOf(event)
+    state.key = key
+    state.ttlSeconds = ttlFor(event.path.split('?')[0] ?? event.path) ?? options.ttlSeconds
     const cached = await readCachedHtml(key)
     if (cached === null) return
     // A hit gets this request's own nonce, so no two responses share one. nuxt-security
@@ -193,10 +215,22 @@ export default defineNitroPlugin((nitro) => {
       event.node.res.getHeader('set-cookie') ?? headerOf(response.headers, 'set-cookie')
     if (status !== 200 || setCookie || typeof response.body !== 'string') return
     if (!isStorableHtml(response.body)) return
+    // A render that read preferences is not shareable; a page can also opt its render out.
+    if (isPreferencesInfluenced(event)) return
+    if (isHtmlCacheSkipped(event)) {
+      response.headers = { ...response.headers, 'x-html-cache': 'skip' }
+      return
+    }
     response.headers = { ...response.headers, 'x-html-cache': 'miss' }
     const security = (event.context as { security?: { nonce?: unknown } }).security
     const nonce = typeof security?.nonce === 'string' && security.nonce ? security.nonce : null
-    return storeCachedHtml(state.key, response.body, options.ttlSeconds, event, nonce)
+    return storeCachedHtml(
+      state.key,
+      response.body,
+      state.ttlSeconds ?? options.ttlSeconds,
+      event,
+      nonce,
+    )
   })
 })
 
