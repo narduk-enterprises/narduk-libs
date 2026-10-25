@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { z } from 'zod'
 
+import { FULL_PAGE_LOAD, signInLandingPath } from '../utils/fullPageLoad'
 import { sanitizeLocalRedirectPath } from '../utils/safeRedirectPath'
 import { toUserFacingError } from '../utils/toUserFacingError'
 
@@ -109,7 +110,7 @@ async function onUpdatePassword() {
         token: localEmailToken.value,
         newPassword: updateState.newPassword,
       })
-      await navigateTo(result.redirectTo ?? resolvedNextPath.value, { replace: true })
+      await navigateTo(signInLandingPath(result.redirectTo, resolvedNextPath.value), FULL_PAGE_LOAD)
       return
     }
 

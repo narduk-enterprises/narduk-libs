@@ -32,6 +32,7 @@ import {
 
 const ADA_EMAIL = 'ada@example.test'
 const ADA_USER = { email: ADA_EMAIL, id: 'u1', name: 'Ada' }
+const LOGIN_EMAIL = '[data-testid="auth-login-email"]'
 const DASHBOARD_PATH = '/dashboard/'
 
 // A controllable mock (not the hardcoded `() => false` this replaced): the
@@ -174,7 +175,7 @@ describe('email sign-in link affordance (narduk-libs#1952)', () => {
     expect(authMocks.requestEmailLink).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Enter your email address to get a sign-in link.')
 
-    await wrapper.get('[data-testid="auth-login-email"]').setValue(ADA_EMAIL)
+    await wrapper.get(LOGIN_EMAIL).setValue(ADA_EMAIL)
     await button.trigger('click')
     await flushPromises()
     expect(authMocks.requestEmailLink).toHaveBeenCalledWith({
@@ -214,7 +215,7 @@ describe('AuthLoginCard mount', () => {
     authMocks.login.mockResolvedValue({ user: ADA_USER })
     const wrapper = mountAuthCard(AuthLoginCard)
 
-    await wrapper.get('[data-testid="auth-login-email"]').setValue(ADA_EMAIL)
+    await wrapper.get(LOGIN_EMAIL).setValue(ADA_EMAIL)
     await wrapper.get('[data-testid="auth-login-password"]').setValue('secret')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -224,14 +225,38 @@ describe('AuthLoginCard mount', () => {
       password: 'secret',
     })
     expect(wrapper.emitted('success')?.[0]).toEqual([ADA_USER])
-    expect(navigateToMock).toHaveBeenCalledWith(DASHBOARD_PATH, { replace: true })
+    expect(navigateToMock).toHaveBeenCalledWith(DASHBOARD_PATH, {
+      external: true,
+      replace: true,
+    })
     wrapper.unmount()
+  })
+
+  it('lands off-origin and protocol-relative redirectTo values on the configured path', async () => {
+    for (const redirectTo of [
+      'https://evil.example/x',
+      '//evil.example/x',
+      'javascript:alert(1)',
+    ]) {
+      navigateToMock.mockClear()
+      authMocks.login.mockResolvedValue({ redirectTo, user: ADA_USER })
+      const wrapper = mountAuthCard(AuthLoginCard)
+      await wrapper.get(LOGIN_EMAIL).setValue(ADA_EMAIL)
+      await wrapper.get('[data-testid="auth-login-password"]').setValue('secret')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(navigateToMock).toHaveBeenCalledWith(DASHBOARD_PATH, {
+        external: true,
+        replace: true,
+      })
+      wrapper.unmount()
+    }
   })
 
   it('surfaces a failed login without emitting success', async () => {
     authMocks.login.mockRejectedValue(new Error('Invalid email or password.'))
     const wrapper = mountAuthCard(AuthLoginCard)
-    await wrapper.get('[data-testid="auth-login-email"]').setValue(ADA_EMAIL)
+    await wrapper.get(LOGIN_EMAIL).setValue(ADA_EMAIL)
     await wrapper.get('[data-testid="auth-login-password"]').setValue('nope')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -272,6 +297,7 @@ describe('AuthRegisterCard mount', () => {
       password: 'password1',
     })
     expect(wrapper.emitted('success')?.[0]).toEqual([ADA_USER])
+    expect(navigateToMock).toHaveBeenCalledWith(DASHBOARD_PATH, { external: true, replace: true })
     wrapper.unmount()
   })
 
@@ -330,7 +356,7 @@ describe('AuthExchangePanel mount', () => {
       code: 'pkce-code',
       next: undefined,
     })
-    expect(navigateToMock).toHaveBeenCalledWith('/app', { replace: true })
+    expect(navigateToMock).toHaveBeenCalledWith('/app', { external: true, replace: true })
     wrapper.unmount()
   })
 

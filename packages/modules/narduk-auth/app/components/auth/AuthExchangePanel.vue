@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FULL_PAGE_LOAD, signInLandingPath } from '../../utils/fullPageLoad'
 import { toUserFacingError } from '../../utils/toUserFacingError'
 
 const props = withDefaults(
@@ -64,7 +65,10 @@ onMounted(async () => {
 
   try {
     const result = await exchangeSession(payload)
-    await navigateTo(result.redirectTo ?? config.public.authRedirectPath, { replace: true })
+    await navigateTo(
+      signInLandingPath(result.redirectTo, config.public.authRedirectPath),
+      FULL_PAGE_LOAD,
+    )
   } catch (error) {
     status.value = 'error'
     errorMsg.value = toUserFacingError(error, 'The callback could not be exchanged for a session.')
