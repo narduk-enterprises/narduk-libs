@@ -829,6 +829,7 @@ export default defineNuxtConfig({
   nardukCore: {
     htmlCache: {
       routes: ['/places/*', '/food', '/neighborhoods/**'], // path patterns
+      // A route can carry its own TTL: { path: '/stations', ttlSeconds: 120 }
       ttlSeconds: 600, // default; a long, release-tied value is fine (see below)
       // queryKeys: ['page'], // query names that are part of the key (default none)
       // requireIndexable: false, // only for an app without @nuxtjs/robots
@@ -839,6 +840,14 @@ export default defineNuxtConfig({
 
 - **Patterns:** an exact path, `*` for one segment, and a trailing `/**` for the
   path and everything under it, matched against the normalized path.
+- **Per-route TTL:** an entry is a pattern string or `{ path, ttlSeconds }`
+  (`routes: ['/map', { path: '/stations', ttlSeconds: 120 }]`); a plain string
+  uses the top-level `ttlSeconds`. The **first entry in `routes` that matches a
+  path wins**, for whether it is cached and for its TTL, so list a specific
+  route before a broad `/**`
+  (`['/guides/wind', { path: '/guides/**', ttlSeconds: 60 }]` gives
+  `/guides/wind` the default and the rest 60). A bad entry or TTL fails at
+  module setup like any other option.
 - **Key and query:** the path is normalized (dot segments resolved, unreserved
   escapes decoded, the rest upper-cased), so `/a/../b`, `/b` and `/%62` share
   one key (the key helper normalizes), but Nuxt renders the raw path, so only a
@@ -851,6 +860,14 @@ export default defineNuxtConfig({
   `@nuxtjs/robots` for a request it will index; `requireIndexable: false` skips
   the gate for an app without that module). HTML with a robots `noindex` meta is
   never stored.
+- **Bounded key space:** a request path (query string included) longer than 200
+  characters (`HTML_CACHE_MAX_PATH_LENGTH`) always renders.
+- **Never stored, never read:**
+  - `runtimeConfig.public.previewSafeMode === true` neither reads nor writes.
+  - A render that read preferences
+    (`event.context.nardukPreferencesInfluenced === true`, set by
+    `usePreferences()` / `readPreferences()`) is not stored.
+  - A render the page opts out is not stored (below).
 - **TTL:** `ttlSeconds` is any positive integer. Because the key carries
   `app.buildId`, a deploy never serves the previous build's HTML, so a long TTL
   tied to the release cadence is safe.
@@ -870,6 +887,22 @@ export default defineNuxtConfig({
   visitor's variant is shown to all. List only routes that render the same for
   every anonymous visitor.
 - **Absent** in Node (dev, tests) and wherever `caches.default` does not exist.
+
+**Opting one render out.** A page whose data failed to load (a release
+unavailable, an empty lookup) still answers `200`, and that render must not be
+kept for the TTL. Mark it as not storable; the response carries
+`x-html-cache: skip`:
+
+```vue
+<script setup lang="ts">
+const { data } = await useFetch('/api/release')
+if (!data.value) useSkipHtmlCache() // page/component setup during SSR; no-op in the browser
+</script>
+```
+
+In a Nitro handler or middleware use `skipHtmlCache(event)` (auto-imported). A
+request that is already served from the cache is unaffected: only a render is
+ever marked.
 
 **Nonce-CSP apps may opt in too** (D-HTML-CACHE-PUBLIC-1, Logan 2026-10-25,
 amending the 2026-09-18 "Refuse HTML caching on nonce apps", narduk-libs#435).

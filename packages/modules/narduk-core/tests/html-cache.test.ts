@@ -1,19 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useSkipHtmlCache } from '../runtime/app/composables/useSkipHtmlCache'
+import { skipHtmlCache } from '../runtime/server/utils/html-cache-skip'
 import {
   createHtmlCacheMatcher,
+  createHtmlCacheTtlResolver,
+  HTML_CACHE_MAX_PATH_LENGTH,
   htmlCacheKey,
+  NE_HTML_CACHE_SKIP_CONTEXT_KEY,
   isStorableHtml,
   normalizeHtmlCachePath,
   resolveHtmlCacheOptions,
   restampNonce,
 } from '../runtime/shared/html-cache'
 
+const { requestEvent } = vi.hoisted(() => ({
+  requestEvent: { current: undefined as { context: Record<string, unknown> } | undefined },
+}))
+
+vi.mock('#imports', () => ({ useRequestEvent: () => requestEvent.current }))
+
 const { runtime } = vi.hoisted(() => ({
   runtime: {
     app: { buildId: 'build-1' },
     nardukHtmlCache: { routes: ['/food', '/places/*'], ttlSeconds: 600 } as unknown,
     nardukSecurityHeaders: { mode: 'off' as string },
+    public: { previewSafeMode: false as unknown },
   },
 }))
 
@@ -91,6 +103,7 @@ beforeEach(() => {
   ;(globalThis as Record<string, unknown>).caches = { default: cache }
   runtime.app.buildId = 'build-1'
   runtime.nardukSecurityHeaders.mode = 'off'
+  runtime.public.previewSafeMode = false
   runtime.nardukHtmlCache = { routes: ['/food', '/places/*'], ttlSeconds: 600 }
 })
 
@@ -100,6 +113,7 @@ describe('html cache options and keys', () => {
       queryKeys: [],
       requireIndexable: true,
       routes: ['/food'],
+      routeTtls: [],
       ttlSeconds: 600,
     })
     expect(resolveHtmlCacheOptions(undefined)).toBeNull()
@@ -396,5 +410,137 @@ describe('html-cache plugin', () => {
     await slash.respond({ statusCode: 200, body: '<html>slash</html>', headers: {} })
     expect([...cache.values.keys()]).toHaveLength(2)
     expect((await request('/places/b')).hit?.body).toBe('<html>b</html>')
+  })
+})
+
+describe('per-route ttlSeconds', () => {
+  it('accepts plain strings and { path, ttlSeconds } entries, and records the overrides in order', () => {
+    expect(
+      resolveHtmlCacheOptions({
+        routes: ['/map', { path: '/stations', ttlSeconds: 120 }, { path: '/about' }],
+        ttlSeconds: 300,
+      }),
+    ).toEqual({
+      queryKeys: [],
+      requireIndexable: true,
+      routes: ['/map', '/stations', '/about'],
+      routeTtls: [{ path: '/stations', ttlSeconds: 120 }],
+      ttlSeconds: 300,
+    })
+  })
+
+  it('rejects a bad entry at setup', () => {
+    expect(() => resolveHtmlCacheOptions({ routes: [{ ttlSeconds: 5 }] })).toThrow('string `path`')
+    expect(() => resolveHtmlCacheOptions({ routes: [{ path: 'nope', ttlSeconds: 5 }] })).toThrow(
+      'path pattern',
+    )
+    for (const ttlSeconds of [0, -1, 1.5, '60', null]) {
+      expect(() => resolveHtmlCacheOptions({ routes: [{ path: '/a', ttlSeconds }] })).toThrow(
+        'ttlSeconds must be a positive integer',
+      )
+    }
+    expect(() => resolveHtmlCacheOptions({ routes: [42] })).toThrow('non-empty')
+    expect(() => resolveHtmlCacheOptions({ routes: [['/a']] })).toThrow('non-empty')
+  })
+
+  it('the first matching entry wins, its own TTL or else the top-level one', () => {
+    const ttlFor = createHtmlCacheTtlResolver(
+      resolveHtmlCacheOptions({
+        routes: [
+          { path: '/guides/wind', ttlSeconds: 60 },
+          { path: '/guides/**', ttlSeconds: 900 },
+          '/guides/tides',
+          { path: '/guides/tides', ttlSeconds: 5 },
+          '/map',
+        ],
+        ttlSeconds: 300,
+      })!,
+    )
+    expect(ttlFor('/guides/wind')).toBe(60)
+    expect(ttlFor('/guides/tides')).toBe(900)
+    expect(ttlFor('/guides')).toBe(900)
+    expect(ttlFor('/map')).toBe(300)
+    expect(ttlFor('/other')).toBeUndefined()
+  })
+
+  it('stores each route with its own max-age', async () => {
+    runtime.nardukHtmlCache = {
+      routes: ['/map', { path: '/stations', ttlSeconds: 120 }],
+      ttlSeconds: 600,
+    }
+    for (const path of ['/map', '/stations']) {
+      const r = await request(path)
+      await r.respond({ statusCode: 200, body: `<html>${path}</html>`, headers: {} })
+    }
+    const ages = Object.fromEntries(
+      [...cache.values].map(([key, value]) => [
+        key.split('/build-1')[1],
+        value.headers.get('cache-control'),
+      ]),
+    )
+    expect(ages).toEqual({ '/map': 'public, max-age=600', '/stations': 'public, max-age=120' })
+    expect((await request('/stations')).hit?.body).toBe('<html>/stations</html>')
+  })
+})
+
+describe('never-store and never-read guards', () => {
+  it('a render flagged by skipHtmlCache is not stored out of the cache and marks the response', async () => {
+    const skipped = await request('/food', {}, { [NE_HTML_CACHE_SKIP_CONTEXT_KEY]: true })
+    const response = await skipped.respond({ statusCode: 200, body: HTML_BODY, headers: {} })
+    expect((response.headers as Record<string, string>)['x-html-cache']).toBe('skip')
+    expect(cache.values.size).toBe(0)
+  })
+
+  it('skipHtmlCache and useSkipHtmlCache set the flag, and tolerate a missing event', () => {
+    const event = { context: {} as Record<string, unknown> }
+    skipHtmlCache(event as never)
+    expect(event.context[NE_HTML_CACHE_SKIP_CONTEXT_KEY]).toBe(true)
+    expect(() => skipHtmlCache(undefined)).not.toThrow()
+
+    requestEvent.current = { context: {} }
+    useSkipHtmlCache()
+    expect(requestEvent.current.context[NE_HTML_CACHE_SKIP_CONTEXT_KEY]).toBe(true)
+    requestEvent.current = undefined
+    expect(() => useSkipHtmlCache()).not.toThrow()
+  })
+
+  it('does not store a render that read preferences', async () => {
+    const r = await request('/food', {}, { nardukPreferencesInfluenced: true })
+    const response = await r.respond({ statusCode: 200, body: HTML_BODY, headers: {} })
+    expect(cache.values.size).toBe(0)
+    expect((response.headers as Record<string, string>)['x-html-cache']).toBeUndefined()
+  })
+
+  it('neither reads nor writes under previewSafeMode', async () => {
+    const warm = await request('/food')
+    await warm.respond({ statusCode: 200, body: '<html>warm</html>', headers: {} })
+    expect(cache.values.size).toBe(1)
+    runtime.public.previewSafeMode = true
+    const preview = await request('/food')
+    expect(preview.hit).toBeUndefined()
+    await preview.respond({ statusCode: 200, body: '<html>preview</html>', headers: {} })
+    expect([...cache.values.values()]).toHaveLength(1)
+    runtime.public.previewSafeMode = false
+    expect((await request('/food')).hit?.body).toBe('<html>warm</html>')
+  })
+
+  it('skips paths longer than the bound, in the plugin and the key helpers', async () => {
+    runtime.nardukHtmlCache = { routes: ['/food/**'] }
+    const ok = `/food/${'a'.repeat(HTML_CACHE_MAX_PATH_LENGTH - '/food/'.length)}`
+    const long = `${ok}a`
+    expect(ok).toHaveLength(HTML_CACHE_MAX_PATH_LENGTH)
+    expect(normalizeHtmlCachePath(ok)).not.toBeNull()
+    expect(normalizeHtmlCachePath(long)).toBeNull()
+    const matches = createHtmlCacheMatcher(['/food/**'])
+    const headers = new Headers()
+    expect(
+      htmlCacheKey({ headers, host: 'h.test', method: 'GET', path: long }, 'b', matches),
+    ).toBeNull()
+    const r = await request(long)
+    await r.respond({ statusCode: 200, body: HTML_BODY, headers: {} })
+    expect(cache.values.size).toBe(0)
+    const within = await request(ok)
+    await within.respond({ statusCode: 200, body: HTML_BODY, headers: {} })
+    expect(cache.values.size).toBe(1)
   })
 })
