@@ -125,6 +125,31 @@ describe('PostHog exception plugin', () => {
     expect(plugin.name).toBe('posthog-exceptions')
   })
 
+  it('prefers the queued analytics transport over the raw client', async () => {
+    const { emitNardukException } =
+      await import('@narduk-enterprises/narduk-core/shared/exception-report')
+    const plugin = (await import('../app/plugins/posthog-exceptions.client')).default as {
+      setup: (app: unknown) => void
+    }
+    const handlers: Array<(...args: unknown[]) => void> = []
+    const transport = client()
+    const raw = client()
+    const nuxtApp = {
+      $analytics: transport,
+      $posthog: raw,
+      hook: (_name: string, handler: (...args: unknown[]) => void) => handlers.push(handler),
+      callHook: (_name: string, ...args: unknown[]) => {
+        for (const handler of handlers) handler(...args)
+      },
+    }
+
+    plugin.setup(nuxtApp)
+    emitNardukException(nuxtApp as never, report())
+
+    expect(transport.captureException).toHaveBeenCalledTimes(1)
+    expect(raw.captureException).not.toHaveBeenCalled()
+  })
+
   it('reports nothing while the client is still undefined', async () => {
     const { emitNardukException } =
       await import('@narduk-enterprises/narduk-core/shared/exception-report')
