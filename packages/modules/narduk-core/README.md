@@ -829,20 +829,46 @@ export default defineNuxtConfig({
   nardukCore: {
     htmlCache: {
       routes: ['/places/*', '/food', '/neighborhoods/**'], // path patterns
-      ttlSeconds: 600, // default
+      ttlSeconds: 600, // default; a long, release-tied value is fine (see below)
+      // queryKeys: ['page'], // query names that are part of the key (default none)
+      // requireIndexable: false, // only for an app without @nuxtjs/robots
     },
   },
 })
 ```
 
 - **Patterns:** an exact path, `*` for one segment, and a trailing `/**` for the
-  path and everything under it. A request with a query string always renders.
+  path and everything under it, matched against the normalized path.
+- **Key and query:** the path is normalized (dot segments resolved, unreserved
+  escapes decoded, the rest upper-cased), so `/a/../b`, `/b` and `/%62` share
+  one key (the key helper normalizes), but Nuxt renders the raw path, so only a
+  request whose path is already canonical is served or stored; an alias such as
+  `/a/../b` always renders. A request with a query string always renders unless
+  every parameter is in `queryKeys`; those are sorted into the key, so random
+  query strings never add keys.
+- **Opt-in per route and indexable only:** only the listed routes are cached,
+  and only when `event.context.robots.indexable === true` (set by
+  `@nuxtjs/robots` for a request it will index; `requireIndexable: false` skips
+  the gate for an app without that module). HTML with a robots `noindex` meta is
+  never stored.
+- **TTL:** `ttlSeconds` is any positive integer. Because the key carries
+  `app.buildId`, a deploy never serves the previous build's HTML, so a long TTL
+  tied to the release cadence is safe.
+- **The cache is inside the Worker** (`caches.default`, read and written by the
+  Worker, not the CDN in front: custom domains bypass the CDN for Worker
+  responses). The write is handed to `waitUntil`.
 - **Served and stored:** only GETs with no `Cookie` and no `Authorization`
   header. Only a `200` string render with no `Set-Cookie` and no `noindex`
   robots meta is stored; a request the robots module marks non-indexable
   (`event.context.robots.indexable !== true`) neither reads nor writes.
 - **Key:** `app.buildId` and the host, so a deploy never serves HTML that points
   at the previous build's chunks. Responses carry `x-html-cache: hit | miss`.
+- **Do not cache a route whose render varies on request headers.** One stored
+  render is served to everyone, so a page that reads `User-Agent`,
+  `Accept-Language`, geo (`cf-ipcountry`, `request.cf`), `Sec-CH-*` client hints
+  or `X-Forwarded-*` to build its HTML poisons the cache for the TTL: the first
+  visitor's variant is shown to all. List only routes that render the same for
+  every anonymous visitor.
 - **Absent** in Node (dev, tests) and wherever `caches.default` does not exist.
 
 **Nonce-CSP apps may opt in too** (D-HTML-CACHE-PUBLIC-1, Logan 2026-10-25,

@@ -352,6 +352,8 @@ describe('narduk-core databaseBackend declaration', () => {
       expect(nuxt.options.runtimeConfig.nardukHtmlCache).toBeUndefined()
       await setup({ htmlCache: { routes: ['/food'] } })
       expect(nuxt.options.runtimeConfig.nardukHtmlCache).toEqual({
+        queryKeys: [],
+        requireIndexable: true,
         routes: ['/food'],
         ttlSeconds: 600,
       })
