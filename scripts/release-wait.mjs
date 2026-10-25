@@ -91,6 +91,14 @@ export function mirrorMissing(targets, packuments) {
   )
 }
 
+// A superseded target will never mirror (a newer `latest` already shipped), so
+// it is not waited on, but it must not be reported as mirrored either.
+export function mirrorSuperseded(targets, packuments) {
+  return targets.filter(
+    (target) => versionState(packuments.get(target.name), target.version) === 'superseded',
+  )
+}
+
 // Null/unread pending must not be iterated. An empty list means no packuments
 // to fetch this poll; waitForRelease then sees every target still missing.
 export function mirrorPackumentTargets(pending) {
@@ -103,7 +111,8 @@ export function parseVerifiedShaFromLog(text) {
 
 // `gh run view --job` takes a numeric job id. A name 404s and must not be
 // cached as a verifiedSha miss: an in-progress verify-ci would poison the
-// later success. Cache null only for a terminal non-success conclusion.
+// later success. Cache null only for a terminal non-success conclusion; cache a
+// success only once its SHA parsed.
 export function resolveVerifiedSha({ runId, jobs, readJobLog, cache }) {
   if (cache.has(runId)) return cache.get(runId)
   const verify = (jobs || []).find((job) => job.name === 'verify-ci')
@@ -114,7 +123,8 @@ export function resolveVerifiedSha({ runId, jobs, readJobLog, cache }) {
   }
   if (!Number.isSafeInteger(verify.id)) return null
   const sha = parseVerifiedShaFromLog(readJobLog(verify.id))
-  cache.set(runId, sha ?? null)
+  // An unreadable log (a failed `gh` call reads as '') must not be remembered.
+  if (sha) cache.set(runId, sha)
   return sha
 }
 
@@ -188,7 +198,9 @@ export async function waitForRelease({
 
     const targets = await readTargets()
     if (!Array.isArray(targets)) {
-      log('waiting for changeset-release/main to refresh')
+      log(
+        `could not read ${mergeSha} or its first parent in this clone (fetch more history); no publish plan yet`,
+      )
       await sleep(intervalMs)
       continue
     }
@@ -204,14 +216,27 @@ export async function waitForRelease({
       continue
     }
 
-    const missing = mirrorMissing(targets, await readMirror(targets))
+    let packuments
+    try {
+      packuments = await readMirror(targets)
+    } catch (error) {
+      // A mirror blip must not end a wait that can still succeed.
+      log(`npm.nard.uk read failed, retrying: ${error.message}`)
+      await sleep(intervalMs)
+      continue
+    }
+    const missing = mirrorMissing(targets, packuments)
     if (missing.length > 0) {
       log(`waiting for npm.nard.uk ${missing.map(publishTag).join(', ')}`)
       await sleep(intervalMs)
       continue
     }
 
-    return { releaseRunId, versions }
+    return {
+      releaseRunId,
+      versions,
+      superseded: mirrorSuperseded(targets, packuments).map(publishTag),
+    }
   }
 }
 
@@ -441,8 +466,11 @@ async function main() {
     ...io,
     log: (line) => console.log(line),
   })
+  if (result.superseded?.length) {
+    console.log(`Superseded by a newer latest, not mirrored: ${result.superseded.join(', ')}`)
+  }
   console.log(
-    `Release run ${result.releaseRunId} for ${mergeSha} is mirrored: ${
+    `Release run ${result.releaseRunId} for ${mergeSha} is done: ${
       result.versions.join(', ') || '(no publishable bump)'
     }`,
   )

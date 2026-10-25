@@ -222,6 +222,14 @@ function normalizeRequirement(
     return null
   }
 
+  // A catalog secret is stored as a secret, whatever the contract declares.
+  if (
+    getCatalogEntry(key)?.secret &&
+    (sensitivity !== 'secret' || cloudflarePlanes?.some((plane) => plane.endsWith('var')))
+  ) {
+    return null
+  }
+
   if (canonicalProvider === 'github' && !githubScope) {
     return null
   }

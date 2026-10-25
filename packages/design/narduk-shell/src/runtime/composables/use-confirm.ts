@@ -151,7 +151,7 @@ export function useConfirm() {
       onConfirm: async () => {
         // A listener left over from a superseded call. The dialog on screen
         // belongs to someone else now, so neither close nor patch it.
-        if (call.settled || active !== call) return
+        if (call.settled || active !== call || call.running) return
 
         if (!onConfirm) {
           dialog.close(true)

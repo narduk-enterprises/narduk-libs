@@ -309,7 +309,7 @@ export function createContextApi(page: Page, base: string, mode: Mode): WebJourn
     base,
     async must(name, opts = {}) {
       const role = (opts.role ?? 'button') as Parameters<Page['getByRole']>[0]
-      const locator = page.getByRole(role, { name }).nth(opts.nth ?? 0)
+      const locator = roleLocator(page, role, name).nth(opts.nth ?? 0)
       await locator.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {})
       if ((await locator.count()) === 0) {
         throw new Error(await describeMissingControl(page, String(role), name))
@@ -530,7 +530,7 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
     parallelIndex: info.parallelIndex,
   })
   const startedAt = new Date()
-  const attemptId = makeRunId(commit, startedAt)
+  const attemptId = makeRunId(commit, startedAt, scenarioId)
   const paths = runPaths({
     outRoot: options.outRoot,
     environment: options.environment,

@@ -7,10 +7,16 @@ import { verifyUserPassword } from '#layer/server/utils/password'
 import { clearLayerUserSession } from '#layer/server/utils/user-session'
 import { users } from '#narduk-core/schema'
 
-import { verifySupabaseAccountDeletionCredentials } from '../lib/app-auth/profile'
+import {
+  assertRecentSupabaseSignIn,
+  verifySupabaseAccountDeletionCredentials,
+} from '../lib/app-auth/profile'
 import { getAuthConfig } from '../lib/app-auth/supabase-client'
 
+import { resolveAuthEnvironmentForEvent } from './auth-runtime-env'
+
 import type { AuthUser } from '#layer/server/utils/auth'
+import type { AppSessionUser } from '../lib/app-auth/types'
 import type { H3Event } from 'h3'
 
 export interface DeleteAccountBridgeInput {
@@ -81,7 +87,12 @@ function usesSupabaseCredentials(event: H3Event, user: AuthUser): boolean {
   if (sessionBackend === 'supabase' || sessionBackend === 'local') {
     return sessionBackend === 'supabase'
   }
-  return getAuthConfig(event).backend === 'supabase'
+  // Either the build-frozen config or the running Worker saying Supabase is
+  // enough: the frozen value alone can say `local` on a Supabase Worker.
+  return (
+    getAuthConfig(event).backend === 'supabase' ||
+    resolveAuthEnvironmentForEvent(event).authBackend === 'supabase'
+  )
 }
 
 export async function deleteCurrentUserAccountBridge(
@@ -123,6 +134,10 @@ export async function deleteCurrentUserAccountBridge(
         statusMessage: 'Invalid current password.',
       })
     }
+  } else {
+    // No password to prove (local Sign in with Apple, magic link): the session
+    // must have signed in recently, as a social-only Supabase account must.
+    await assertRecentSupabaseSignIn(event, user as AppSessionUser)
   }
 
   if (hooks?.beforeDelete) {

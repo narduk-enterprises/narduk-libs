@@ -144,6 +144,8 @@ function nonEmptyString(value: unknown): string | undefined {
  */
 export function isRateLimitExemptPath(path: string, exemptPaths: readonly string[]): boolean {
   const withoutQuery = path.split('?')[0] ?? path
+  // A dot segment can resolve outside the exempt prefix (`/sitemap/../api/admin`).
+  if (withoutQuery.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) return false
   const normalized =
     withoutQuery.length > 1 && withoutQuery.endsWith('/') ? withoutQuery.slice(0, -1) : withoutQuery
 

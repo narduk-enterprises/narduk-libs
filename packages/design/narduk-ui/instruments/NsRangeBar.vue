@@ -73,7 +73,8 @@ const description = computed(() => {
 
 <template>
   <div v-bind="$attrs" class="ns-range" :class="{ 'ns-range--missing': !present }">
-    <span v-if="label" class="ns-range__label">{{ label }}</span>
+    <!-- Always rendered: an absent label must not shift the track into column 1. -->
+    <span class="ns-range__label">{{ label }}</span>
 
     <div class="ns-range__track" role="img" :aria-label="description">
       <span
@@ -93,9 +94,9 @@ const description = computed(() => {
     </div>
 
     <span class="ns-range__value">{{ readout }}</span>
-  </div>
 
-  <p v-if="!present && missingReason" class="ns-range__reason">{{ missingReason }}</p>
+    <p v-if="!present && missingReason" class="ns-range__reason">{{ missingReason }}</p>
+  </div>
 </template>
 
 <style scoped>
@@ -188,6 +189,7 @@ const description = computed(() => {
 }
 
 .ns-range__reason {
+  grid-column: 1 / -1;
   margin: 4px 0 0;
   font-family: var(--ns-font-mono);
   font-size: 10.5px;

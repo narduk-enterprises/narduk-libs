@@ -1,6 +1,7 @@
-import { bigint, boolean, index, integer, pgTable, text } from 'drizzle-orm/pg-core'
+import { bigint, boolean, index, integer, text } from 'drizzle-orm/pg-core'
 
 import { users } from '#layer/server/database/pg-schema'
+import { nardukPgTable } from '#layer/server/database/pg-table'
 
 /**
  * PostgreSQL mirror of `auth-bridge-schema.ts` for Hyperdrive + `postgres.js`.
@@ -16,7 +17,7 @@ import { users } from '#layer/server/database/pg-schema'
  */
 const epochSeconds = (name: string) => bigint(name, { mode: 'number' })
 
-export const authUserLinks = pgTable('auth_user_links', {
+export const authUserLinks = nardukPgTable('auth_user_links', {
   localUserId: text('local_user_id')
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
@@ -33,7 +34,7 @@ export const authUserLinks = pgTable('auth_user_links', {
     .$defaultFn(() => new Date().toISOString()),
 })
 
-export const authSessions = pgTable(
+export const authSessions = nardukPgTable(
   'auth_sessions',
   {
     id: text('id').primaryKey(),
@@ -64,7 +65,7 @@ export const authSessions = pgTable(
 )
 
 /** Digest-only, single-use setup, reset and sign-in links for the local-email flow. */
-export const authEmailLinks = pgTable(
+export const authEmailLinks = nardukPgTable(
   'auth_email_links',
   {
     id: text('id').primaryKey(),
@@ -85,7 +86,7 @@ export const authEmailLinks = pgTable(
 )
 
 /** Persistent, hashed identity-plus-IP counters for local email credentials. */
-export const authLocalEmailAttempts = pgTable(
+export const authLocalEmailAttempts = nardukPgTable(
   'auth_local_email_attempts',
   {
     keyHash: text('key_hash').primaryKey(),
@@ -107,7 +108,7 @@ export const authLocalEmailAttempts = pgTable(
  * which user is signing in. `rpId` is stored so authentication can refuse a
  * credential minted under a different Relying Party ID.
  */
-export const authWebauthnCredentials = pgTable(
+export const authWebauthnCredentials = nardukPgTable(
   'auth_webauthn_credentials',
   {
     id: text('id').primaryKey(),
@@ -135,7 +136,7 @@ export const authWebauthnCredentials = pgTable(
 )
 
 /** Digest-only, single-use, TTL-bounded WebAuthn ceremony challenges. */
-export const authWebauthnChallenges = pgTable(
+export const authWebauthnChallenges = nardukPgTable(
   'auth_webauthn_challenges',
   {
     challengeHash: text('challenge_hash').primaryKey(),

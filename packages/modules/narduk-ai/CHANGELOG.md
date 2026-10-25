@@ -1,5 +1,64 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.4.50
+
+### Patch Changes
+
+- @narduk-enterprises/narduk-core@2.37.5
+
+## 0.4.49
+
+### Patch Changes
+
+- Updated dependencies [d18d969]
+  - @narduk-enterprises/narduk-core@2.37.4
+
+## 0.4.48
+
+### Patch Changes
+
+- Updated dependencies
+  - @narduk-enterprises/narduk-platform@2.4.2
+  - @narduk-enterprises/narduk-core@2.37.3
+
+## 0.4.47
+
+### Patch Changes
+
+- c211173: `grokChat` and `grokChatStream` give up on a silent provider after 30
+  seconds, an SSE error frame now fails the stream instead of ending it empty,
+  and saving a system prompt that does not exist answers 404 instead of success.
+- Updated dependencies [873c869]
+- Updated dependencies [cbb7b84]
+- Updated dependencies [82f5b78]
+- Updated dependencies [82f5b78]
+  - @narduk-enterprises/narduk-core@2.37.2
+  - @narduk-enterprises/narduk-platform@2.4.1
+
+## 0.4.46
+
+### Patch Changes
+
+- fe63fd8: Widen the `@nuxt/ui` peer dependency from exactly `4.11.1` to
+  `>=4.11.1 <5`, matching narduk-core and narduk-auth, so apps on Nuxt UI 4.12
+  can install these packages (narduk-libs#1981).
+- Updated dependencies [fe63fd8]
+  - @narduk-enterprises/narduk-core@2.37.1
+
+## 0.4.45
+
+### Patch Changes
+
+- Updated dependencies [b67ae79]
+  - @narduk-enterprises/narduk-core@2.37.0
+
+## 0.4.44
+
+### Patch Changes
+
+- Updated dependencies [e3345c2]
+  - @narduk-enterprises/narduk-core@2.36.0
+
 ## 0.4.43
 
 ### Patch Changes

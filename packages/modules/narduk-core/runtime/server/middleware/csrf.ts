@@ -16,6 +16,10 @@
  * automatically. If you still see 403s, ensure you're using one of these
  * wrappers instead of raw `$fetch` for mutations.
  *
+ * Skipped entirely when the app turned it off (`nardukCore.csrf.enabled:
+ * false`, runtime key `nardukCsrf.enabled`) — for an app adopting the layer
+ * mid-life whose clients do not send the header (narduk-libs#1940).
+ *
  * Skipped for:
  * - Non-mutating methods (GET, HEAD, OPTIONS)
  * - Webhook/external callback routes (`/api/webhooks/`, `/api/cron/`)
@@ -32,6 +36,7 @@ import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { isCsrfExemptPath, resolveCsrfExemptPaths } from '../../shared/csrf-exempt-paths'
 import { DEFAULT_REPORT_ROUTE } from '../../shared/security-headers'
+import { getApiKeyFromAuthorization } from '../utils/authApiKeyText'
 import { useLogger } from '../utils/logger'
 
 /**
@@ -58,6 +63,10 @@ export default defineEventHandler((event) => {
   // Only protect state-changing methods
   if (['GET', 'HEAD', 'OPTIONS'].includes(method)) return
 
+  const config = useRuntimeConfig(event)
+  // An explicit `false` only: a missing or malformed value keeps protection on.
+  if ((config as { nardukCsrf?: { enabled?: unknown } }).nardukCsrf?.enabled === false) return
+
   // Skip CSRF for routes that receive external POSTs (webhooks, cron, callbacks)
   // and for opt-in Nuxt Content query APIs (SSR has no browser header).
   const path = event.path
@@ -67,7 +76,7 @@ export default defineEventHandler((event) => {
     path.startsWith('/api/callbacks/') ||
     path.startsWith('/api/_auth/') ||
     path.startsWith('/__nuxt_content/') ||
-    path === '/api/owner-tag'
+    path.split('?')[0] === '/api/owner-tag'
   ) {
     return
   }
@@ -75,15 +84,14 @@ export default defineEventHandler((event) => {
   // The CSP report sink and the app's declared device routes share one matcher,
   // so the report route tolerates the same trailing-slash and query spellings
   // the router dispatches to it (narduk-libs#415) and nothing wider.
-  const config = useRuntimeConfig(event)
   const reportRoute = configuredCspReportRoute(config)
   if (reportRoute && isCsrfExemptPath(path, [reportRoute])) return
   const declared = (config as { nardukCsrf?: { exemptPaths?: unknown } }).nardukCsrf?.exemptPaths
   if (isCsrfExemptPath(path, resolveCsrfExemptPaths(declared))) return
 
-  // Skip CSRF for API key bearer auth — not browser-based, not CSRF-vulnerable
-  const authHeader = getHeader(event, 'authorization')
-  if (authHeader?.startsWith('Bearer nk_')) return
+  // Skip CSRF for API key bearer auth — not browser-based, not CSRF-vulnerable.
+  // The key parser decides, so the skip matches every spelling auth accepts.
+  if (getApiKeyFromAuthorization(event)) return
 
   const xRequestedWith = getHeader(event, 'x-requested-with')
 

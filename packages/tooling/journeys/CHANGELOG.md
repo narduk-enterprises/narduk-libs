@@ -1,5 +1,22 @@
 # @narduk-enterprises/journeys
 
+## 0.4.6
+
+### Patch Changes
+
+- 1428ddf: Journeys verify refuses shot/video paths outside the attempt
+  directory, a promote run id that is not the attempt directory name, fused step
+  ids and all-skipped scenarios, digests no longer collide on `;+`, `must()`
+  matches names exactly, and typed text stays one argv element. eslint-config's
+  CSRF and Worker-runtime rules no longer go quiet on a read-method fall-through
+  route, a `logCsrf*` callee, or a served `fixtures/` or `.test.` route.
+  narduk-testkit's fake D1 counts CTE-led writes and rejects multi-statement
+  `prepare()`.
+- c211173: An Apple landing now matches whole tokens (and only string values of
+  a JSON hierarchy), an `unchanged` landing fails when the screen changed, and
+  attempt directories carry milliseconds and the scenario id so two scenarios
+  started in one second no longer overwrite each other.
+
 ## 0.4.5
 
 ### Patch Changes

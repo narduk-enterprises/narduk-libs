@@ -1,0 +1,40 @@
+{
+  "description": "Names in ALLOWLISTED_PACKAGE_NAMES of narduk-enterprises/package-delivery src/registry-contract.ts (the npm.nard.uk mirror). Add a name here only after package-delivery has merged it; check-npm-mirror-allowlist.mjs --upstream proves the two are equal.",
+  "syncedFrom": {
+    "repository": "narduk-enterprises/package-delivery",
+    "path": "src/registry-contract.ts",
+    "commit": "0cb482faf31463ff90df4e8ea236494a1a818752"
+  },
+  "scope": "@narduk-enterprises",
+  "packages": [
+    "create-narduk-app",
+    "eslint-config",
+    "geogrid-web",
+    "journeys",
+    "narduk-ai",
+    "narduk-analytics",
+    "narduk-app",
+    "narduk-app-tools",
+    "narduk-auth",
+    "narduk-charts",
+    "narduk-core",
+    "narduk-devices",
+    "narduk-logging",
+    "narduk-mapkit",
+    "narduk-mapkit-nuxt",
+    "narduk-maps",
+    "narduk-notify",
+    "narduk-platform",
+    "narduk-postgres",
+    "narduk-realtime",
+    "narduk-seo",
+    "narduk-shell",
+    "narduk-tenancy",
+    "narduk-testkit",
+    "narduk-timeseries",
+    "narduk-ui",
+    "narduk-uploads",
+    "status-runtime",
+    "stylelint-config"
+  ]
+}

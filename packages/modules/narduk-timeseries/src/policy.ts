@@ -17,6 +17,9 @@
  *    windows and within every tier. Keeping 1-minute rows for a year and
  *    hourly rows for a month deletes the summary while retaining the detail it
  *    summarizes, which is the opposite of a ladder.
+ *  - **Raw is swept by a window or not at all.** `globalRawWindowMs` is a
+ *    window or the literal `'never'` (the lossless mode, mybo-at-v2 D-140).
+ *    Under `'never'` a tier's raw read depth has no global ceiling to exceed.
  *  - **Every window must be a positive, finite number of milliseconds.** A
  *    zero or a NaN that reaches a `DELETE ... WHERE ts < now() - $1` deletes
  *    everything or nothing, and neither failure announces itself.
@@ -38,6 +41,8 @@ export const DEFAULT_MAX_VESSELS_PER_STATEMENT = 1000
 export interface ValidatedRetentionPolicy extends RetentionPolicyInput {
   maxVesselsPerStatement: number
   now: Date
+  /** True for `globalRawWindowMs: 'never'`: the plan sweeps no raw. */
+  rawNeverSwept: boolean
   /** Rollup levels with no global window: retained indefinitely, never swept. */
   unsweptRollupLevels: RollupBucket[]
 }
@@ -72,7 +77,12 @@ function assertLadder(label: string, windows: Partial<Record<RollupBucket, numbe
 }
 
 export function validateRetentionPolicy(policy: RetentionPolicyInput): ValidatedRetentionPolicy {
-  const globalRawWindowMs = assertWindow('globalRawWindowMs', policy.globalRawWindowMs)
+  // `'never'` is the lossless mode: no raw sweep at all. Anything else must be
+  // a real window -- a typo'd string is refused, never read as "keep forever".
+  const rawNeverSwept = policy.globalRawWindowMs === 'never'
+  const globalRawWindowMs = rawNeverSwept
+    ? Number.POSITIVE_INFINITY
+    : assertWindow('globalRawWindowMs', policy.globalRawWindowMs)
 
   const globalRollupWindowMs = policy.globalRollupWindowMs ?? {}
   assertLadder('globalRollupWindowMs', globalRollupWindowMs)
@@ -89,6 +99,7 @@ export function validateRetentionPolicy(policy: RetentionPolicyInput): Validated
     )
   }
 
+  const trackTierOf = new Map<string, string>()
   for (const [tierName, tier] of Object.entries(policy.tiers)) {
     if (!Array.isArray(tier.vesselIds)) {
       throw new NardukTimeseriesError(
@@ -108,6 +119,21 @@ export function validateRetentionPolicy(policy: RetentionPolicyInput): Validated
           `Tier ${tierName} lists a vessel id that is not a non-empty, comma-free string.`,
           { tier: tierName },
         )
+      }
+      // Each track tier deletes its own vessels at its own cutoff, so a vessel
+      // on two of them is trimmed at the SHORTER window. `::uuid` reads
+      // upper- and lower-case as one id, so compare canonically.
+      if (tier.trackWindowMs !== undefined) {
+        const canonical = vesselId.trim().toLowerCase()
+        const first = trackTierOf.get(canonical)
+        if (first !== undefined && first !== tierName) {
+          throw new NardukTimeseriesError(
+            'RETENTION_POLICY_INVALID',
+            `A vessel is listed on two track tiers (${first} and ${tierName}); it would be trimmed at the shorter window.`,
+            { tier: tierName },
+          )
+        }
+        trackTierOf.set(canonical, tierName)
       }
     }
 
@@ -148,6 +174,7 @@ export function validateRetentionPolicy(policy: RetentionPolicyInput): Validated
     maxVesselsPerStatement,
     // A future `now` must not deepen deletes; a past `now` may only retract them.
     now: clampRetentionNow(policy.now),
+    rawNeverSwept,
     unsweptRollupLevels,
   }
 }

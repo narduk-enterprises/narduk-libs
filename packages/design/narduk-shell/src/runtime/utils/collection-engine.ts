@@ -91,7 +91,7 @@ function compare(a: Exclude<NeSortValue, null>, b: Exclude<NeSortValue, null>): 
   if (typeof a === 'number' && typeof b === 'number') return a - b
   if (typeof a === 'number') return -1
   if (typeof b === 'number') return 1
-  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+  return a.localeCompare(b, 'en-US', { numeric: true, sensitivity: 'base' })
 }
 
 /** `rows` in the order `sort` names, missing values last both ways. An unknown column or no sort keeps the order. */

@@ -20,7 +20,7 @@ const manifest = JSON.parse(
 const repoRoot = join(packageRoot, '..', '..', '..')
 const coreManifest = JSON.parse(
   readFileSync(join(repoRoot, 'packages', 'modules', 'narduk-core', 'package.json'), 'utf8'),
-) as { dependencies?: Record<string, string> }
+) as { devDependencies?: Record<string, string> }
 
 /**
  * The subpaths item 1 reserves, plus `./module` (narduk-libs#295). Adding one
@@ -68,6 +68,7 @@ describe('narduk-shell package shape', () => {
   it('declares the files allowlist the packed-file test enforces', () => {
     expect(manifest.files).toEqual([
       'src',
+      'docs',
       'theme.css',
       'bounce-guard.css',
       'README.md',
@@ -75,13 +76,22 @@ describe('narduk-shell package shape', () => {
     ])
   })
 
-  it('pins peers to nuxt 4, vue 3.5 and narduk-core exact @nuxt/ui version', () => {
-    const nuxtUiPin = coreManifest.dependencies?.['@nuxt/ui']
-    expect(nuxtUiPin, 'narduk-core must pin @nuxt/ui so this suite can match it').toMatch(
-      /^\d+\.\d+\.\d+$/,
-    )
+  it('ranges the @nuxt/ui peer from the version narduk-core is tested against to the next major', () => {
+    const nuxtUiPin = coreManifest.devDependencies?.['@nuxt/ui']
+    expect(
+      nuxtUiPin,
+      'narduk-core must carry the tested @nuxt/ui as a devDependency so this suite can match it',
+    ).toMatch(/^\d+\.\d+\.\d+$/)
+    const floor = /^>=(\d+\.\d+\.\d+) <5$/.exec(manifest.peerDependencies?.['@nuxt/ui'] ?? '')?.[1]
+    expect(floor, 'the @nuxt/ui peer must read ">=x.y.z <5"').toBeDefined()
+    const [fMajor, fMinor, fPatch] = (floor ?? '').split('.').map(Number)
+    const [pMajor, pMinor, pPatch] = (nuxtUiPin ?? '').split('.').map(Number)
+    expect(
+      fMajor === pMajor && (fMinor < pMinor || (fMinor === pMinor && fPatch <= pPatch)),
+      `peer floor ${floor} must not exceed core's tested ${nuxtUiPin}`,
+    ).toBe(true)
     expect(manifest.peerDependencies).toEqual({
-      '@nuxt/ui': nuxtUiPin,
+      '@nuxt/ui': manifest.peerDependencies?.['@nuxt/ui'],
       nuxt: '>=4.0.0',
       vue: '>=3.5.0',
       // `useCollection({ syncQuery: true })` calls `useRoute()`/`useRouter()`
@@ -94,6 +104,7 @@ describe('narduk-shell package shape', () => {
 
   it('ships every declared subpath target in the packed file list', () => {
     const files = new Set(packedFiles())
+    expect(files).toContain('docs/hall-of-fame.md')
 
     for (const subpath of RESERVED_SUBPATHS) {
       const targets = exportTargets(manifest.exports[subpath])
@@ -121,7 +132,7 @@ describe('narduk-shell package shape', () => {
     ])
     for (const file of files) {
       expect(
-        allowed.has(file) || file.startsWith('src/'),
+        allowed.has(file) || file.startsWith('src/') || file.startsWith('docs/'),
         `${file} is packed but is outside the files allowlist`,
       ).toBe(true)
     }

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import csrf from '../runtime/server/middleware/csrf'
 import { DEFAULT_REPORT_ROUTE } from '../runtime/shared/security-headers'
 
+const SETTINGS_ROUTE = '/api/settings'
 const CSP_REPORT_HEADERS = { 'content-type': 'application/csp-report' }
 
 const { runtime, logger } = vi.hoisted(() => {
@@ -19,7 +20,7 @@ const { runtime, logger } = vi.hoisted(() => {
         mode: 'report-only' as string,
         reportRoute: '/api/_security/csp-report' as string | false,
       },
-      nardukCsrf: { exemptPaths: [] as unknown },
+      nardukCsrf: { enabled: undefined as unknown, exemptPaths: [] as unknown },
     },
     logger,
   }
@@ -51,6 +52,7 @@ async function post(path: string, headers: Record<string, string> = {}): Promise
 afterEach(() => {
   runtime.nardukSecurityHeaders.mode = 'report-only'
   runtime.nardukSecurityHeaders.reportRoute = DEFAULT_REPORT_ROUTE
+  runtime.nardukCsrf.enabled = undefined
   runtime.nardukCsrf.exemptPaths = []
   logger.warn.mockClear()
 })
@@ -63,7 +65,7 @@ describe('csrf middleware — CSP report exemption', () => {
   })
 
   it('still rejects an unrelated POST that is missing X-Requested-With', async () => {
-    const response = await post('/api/settings', {
+    const response = await post(SETTINGS_ROUTE, {
       'content-type': 'application/json',
     })
     expect(response.status).toBe(403)
@@ -127,7 +129,7 @@ describe('csrf middleware — app-declared exemptions (narduk-libs#239)', () => 
 
   it('ignores an over-broad entry supplied at runtime', async () => {
     runtime.nardukCsrf.exemptPaths = ['/api/*', '/']
-    const response = await post('/api/settings', { 'content-type': 'application/json' })
+    const response = await post(SETTINGS_ROUTE, { 'content-type': 'application/json' })
     expect(response.status).toBe(403)
   })
 
@@ -135,5 +137,43 @@ describe('csrf middleware — app-declared exemptions (narduk-libs#239)', () => 
     runtime.nardukCsrf.exemptPaths = undefined
     const response = await post('/api/edge/v1/claim/start')
     expect(response.status).toBe(403)
+  })
+})
+
+describe('csrf middleware — disable switch (narduk-libs#1940)', () => {
+  const mutation = { 'content-type': 'application/json' }
+
+  it('protects by default: no enabled key, and the build default of true', async () => {
+    runtime.nardukCsrf.enabled = undefined
+    expect((await post(SETTINGS_ROUTE, mutation)).status).toBe(403)
+    runtime.nardukCsrf.enabled = true
+    expect((await post(SETTINGS_ROUTE, mutation)).status).toBe(403)
+  })
+
+  it('lets a mutation through without X-Requested-With when enabled is false', async () => {
+    runtime.nardukCsrf.enabled = false
+    const response = await post(SETTINGS_ROUTE, mutation)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('ok')
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it.each(['false', 0, null, 'off'])(
+    'only an explicit boolean false disables it: %j keeps protection on',
+    async (value) => {
+      runtime.nardukCsrf.enabled = value
+      expect((await post(SETTINGS_ROUTE, mutation)).status).toBe(403)
+    },
+  )
+})
+
+describe('csrf middleware — API key bearer spellings (ponytail-5)', () => {
+  // The same header the API-key parser accepts: any-case scheme, any whitespace.
+  it.each(['Bearer nk_abc', 'bearer nk_abc', 'Bearer  nk_abc'])('skips %j', async (value) => {
+    expect((await post(SETTINGS_ROUTE, { authorization: value })).status).toBe(200)
+  })
+
+  it.each(['Bearer abc', 'Basic nk_abc'])('still protects %j', async (value) => {
+    expect((await post(SETTINGS_ROUTE, { authorization: value })).status).toBe(403)
   })
 })

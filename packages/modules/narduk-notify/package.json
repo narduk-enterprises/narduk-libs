@@ -1,0 +1,71 @@
+{
+  "name": "@narduk-enterprises/narduk-notify",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Notification delivery for Narduk products: APNs token auth (alert and Live Activity pushes), email through Resend, per-user preferences and a delivery audit log on D1.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/narduk-notify"
+  },
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/modules/narduk-notify#readme",
+  "bugs": {
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    },
+    "./migrations/*": "./migrations/*"
+  },
+  "files": [
+    "dist/",
+    "migrations/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "prebuild": "node scripts/clean-dist.mjs",
+    "build": "tsc --project tsconfig.build.json",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "lint": "narduk-lint",
+    "lint:strict": "eslint src tests --max-warnings 0",
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "check:package": "pnpm run build && publint --strict && pnpm pack --dry-run",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
+    "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
+    "format": "pnpm run prettier:fix",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "workspace:*",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "eslint": "^10.8.0",
+    "miniflare": "4.20260701.0",
+    "prettier": "^3.8.3",
+    "typescript": "~6.0.3",
+    "vitest": "4.1.11"
+  },
+  "volta": {
+    "node": "24.21.0"
+  }
+}

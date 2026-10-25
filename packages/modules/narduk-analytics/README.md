@@ -5,12 +5,12 @@ Nuxt **module** for Narduk Cloudflare apps. It ships client-side analytics
 loading, an owner-traffic tagging flow, admin dashboards for GA/GSC/PostHog,
 Google Indexing API helpers, and IndexNow key verification/submission.
 
-## Peer: `@nuxt/ui` at `4.11.1`
+## Peer: `@nuxt/ui` `>=4.11.1 <5`
 
 The admin components this package ships (the GA, GSC and PostHog dashboards)
-render Nuxt UI, so `@nuxt/ui` is a peer at exactly `4.11.1`, the version
-narduk-core and narduk-shell pin (narduk-libs#1033). An app on narduk-core
-already installs it.
+render Nuxt UI, so `@nuxt/ui` is a peer at `>=4.11.1 <5`, the range narduk-core
+and narduk-shell accept (narduk-libs#1033, #1981). An app on narduk-core already
+installs it.
 
 ## Requires `@narduk-enterprises/narduk-core`
 

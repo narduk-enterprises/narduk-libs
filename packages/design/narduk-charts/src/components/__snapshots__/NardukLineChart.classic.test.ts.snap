@@ -5,7 +5,7 @@ exports[`NardukLineChart classic output > dark and linear segments 1`] = `
   <div class="narduk-chart narduk-chart--dark" style="width: 560px;" role="group" aria-label="Line chart: This season, Last season, Sparse">
     <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
 <span id="nc-svgt-v-0" hidden="">Line chart: This season, Last season, Sparse</span>
-<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+<svg width="560" height="300" class="narduk-line-chart__svg" style="touch-action: pan-y;" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
       <defs>
         <clipPath id="nc-clip-v-0">
           <rect x="0" y="24" width="560" height="228"></rect>
@@ -74,7 +74,7 @@ exports[`NardukLineChart classic output > dark and linear segments 1`] = `
       </g>
     </svg>
     <fieldset class="narduk-legend narduk-legend__fieldset" aria-labelledby="narduk-legend-v-1">
-      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Sparse</span></button>
+      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-1, oklch(56% 0.17 268)); border-color: var(--color-chart-series-1, oklch(56% 0.17 268));"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-2, oklch(62% 0.13 176)); border-color: var(--color-chart-series-2, oklch(62% 0.13 176));"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-3, oklch(74% 0.13 82)); border-color: var(--color-chart-series-3, oklch(74% 0.13 82));"></span><span class="narduk-legend__label">Sparse</span></button>
     </fieldset>
     <div class="narduk-tooltip" style="left: 0px; top: 0px; transform: translate(12px, -50%); opacity: 0;" role="tooltip" aria-hidden="true">
       <div>
@@ -90,7 +90,7 @@ exports[`NardukLineChart classic output > plain multi-series chart 1`] = `
   <div class="narduk-chart" style="width: 560px;" role="group" aria-labelledby="nc-cap-v-0">
     <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
 <span id="nc-svgt-v-0" hidden="">Plain</span>
-<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+<svg width="560" height="300" class="narduk-line-chart__svg" style="touch-action: pan-y;" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
       <defs>
         <clipPath id="nc-clip-v-0">
           <rect x="0" y="24" width="560" height="228"></rect>
@@ -123,7 +123,7 @@ exports[`NardukLineChart classic output > plain multi-series chart 1`] = `
       </g>
     </svg>
     <fieldset class="narduk-legend narduk-legend__fieldset" aria-labelledby="narduk-legend-v-1">
-      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Sparse</span></button>
+      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-1, oklch(56% 0.17 268)); border-color: var(--color-chart-series-1, oklch(56% 0.17 268));"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-2, oklch(62% 0.13 176)); border-color: var(--color-chart-series-2, oklch(62% 0.13 176));"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-3, oklch(74% 0.13 82)); border-color: var(--color-chart-series-3, oklch(74% 0.13 82));"></span><span class="narduk-legend__label">Sparse</span></button>
     </fieldset>
     <div class="narduk-tooltip" style="left: 0px; top: 0px; transform: translate(12px, -50%); opacity: 0;" role="tooltip" aria-hidden="true">
       <div>
@@ -138,7 +138,7 @@ exports[`NardukLineChart classic output > with y bands, a band between series, a
   <div class="narduk-chart" style="width: 560px;" role="group" aria-label="Line chart: This season, Last season, Sparse">
     <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
 <span id="nc-svgt-v-0" hidden="">Line chart: This season, Last season, Sparse</span>
-<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+<svg width="560" height="300" class="narduk-line-chart__svg" style="touch-action: pan-y;" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
       <defs>
         <clipPath id="nc-clip-v-0">
           <rect x="0" y="24" width="560" height="228"></rect>
@@ -187,7 +187,7 @@ exports[`NardukLineChart classic output > with y bands, a band between series, a
       </g>
     </svg>
     <fieldset class="narduk-legend narduk-legend__fieldset" aria-labelledby="narduk-legend-v-1">
-      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Sparse</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series 80% band"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">80% band</span></button>
+      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-1, oklch(56% 0.17 268)); border-color: var(--color-chart-series-1, oklch(56% 0.17 268));"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-2, oklch(62% 0.13 176)); border-color: var(--color-chart-series-2, oklch(62% 0.13 176));"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-series-3, oklch(74% 0.13 82)); border-color: var(--color-chart-series-3, oklch(74% 0.13 82));"></span><span class="narduk-legend__label">Sparse</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series 80% band"><span class="narduk-legend__dot" aria-hidden="true" style="background-color: var(--color-chart-accent, #6366f1); border-color: var(--color-chart-accent, #6366f1);"></span><span class="narduk-legend__label">80% band</span></button>
     </fieldset>
     <div class="narduk-tooltip" style="left: 0px; top: 0px; transform: translate(12px, -50%); opacity: 0;" role="tooltip" aria-hidden="true">
       <div>

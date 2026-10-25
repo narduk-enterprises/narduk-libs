@@ -1,4 +1,4 @@
-import type { CoastlineStencilDescriptor } from '../core/decode/temporal.js'
+import { assertValidBBox, type CoastlineStencilDescriptor } from '../core/decode/temporal.js'
 import type { GridBBox } from '../core/models.js'
 
 export interface LoadedCoastlineStencil {
@@ -15,6 +15,7 @@ export async function loadCoastlineStencil(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<LoadedCoastlineStencil> {
+  assertValidBBox(descriptor.bbox, 'Coastline stencil')
   const url = new URL(descriptor.url, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString()
   const response = await fetchImpl(url)
   if (!response.ok) throw new Error(`Coastline stencil request failed with ${response.status}`)

@@ -4,9 +4,11 @@
  * Column names match the SQLite schema so migrations and queries stay aligned.
  * Build Workers with `NUXT_DATABASE_BACKEND=postgres` so `#narduk-core/schema` resolves here.
  */
-import { bigint, boolean, index, pgTable, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { bigint, boolean, index, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
 
-export const users = pgTable('users', {
+import { nardukPgTable } from './pg-table'
+
+export const users = nardukPgTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash'),
@@ -21,7 +23,7 @@ export const users = pgTable('users', {
     .$defaultFn(() => new Date().toISOString()),
 })
 
-export const sessions = pgTable(
+export const sessions = nardukPgTable(
   'sessions',
   {
     id: text('id').primaryKey(),
@@ -36,7 +38,7 @@ export const sessions = pgTable(
   (table) => [index('sessions_user_id_idx').on(table.userId)],
 )
 
-export const todos = pgTable('todos', {
+export const todos = nardukPgTable('todos', {
   id: serial('id').primaryKey(),
   userId: text('user_id')
     .notNull()
@@ -48,13 +50,13 @@ export const todos = pgTable('todos', {
     .$defaultFn(() => new Date().toISOString()),
 })
 
-export const kvCache = pgTable('kv_cache', {
+export const kvCache = nardukPgTable('kv_cache', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
   expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
 })
 
-export const apiKeys = pgTable(
+export const apiKeys = nardukPgTable(
   'api_keys',
   {
     id: text('id').primaryKey(),
@@ -78,7 +80,7 @@ export const apiKeys = pgTable(
   ],
 )
 
-export const notifications = pgTable(
+export const notifications = nardukPgTable(
   'notifications',
   {
     id: text('id').primaryKey(),
@@ -109,7 +111,7 @@ export const notifications = pgTable(
  * only extends `layer-core`. The AI layer preserves its own mirror for
  * backward compatibility with `#layer-ai/orm-tables`.
  */
-export const systemPrompts = pgTable('system_prompts', {
+export const systemPrompts = nardukPgTable('system_prompts', {
   name: text('name').primaryKey(),
   content: text('content').notNull(),
   description: text('description').notNull(),

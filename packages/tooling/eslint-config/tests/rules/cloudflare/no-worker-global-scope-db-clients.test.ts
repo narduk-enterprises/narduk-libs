@@ -44,7 +44,7 @@ ruleTester.run('no-worker-global-scope-db-clients', rule, {
     },
     {
       name: 'test file is not Worker runtime',
-      filename: 'server/api/things.test.ts',
+      filename: 'server/utils/things.test.ts',
       code: `import { Pool } from 'pg'
         export const pool = new Pool({ connectionString })`,
     },

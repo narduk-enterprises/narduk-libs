@@ -298,3 +298,12 @@ describe('upgrade dependabot registry', () => {
     expect(report.changes[0]?.diff).toBe('')
   })
 })
+
+describe('githubPackagesDependabot', () => {
+  it('carries the toolchain ceilings and the estate cooldown exclusion', () => {
+    const text = githubPackagesDependabot()
+    expect(text).toContain("dependency-name: 'typescript'")
+    expect(text).toContain("dependency-name: '@playwright/test'")
+    expect(text).toContain("      exclude:\n        - '@narduk-enterprises/*'")
+  })
+})

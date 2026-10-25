@@ -36,7 +36,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   TIMESCALE_MIGRATION_NAMES,
+  HISTORY_ROLE_PRIVILEGES,
   buildSeriesResolveStatement,
+  historyRoleAdditionGrantStatements,
   historyRoleGrantStatements,
   timescaleMigrationsUrl,
 } from '../src/timescale/index.js'
@@ -300,5 +302,230 @@ describe('0003_history_roles.sql', () => {
     for (const grant of readerGrants) {
       expect(grant).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/u)
     }
+  })
+})
+
+const executableOf = (sql: string): string[] =>
+  sql
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('--'))
+
+describe('0004_history_state.sql', () => {
+  const sql = read('0004_history_state.sql')
+
+  it('builds telemetry_state with the shape docs/19 § 5.1 gives it', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS telemetry_state')
+    expect(sql).toMatch(/value_text\s+TEXT,/u)
+    expect(sql).toMatch(/value_json\s+JSONB,/u)
+    expect(sql).toContain('UNIQUE (vessel_id, series_id, ts, installation_role)')
+    expect(sql).toMatch(
+      /create_hypertable\(\s*'telemetry_state',\s*by_range\('ts', INTERVAL '7 days'\)/u,
+    )
+    expect(sql).toMatch(
+      /CALL add_columnstore_policy\('telemetry_state',\s*after => INTERVAL '3 days'/u,
+    )
+    expect(sql).toContain("timescaledb.segmentby = 'vessel_id, series_id, installation_role'")
+  })
+
+  it('enforces exactly one value column', () => {
+    expect(sql).toContain('CHECK ((value_text IS NULL) <> (value_json IS NULL))')
+  })
+
+  it('runs inside a transaction and creates no rollup', () => {
+    expect(parseMigrationDirectives(sql).transactional).toBe(true)
+    expect(executableOf(sql).join('\n')).not.toMatch(/MATERIALIZED VIEW/u)
+  })
+})
+
+describe('0005_history_time_weighted.sql', () => {
+  const sql = read('0005_history_time_weighted.sql')
+
+  it('is a plain hypertable keyed by level, not a continuous aggregate', () => {
+    const executable = executableOf(sql).join('\n')
+    expect(executable).toContain('CREATE TABLE IF NOT EXISTS telemetry_numeric_tw')
+    expect(executable).not.toMatch(/timescaledb\.continuous/u)
+    expect(executable).toContain('UNIQUE (vessel_id, series_id, bucket_seconds, bucket)')
+    expect(executable).toContain('CHECK (bucket_seconds IN (60, 900, 3600, 86400))')
+    expect(executable).toMatch(/held_seconds\s+DOUBLE PRECISION NOT NULL/u)
+    expect(executable).toMatch(/weighted_sum\s+DOUBLE PRECISION NOT NULL/u)
+  })
+
+  it('schedules nothing: the refresh is opt-in', () => {
+    const executable = executableOf(sql).join('\n')
+    expect(executable).not.toMatch(
+      /add_job|add_continuous_aggregate_policy|add_columnstore_policy/u,
+    )
+    expect(parseMigrationDirectives(sql).transactional).toBe(true)
+  })
+})
+
+describe('0006_history_ais.sql', () => {
+  const sql = read('0006_history_ais.sql')
+  const executable = executableOf(sql).join('\n')
+
+  it('builds the three AIS tables docs/19 § 4.3 lists, and not ais_now', () => {
+    expect(executable).toContain('CREATE TABLE IF NOT EXISTS ais_contact')
+    expect(executable).toContain('CREATE TABLE IF NOT EXISTS ais_encounter (')
+    expect(executable).toContain('CREATE TABLE IF NOT EXISTS ais_encounter_open')
+    // ais_now is one D1 row per vessel in the product (docs/19 § 4.4).
+    expect(executable).not.toContain('ais_now')
+  })
+
+  it('keys encounters naturally so a journal replay lands on the same row', () => {
+    expect(executable).toContain('PRIMARY KEY (vessel_id, mmsi, start_ts)')
+    expect(executable).toContain('PRIMARY KEY (vessel_id, mmsi)')
+    expect(executable.match(/GEOGRAPHY\(LINESTRINGM, 4326\)/gu)).toHaveLength(2)
+    expect(executable).toMatch(/passage_id\s+TEXT/u)
+  })
+
+  it('creates no hypertable: AIS here is derived, low-volume rows', () => {
+    expect(executable).not.toMatch(/create_hypertable/u)
+    expect(parseMigrationDirectives(sql).transactional).toBe(true)
+  })
+})
+
+describe('0007_history_roles_additions.sql', () => {
+  const lines = executableOf(read('0007_history_roles_additions.sql'))
+
+  it('is exactly what the additions grant builder emits', () => {
+    expect(lines).toEqual(historyRoleAdditionGrantStatements())
+  })
+
+  it('leaves 0003 and its matrix untouched', () => {
+    expect(executableOf(read('0003_history_roles.sql'))).toEqual(historyRoleGrantStatements())
+    expect(HISTORY_ROLE_PRIVILEGES.ingest_writer.insert).toEqual([
+      'series',
+      'telemetry_numeric',
+      'track_points',
+    ])
+  })
+
+  it('lets the writer append state but never rewrite or erase it', () => {
+    const writer = lines.filter((line) => line.includes('"ingest_writer"'))
+    expect(writer).toContain('GRANT INSERT ON "public"."telemetry_state" TO "ingest_writer";')
+    for (const line of writer) {
+      if (line.includes('telemetry_state')) expect(line).toMatch(/^GRANT INSERT ON/u)
+      // DELETE only on the open-encounter working table, which holds no
+      // captured change.
+      if (/\bDELETE\b/u.test(line)) expect(line).toContain('"ais_encounter_open"')
+      expect(line).not.toContain('telemetry_numeric_tw')
+      expect(line).not.toMatch(/TRUNCATE/u)
+    }
+  })
+
+  it('gives the reader SELECT on every new table and nothing else', () => {
+    const reader = lines.filter((line) => line.includes('"history_reader"'))
+    for (const table of [
+      'telemetry_state',
+      'telemetry_numeric_tw',
+      'ais_contact',
+      'ais_encounter',
+      'ais_encounter_open',
+    ]) {
+      expect(reader).toContain(`GRANT SELECT ON "public"."${table}" TO "history_reader";`)
+    }
+    for (const line of reader) expect(line).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/u)
+  })
+
+  it('creates no role and sets no timeout', () => {
+    for (const line of lines) expect(line).toMatch(/^GRANT /u)
+  })
+})
+
+describe('0008_rollups_exclude_import_overlay.sql', () => {
+  // mybo-at-v2 D-152 (#280): rows tagged quality = 3 (import provenance) stay
+  // in raw and reach no rollup. A CAgg's query cannot be altered, so the
+  // ladder is dropped and recreated.
+  const sql = read('0008_rollups_exclude_import_overlay.sql')
+  const lines = executableOf(sql)
+  const statementsOf = (text: string): string[] =>
+    executableOf(text)
+      .join('\n')
+      .split(/;\n?/u)
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0)
+  const ladderOf = (text: string): string[] =>
+    statementsOf(text).filter((statement) =>
+      /^(?:CREATE MATERIALIZED VIEW|SELECT add_continuous_aggregate_policy)/u.test(statement),
+    )
+
+  it('declares itself non-transactional, because a CAgg cannot be created in one', () => {
+    expect(sql.startsWith(NO_TRANSACTION_DIRECTIVE)).toBe(true)
+    expect(parseMigrationDirectives(sql).transactional).toBe(false)
+  })
+
+  it('drops the ladder coarsest first, since each level reads the one below', () => {
+    expect(lines.filter((line) => line.startsWith('DROP'))).toEqual([
+      'DROP MATERIALIZED VIEW IF EXISTS telemetry_numeric_1d;',
+      'DROP MATERIALIZED VIEW IF EXISTS telemetry_numeric_1h;',
+      'DROP MATERIALIZED VIEW IF EXISTS telemetry_numeric_15m;',
+      'DROP MATERIALIZED VIEW IF EXISTS telemetry_numeric_1m;',
+    ])
+    const executable = lines.join('\n')
+    expect(executable.lastIndexOf('DROP MATERIALIZED VIEW')).toBeLessThan(
+      executable.indexOf('CREATE MATERIALIZED VIEW'),
+    )
+  })
+
+  it('filters the 1m level on the primary installation and quality <> 3', () => {
+    // quality is SMALLINT NOT NULL DEFAULT 0 (0001), so no NULL can slip
+    // through `<>`; 1 stale and 2 suspect stay counted.
+    expect(read('0001_history_core.sql')).toMatch(/quality\s+SMALLINT NOT NULL DEFAULT 0/u)
+    expect(sql).toMatch(/FROM telemetry_numeric\s+WHERE installation_role = 0 AND quality <> 3\s/u)
+    expect(
+      executableOf(sql)
+        .join('\n')
+        .match(/quality/gu),
+    ).toHaveLength(1)
+  })
+
+  it("recreates 0002's views and policies unchanged except the 1m filter", () => {
+    const before = ladderOf(read('0002_history_rollups.sql'))
+    const after = ladderOf(sql)
+    expect(after).toHaveLength(8)
+    expect(after).toEqual(
+      before.map((statement) =>
+        statement.replace(
+          'WHERE installation_role = 0\n',
+          'WHERE installation_role = 0 AND quality <> 3\n',
+        ),
+      ),
+    )
+    expect(after).not.toEqual(before)
+  })
+
+  it("re-issues 0003's SELECT grants on the four views, which the DROP lost", () => {
+    const viewGrants = historyRoleGrantStatements().filter((line) =>
+      /"telemetry_numeric_(?:1m|15m|1h|1d)"/u.test(line),
+    )
+    expect(viewGrants).toHaveLength(8)
+    expect(lines.filter((line) => line.startsWith('GRANT'))).toEqual(viewGrants)
+    // 0007 grants nothing on these views, so nothing else was lost.
+    expect(
+      historyRoleAdditionGrantStatements().filter((line) =>
+        /"telemetry_numeric_(?:1m|15m|1h|1d)"/u.test(line),
+      ),
+    ).toEqual([])
+  })
+
+  it('reaches the database one statement per round trip', async () => {
+    const set = await createMigrationSet([{ name: '0008_rollups_exclude_import_overlay.sql', sql }])
+    const database = createProtocolFake()
+      .respondTo(/to_regclass/u, [{ exists: false }])
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true }])
+      .respondTo(/pg_advisory_unlock/u, [{ unlocked: true }])
+    await applyMigrations(database, set)
+
+    const runnerOwn = /to_regclass|pg_try_advisory_lock|pg_advisory_unlock|schema_migrations/u
+    // The header comment travels with the first statement; compare code only.
+    const sent = database.texts
+      .filter((text) => !runnerOwn.test(text))
+      .map((text) => executableOf(text).join('\n'))
+    // Four drops, four views, four policies, eight grants.
+    expect(sent).toHaveLength(20)
+    expect(sent.filter((text) => text.startsWith('DROP MATERIALIZED VIEW'))).toHaveLength(4)
+    expect(sent.filter((text) => text.startsWith('CREATE MATERIALIZED VIEW'))).toHaveLength(4)
+    for (const statement of sent) expect(statement).not.toContain('BEGIN')
   })
 })

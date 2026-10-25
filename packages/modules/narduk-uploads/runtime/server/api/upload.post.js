@@ -3,7 +3,6 @@
  */
 import { uploadToR2 } from '@narduk-enterprises/narduk-uploads/runtime/server/utils/r2'
 import {
-  capIncomingMessageBytes,
   enforceUploadBodyByteCap,
   getUploadPerformanceWarnings,
   isAllowedUploadContentType,
@@ -11,6 +10,7 @@ import {
   MAX_UPLOAD_REQUEST_SIZE,
   normalizeExtension,
   normalizeUploadContentType,
+  parseMultipartBody,
   sniffUploadImageType,
   validateUploadFiles,
 } from '@narduk-enterprises/narduk-uploads/runtime/server/utils/upload'
@@ -54,10 +54,10 @@ function rejectOversizedUploadRequest(event, log) {
 }
 
 async function readBoundedFormData(event, log) {
-  capIncomingMessageBytes(event?.node?.req, MAX_UPLOAD_REQUEST_SIZE)
   try {
-    await enforceUploadBodyByteCap(event, MAX_UPLOAD_REQUEST_SIZE)
-    return await readMultipartFormData(event)
+    const body = await enforceUploadBodyByteCap(event, MAX_UPLOAD_REQUEST_SIZE)
+    const parts = body && parseMultipartBody(body, getHeader(event, 'content-type'))
+    return parts || (await readMultipartFormData(event))
   } catch (cause) {
     if (cause?.statusCode === 413) {
       throw refuse(log, 413, TOO_LARGE_MESSAGE, 'body_too_large')

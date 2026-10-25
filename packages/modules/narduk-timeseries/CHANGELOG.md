@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.7.0
+
+### Minor Changes
+
+- 82dca4b: Rollups no longer count import-overlay rows (`quality = 3`,
+  mybo-at-v2 D-152). New migration `0008_rollups_exclude_import_overlay.sql`
+  drops and recreates the 1m → 15m → 1h → 1d continuous-aggregate ladder with
+  the 1m filter `WHERE installation_role = 0 AND quality <> 3`, re-adds 0002's
+  refresh policies and re-issues 0003's SELECT grants on the views. The
+  time-weighted refresh's raw read excludes the same rows, and
+  `timeWeightedBuckets` skips a reading tagged `quality: IMPORT_OVERLAY_QUALITY`
+  (new export, 3). Quality 0, 1 (stale) and 2 (suspect) still count everywhere.
+
+  Applying 0008 empties the rollup views: the policies rebuild their 7-day
+  (30-day at 1d) windows, and older buckets need an `ops` refresh bottom-up with
+  `refreshRollupsStatements`. A deployment that sweeps raw loses rollup history
+  older than its raw window; see the README section "Import-overlay rows
+  (quality 3) live in raw only". `telemetry_numeric_tw` is untouched by 0008:
+  re-run `refreshTimeWeighted` over the tagged range to drop the overlay from
+  rows refreshed before the tag.
+
+## 0.6.0
+
+### Minor Changes
+
+- 8102ea2: Add four opt-in, additive capabilities for change-only telemetry
+  (mybo-at-v2 docs/19 § 10 L3). Migration `0004` adds `telemetry_state`, a
+  change-only hypertable for strings, bools and JSON values, with `writeState`,
+  `queryStateAt` and `queryStateTransitions`. Migration `0005` adds
+  `telemetry_numeric_tw`, time-weighted rollups at 1m, 15m, 1h and 1d. The
+  library fills it with `refreshTimeWeighted` / `planTimeWeightedRefresh`, reads
+  it with `queryTimeWeightedRollup`, and `timeWeightedBuckets` gives the same
+  arithmetic in memory. Migration `0006` adds the AIS tables `ais_contact`,
+  `ais_encounter` and `ais_encounter_open`, and `0007` grants on them. Retention
+  gains a lossless mode: `globalRawWindowMs: 'never'` plans no raw sweep.
+  Existing reads, writes, rollups and retention plans are unchanged. The new
+  store methods live on the new `TelemetryStateStore` and
+  `TimeWeightedRollupStore` interfaces, so existing `TelemetryHistoryStore`
+  implementations still compile.
+
+## 0.5.2
+
+### Patch Changes
+
+- c211173: In-flight series resolves are keyed by JSON instead of a joined
+  string, `bucketReadings` ends a bucket at the last instant that still has its
+  wall-clock key (Pacific/Chatham fall-back) and skips time strings with no
+  offset, and a retention policy refuses a vessel on two track tiers.
+- 873c869: A later non-null series unit now reaches the database instead of
+  being dropped by the cache or by same-batch deduplication.
+- Updated dependencies [0f8f69d]
+  - @narduk-enterprises/narduk-postgres@0.4.1
+
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [e3345c2]
+  - @narduk-enterprises/narduk-postgres@0.4.0
+
 ## 0.5.0
 
 ### Minor Changes

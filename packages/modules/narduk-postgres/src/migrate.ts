@@ -37,6 +37,25 @@ import { isTransactionalExecutor, type SqlExecutor } from './types.js'
 export const MIGRATIONS_TABLE = 'schema_migrations'
 export const MIGRATION_LOCK_NAMESPACE = 'narduk-postgres:migrations'
 export const MIGRATION_NAME_PATTERN = /^\d{4}_[a-z0-9]+(?:_[a-z0-9]+)*\.sql$/u
+/**
+ * Supabase-CLI style names: `20260205145854_remote_schema.sql`. Accepted only
+ * when the caller opts in with `allowTimestampNames`; the default stays
+ * `NNNN_name.sql` so an existing set cannot start accepting a stray file.
+ */
+export const TIMESTAMP_MIGRATION_NAME_PATTERN = /^\d{14}_[a-z0-9]+(?:_[a-z0-9]+)*\.sql$/u
+
+export interface MigrationNameOptions {
+  /** Also accept `YYYYMMDDHHMMSS_name.sql` (14 digits). Default `false`. */
+  allowTimestampNames?: boolean
+}
+
+/** Whether `name` is a valid migration file name under `options`. */
+export function isMigrationName(name: string, options: MigrationNameOptions = {}): boolean {
+  return (
+    MIGRATION_NAME_PATTERN.test(name) ||
+    (options.allowTimestampNames === true && TIMESTAMP_MIGRATION_NAME_PATTERN.test(name))
+  )
+}
 
 /**
  * A migration whose DDL cannot run inside a transaction says so on its first
@@ -86,6 +105,15 @@ export interface ApplyMigrationsOptions {
    * table name (and its own `lockNamespace`) instead.
    */
   table?: string
+  /**
+   * Apply the set into this schema (narduk-libs#1953). The schema is created if
+   * missing, the ledger table lives in it, and every file runs with
+   * `search_path` set to it alone, so an unqualified `CREATE TABLE api_keys`
+   * lands in `<schema>.api_keys` and never touches an app-owned
+   * `public.api_keys`. Omitted, nothing changes: files run on the connection's
+   * own `search_path` and the ledger is unqualified.
+   */
+  schema?: string
 }
 
 export interface ApplyMigrationsResult {
@@ -350,11 +378,34 @@ function assertMigrationsTable(table: string): string {
   return table
 }
 
-export async function createMigration(source: MigrationSource): Promise<Migration> {
-  if (!MIGRATION_NAME_PATTERN.test(source.name)) {
+/** A plain lower_snake_case schema name, not a catalog schema (`pg_*`). */
+function assertMigrationsSchema(schema: string): string {
+  if (!/^[a-z_][a-z0-9_]{0,62}$/u.test(schema) || schema.startsWith('pg_')) {
+    throw new NardukPostgresError(
+      'MIGRATION_SCHEMA_INVALID',
+      'A migrations schema must be a lower_snake_case name of at most 63 characters, not starting with "pg_", with no quoting.',
+      { schema },
+    )
+  }
+  return schema
+}
+
+/** The ledger as it is named in SQL: schema-qualified and quoted when a schema is set. */
+function ledgerName(table: string, schema: string | undefined): string {
+  const checked = assertMigrationsTable(table)
+  return schema === undefined ? checked : `"${assertMigrationsSchema(schema)}"."${checked}"`
+}
+
+export async function createMigration(
+  source: MigrationSource,
+  options: MigrationNameOptions = {},
+): Promise<Migration> {
+  if (!isMigrationName(source.name, options)) {
     throw new NardukPostgresError(
       'MIGRATION_NAME_INVALID',
-      'A migration file must be named NNNN_lower_snake_case.sql (for example 0001_history_core.sql).',
+      options.allowTimestampNames === true
+        ? 'A migration file must be named NNNN_lower_snake_case.sql (for example 0001_history_core.sql) or YYYYMMDDHHMMSS_lower_snake_case.sql.'
+        : 'A migration file must be named NNNN_lower_snake_case.sql (for example 0001_history_core.sql).',
       { name: source.name },
     )
   }
@@ -373,8 +424,9 @@ export async function createMigration(source: MigrationSource): Promise<Migratio
  */
 export async function createMigrationSet(
   sources: readonly MigrationSource[],
+  options: MigrationNameOptions = {},
 ): Promise<Migration[]> {
-  const migrations = await Promise.all(sources.map((source) => createMigration(source)))
+  const migrations = await Promise.all(sources.map((source) => createMigration(source, options)))
   const seen = new Set<string>()
   for (const migration of migrations) {
     if (seen.has(migration.name)) {
@@ -459,17 +511,17 @@ interface AppliedRow {
   name: string
 }
 
-async function migrationsTableExists(executor: SqlExecutor, table: string): Promise<boolean> {
+async function migrationsTableExists(executor: SqlExecutor, ledger: string): Promise<boolean> {
   const result = await executor.query<{ exists: boolean }>(
     'SELECT to_regclass($1) IS NOT NULL AS exists',
-    [table],
+    [ledger],
   )
   return result.rows[0]?.exists === true
 }
 
-async function readApplied(executor: SqlExecutor, table: string): Promise<AppliedMigration[]> {
+async function readApplied(executor: SqlExecutor, ledger: string): Promise<AppliedMigration[]> {
   const result = await executor.query<AppliedRow>(
-    `SELECT name, checksum, applied_at FROM ${table} ORDER BY name ASC`,
+    `SELECT name, checksum, applied_at FROM ${ledger} ORDER BY name ASC`,
   )
   return result.rows.map((row) => ({
     appliedAt: row.applied_at === null ? null : new Date(row.applied_at),
@@ -485,11 +537,11 @@ async function readApplied(executor: SqlExecutor, table: string): Promise<Applie
 export async function planMigrations(
   executor: SqlExecutor,
   migrations: readonly Migration[],
-  options: { table?: string } = {},
+  options: { schema?: string; table?: string } = {},
 ): Promise<MigrationPlan> {
-  const table = assertMigrationsTable(options.table ?? MIGRATIONS_TABLE)
-  const tableExists = await migrationsTableExists(executor, table)
-  const applied = tableExists ? await readApplied(executor, table) : []
+  const ledger = ledgerName(options.table ?? MIGRATIONS_TABLE, options.schema)
+  const tableExists = await migrationsTableExists(executor, ledger)
+  const applied = tableExists ? await readApplied(executor, ledger) : []
   assertImmutability(applied, migrations)
 
   const appliedNames = new Set(applied.map((row) => row.name))
@@ -499,8 +551,11 @@ export async function planMigrations(
   return { applied, pending, tableExists }
 }
 
-export function createMigrationsTableSql(table: string = MIGRATIONS_TABLE): string {
-  return `CREATE TABLE IF NOT EXISTS ${assertMigrationsTable(table)} (
+export function createMigrationsTableSql(
+  table: string = MIGRATIONS_TABLE,
+  schema?: string,
+): string {
+  return `CREATE TABLE IF NOT EXISTS ${ledgerName(table, schema)} (
   name TEXT PRIMARY KEY,
   checksum TEXT NOT NULL,
   applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -566,6 +621,31 @@ async function applyInOwnTransaction(
   }
 }
 
+/**
+ * Run `use` with the session's `search_path` set to `schema` alone, then put
+ * the previous value back, failure or not. A no-op when no schema is set.
+ */
+async function withSessionSearchPath(
+  executor: SqlExecutor,
+  schema: string | undefined,
+  use: () => Promise<void>,
+): Promise<void> {
+  if (schema === undefined) {
+    await use()
+    return
+  }
+  const before = await executor.query<{ search_path: string }>(
+    "SELECT current_setting('search_path') AS search_path",
+  )
+  const previous = before.rows[0]?.search_path ?? '"$user", public'
+  await executor.query(`SET search_path TO "${schema}"`)
+  try {
+    await use()
+  } finally {
+    await executor.query("SELECT set_config('search_path', $1, false)", [previous])
+  }
+}
+
 export async function applyMigrations(
   executor: SqlExecutor,
   migrations: readonly Migration[],
@@ -573,9 +653,11 @@ export async function applyMigrations(
 ): Promise<ApplyMigrationsResult> {
   const now = options.now ?? ((): Date => new Date())
   const table = assertMigrationsTable(options.table ?? MIGRATIONS_TABLE)
+  const schema = options.schema === undefined ? undefined : assertMigrationsSchema(options.schema)
+  const ledger = ledgerName(table, schema)
 
   if (options.dryRun === true) {
-    const plan = await planMigrations(executor, migrations, { table })
+    const plan = await planMigrations(executor, migrations, { schema, table })
     return {
       applied: [],
       dryRun: true,
@@ -599,10 +681,14 @@ export async function applyMigrations(
   let result: ApplyMigrationsResult | null = null
 
   try {
-    await executor.query(createMigrationsTableSql(table))
-    const plan = await planMigrations(executor, migrations, { table })
+    if (schema !== undefined) await executor.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`)
+    await executor.query(createMigrationsTableSql(table, schema))
+    const plan = await planMigrations(executor, migrations, { schema, table })
     const applied: string[] = []
     const durationMsByName: Record<string, number> = {}
+    // Inside a transaction `SET LOCAL` ends with it; a non-transactional file
+    // has no transaction to scope it, so that path restores the session value.
+    const setLocalSearchPath = schema === undefined ? null : `SET LOCAL search_path TO "${schema}"`
 
     for (const migration of plan.pending) {
       if (migration.transactional) assertTransactionalMigration(migration)
@@ -610,18 +696,20 @@ export async function applyMigrations(
       const startedAt = now().getTime()
       const recordRow = async (target: SqlExecutor): Promise<void> => {
         await target.query(
-          `INSERT INTO ${table} (name, checksum, applied_at, duration_ms) VALUES ($1, $2, $3, $4)`,
+          `INSERT INTO ${ledger} (name, checksum, applied_at, duration_ms) VALUES ($1, $2, $3, $4)`,
           [migration.name, migration.checksum, now(), Math.max(0, now().getTime() - startedAt)],
         )
       }
 
       if (migration.transactional && isTransactionalExecutor(executor)) {
         await executor.transaction(async (target) => {
+          if (setLocalSearchPath !== null) await target.query(setLocalSearchPath)
           await target.query(migration.sql)
           await recordRow(target)
         })
       } else if (migration.transactional) {
         await applyInOwnTransaction(executor, async (target) => {
+          if (setLocalSearchPath !== null) await target.query(setLocalSearchPath)
           for (const statement of splitSqlStatements(migration.sql)) {
             await target.query(statement)
           }
@@ -632,9 +720,11 @@ export async function applyMigrations(
         // implicit transaction, which is exactly what this file said it cannot
         // tolerate -- sending the whole thing at once would fail on the first
         // `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)`.
-        for (const statement of splitSqlStatements(migration.sql)) {
-          await executor.query(statement)
-        }
+        await withSessionSearchPath(executor, schema, async () => {
+          for (const statement of splitSqlStatements(migration.sql)) {
+            await executor.query(statement)
+          }
+        })
         await recordRow(executor)
       }
 

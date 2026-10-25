@@ -1,5 +1,56 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.31.4
+
+### Patch Changes
+
+- Release the dependencies recorded on main. The published version's manifest
+  still carries the previous ranges:
+
+  - `dependencies.zod`: ^4.4.3 -> ^4.6.6
+
+## 1.31.3
+
+### Patch Changes
+
+- 873c869: Strict privacy mode now templates relative `$current_url` style
+  values to their route pattern instead of sending the path, query and fragment
+  unchanged.
+- 0f8f69d: Google admin routes now pass the upstream status of a
+  `GoogleApiError` through, instead of answering 500. The PostHog referrer
+  report marks `$direct` as unknown. IndexNow submit points `keyLocation` at the
+  key file this package serves, accepts at most 10,000 URLs, and reports 0
+  submitted when every engine rejects the batch.
+
+## 1.31.2
+
+### Patch Changes
+
+- fe63fd8: Widen the `@nuxt/ui` peer dependency from exactly `4.11.1` to
+  `>=4.11.1 <5`, matching narduk-core and narduk-auth, so apps on Nuxt UI 4.12
+  can install these packages (narduk-libs#1981).
+
+## 1.31.1
+
+### Patch Changes
+
+- e3345c2: An existing app can adopt narduk-core and narduk-auth on Postgres.
+  `nardukCore.postgresSchema` (default `public`) puts every core and auth table
+  in a named schema, so an app-owned `public.users` or `public.api_keys` of
+  another shape is never touched (narduk-libs#1953). Three more opt-outs, each
+  defaulting to today's behaviour (narduk-libs#1940):
+  `nardukCore.csrf.enabled: false` turns the CSRF middleware off,
+  `nardukCore.health: false` leaves `/api/health` to the app's own route, and
+  `@nuxt/ui` is now a peer range (`>=4.7.1 <5`) instead of a pinned core
+  dependency. With default options behaviour is unchanged for D1 and Postgres
+  apps, with two things to know: an app that uses the UI modules (`coreModules`
+  on) must now list `@nuxt/ui` itself, since core no longer pulls it in
+  (generated apps already do), and `runtimeConfig.nardukCsrf.enabled` and
+  `runtimeConfig.postgresSchema` are new keys. A hand-written Vitest alias for
+  `#narduk-core/schema` that points at `pg-schema.ts` also needs
+  `#narduk-core/postgres-schema` (apps that read `.nuxt/tsconfig.json` through
+  `nuxtVitestAliases()` get it automatically).
+
 ## 1.31.0
 
 ### Minor Changes

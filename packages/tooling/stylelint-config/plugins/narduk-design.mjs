@@ -14,7 +14,7 @@ const rawZIndex = plugin(RAW_Z_INDEX, (enabled) => (root, result) => {
   if (!enabled) return
   const valid = utils.validateOptions(result, RAW_Z_INDEX, { actual: enabled })
   if (!valid) return
-  root.walkDecls('z-index', (decl) => {
+  root.walkDecls(/^z-index$/iu, (decl) => {
     if (/^var\(--ns-z-[a-z0-9-]+\)$/u.test(decl.value.trim())) return
     utils.report({
       result,
@@ -25,13 +25,14 @@ const rawZIndex = plugin(RAW_Z_INDEX, (enabled) => (root, result) => {
   })
 })
 
-const LEGACY_WIDTH = /\b(?:620|820|1080)px\b/u
+// 620 / 820 / 1080 px in any spelling (620PX, 0620px, 620.0px), but not .620px.
+const LEGACY_WIDTH = /(?<![\d.])0*(?:620|820|1080)(?:\.0*)?px\b/iu
 
 const noLegacyBreakpoints = plugin(LEGACY_BREAKPOINTS, (enabled) => (root, result) => {
   if (!enabled) return
   const valid = utils.validateOptions(result, LEGACY_BREAKPOINTS, { actual: enabled })
   if (!valid) return
-  root.walkAtRules('media', (rule) => {
+  root.walkAtRules(/^media$/iu, (rule) => {
     if (!LEGACY_WIDTH.test(rule.params)) return
     utils.report({
       result,

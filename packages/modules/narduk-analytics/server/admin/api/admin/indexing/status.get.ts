@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
       error: err.statusMessage ?? err.message,
     })
     throw createError({
-      statusCode: err.statusCode ?? 500,
+      statusCode: (error instanceof GoogleApiError ? error.status : err.statusCode) ?? 500,
       statusMessage: `Google Indexing API error: ${err.statusMessage ?? err.message}`,
     })
   }

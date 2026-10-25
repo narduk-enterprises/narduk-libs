@@ -148,8 +148,14 @@ function pad(value: number, width = 2): string {
   return String(value).padStart(width, '0')
 }
 
+/** Ends in `Z`/`GMT`/`UTC` or a numeric offset, or is a date-only (UTC) string. */
+const ZONED = /^\d{4}-\d{2}-\d{2}$|(?:Z|GMT|UTC|[+-]\d{2}(?::?\d{2})?)$/iu
+
 function readInstant(value: Date | number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null
+  // A string with no offset is read in the PROCESS timezone: the same payload
+  // would land on different days in a Chicago browser and a UTC Worker.
+  if (typeof value === 'string' && !ZONED.test(value.trim())) return null
   const ms = value instanceof Date ? value.getTime() : new Date(value).getTime()
   return Number.isFinite(ms) ? ms : null
 }
@@ -201,13 +207,21 @@ export function bucketReadings<TRow, TField extends string>(
    * it, so a bisection on "has the wall clock reached it" finds the transition
    * to the millisecond.
    */
-  function instantOf(wall: WallClock): number {
+  function instantOf(wall: WallClock, closing = false): number {
     const target = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour)
     const candidates = [
       target - readWall(target - 2 * DAY_MS).offset,
       target - readWall(target + 2 * DAY_MS).offset,
     ].sort((left, right) => left - right)
     const real = candidates.filter((ms) => wallAt(ms) === target)
+    if (closing) {
+      // A bucket's END is the last instant its wall clock reaches `target` from
+      // below. A fall-back that does not sit on the boundary (Pacific/Chatham
+      // repeats 02:45-03:45) replays the tail of the hour after the first 03:00,
+      // and those readings still belong to it.
+      const reached = real.filter((ms) => wallAt(ms - 1) < target)
+      if (reached.length > 0) return reached.at(-1)!
+    }
     if (real.length > 0) return real[0]!
     let before = candidates[0]!
     let after = candidates[1]!
@@ -250,12 +264,15 @@ export function bucketReadings<TRow, TField extends string>(
         Date.UTC(opening.year, opening.month - 1, opening.day, opening.hour + stepHours),
       )
       bucket = {
-        end: instantOf({
-          day: next.getUTCDate(),
-          hour: next.getUTCHours(),
-          month: next.getUTCMonth() + 1,
-          year: next.getUTCFullYear(),
-        }),
+        end: instantOf(
+          {
+            day: next.getUTCDate(),
+            hour: next.getUTCHours(),
+            month: next.getUTCMonth() + 1,
+            year: next.getUTCFullYear(),
+          },
+          true,
+        ),
         key,
         rows: 0,
         start: instantOf(opening),

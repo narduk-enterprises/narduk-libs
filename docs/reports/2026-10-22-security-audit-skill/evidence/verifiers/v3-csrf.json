@@ -1,0 +1,76 @@
+{
+  "decision": "rejected",
+  "record": {
+    "verdict": "rejected",
+    "fingerprint": "narduk-core.csrf.builtin-prefix-skips-normalizer",
+    "title": "Built-in CSRF prefixes skip the path normalizer used for declared exemptions",
+    "description": "The CSRF middleware returns before isCsrfExemptPath when event.path starts with a built-in webhook, cron, callback, auth, or Nuxt Content prefix, or equals /api/owner-tag. Declared exemptions separately refuse percent signs, backslashes, empty segments, and dot segments. That early return does not drop the X-Requested-With check on a different route, because this stack's middleware and router observe one decoded path and the router does not resolve dot segments.",
+    "claimed_root_cause": "The CSRF middleware exempts five hardcoded prefixes and one exact path with event.path prefix or equality checks, and does not apply the normalization refusal that declared exemptions use.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "line": 71,
+        "scope": "csrf middleware",
+        "description": "After the method and enabled checks, the handler reads event.path from the request."
+      },
+      {
+        "kind": "propagation",
+        "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "line": 73,
+        "scope": "builtin prefix exemption",
+        "description": "The condition matches the webhook, cron, callback, auth, and content prefixes, or exact equality with the owner-tag path, before isCsrfExemptPath."
+      },
+      {
+        "kind": "sink",
+        "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "line": 80,
+        "scope": "csrf middleware",
+        "description": "On a match the handler returns without requiring X-Requested-With and without calling isCsrfExemptPath."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "line": 73,
+        "description": "The five prefix checks and the owner-tag equality run, and return, before the declared-path matcher at the later isCsrfExemptPath calls."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+        "line": 97,
+        "description": "The declared-matcher comment says a percent escape, empty segment, or dot segment is never exempt because the router may resolve that spelling to a different route."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+        "line": 104,
+        "description": "isCsrfExemptPath returns false when the pathname contains a percent sign, a backslash, or an empty segment."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+        "line": 106,
+        "description": "isCsrfExemptPath returns false when any segment is . or .."
+      },
+      {
+        "file": "packages/modules/narduk-core/node_modules/h3/dist/index.mjs",
+        "line": 1996,
+        "description": "h3 1.15.11 createAppEventHandler sets event._path from _decodePath before the middleware stack runs."
+      },
+      {
+        "file": "node_modules/.pnpm/ufo@1.6.4/node_modules/ufo/dist/index.mjs",
+        "line": 131,
+        "description": "ufo decodePath percent-decodes the path after preserving %2F and does not remove dot segments."
+      },
+      {
+        "file": "packages/modules/narduk-core/node_modules/h3/dist/index.mjs",
+        "line": 2250,
+        "description": "The h3 router matches event.path, the same value the CSRF middleware reads, after stripping only the query string."
+      },
+      {
+        "file": "node_modules/.pnpm/radix3@1.1.2/node_modules/radix3/dist/index.mjs",
+        "line": 31,
+        "description": "radix3 1.1.2 lookup splits the path on / and treats . and .. as ordinary segments; it does not resolve them to another route."
+      }
+    ],
+    "reason": "The early return is real and does not select a different state-changing route. Locked h3 1.15.11 decodes the path once before middleware; locked ufo 1.6.4 leaves %2F encoded and leaves . and .. in place; Nitro 2.13.4 registers API routes on that same event.path through radix3 1.1.2, which matches segments literally. An unencoded dot segment is already removed by the URL parser in the Cloudflare worker entry (new URL(request.url).pathname) before localFetch, so the prefix check then sees the collapsed path and does not treat it as a webhook, cron, callback, auth, or content path. A percent-encoded dot segment survives that URL parse, becomes a literal .. segment in event.path, and stays that segment for the router, so it does not become another registered route. The owner-tag check is exact equality, so a longer or dotted spelling does not take the early return. The isCsrfExemptPath comment describes a second resolution this router does not perform; skipping that matcher is inconsistent hardening, not a cross-route CSRF bypass. Route rules run before this middleware and do not renormalize the path onto another handler afterward."
+  }
+}

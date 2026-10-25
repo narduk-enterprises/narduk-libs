@@ -1,0 +1,58 @@
+{
+  "run_id": "narduk-libs-run-1",
+  "repo": "narduk-libs",
+  "target": "/Users/narduk/code/narduk-enterprises/narduk-libs",
+  "source_ref": {
+    "commit": "212392aa61537e5fd7ccce842e5a17f2e832e3d6",
+    "branch": "main",
+    "dirty": false
+  },
+  "profile": "deep",
+  "scope_paths": ["packages", "scripts", ".github"],
+  "budget": null,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "local_execution": "blocked",
+  "local_execution_blocker": "This Mac session cannot prove one OS sandbox that simultaneously denies external network, starts from an empty allowlisted environment, mounts the target and toolchain read-only, confines writes to the agent scratch directory, and enforces explicit CPU, memory, process, file-size, disk, and wall-clock limits. Target-controlled code is not executed. A candidate that needs a runtime observation stays needs_validation.",
+  "skill_dir": "/Users/narduk/security-audit-skill/_skill/skills/security-audit",
+  "skill_commit": "c1c8a8c",
+  "selected_companion_files": [
+    "AI-AND-LLM.md",
+    "CLIENT-SIDE.md",
+    "CLOUD-AND-DEPLOYMENT.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md",
+    "DESKTOP-MOBILE-AND-LOCAL-IPC.md",
+    "PROTOCOLS-RPC-AND-MESSAGING.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md",
+    "WEB-PROTOCOL-AND-AUTH.md"
+  ],
+  "excluded_companion_files": [
+    {
+      "file": "MEMORY-SAFETY-AND-BINARY.md",
+      "reason": "No C, C++, unsafe Rust, kernel, JIT, or binary-loader source is in the tree. Recorded as a not_applicable ledger unit."
+    }
+  ],
+  "prior_run_paths": [],
+  "prior_ledgers": "none",
+  "shared_file_owners": {
+    "parent": "grok-session-narduk-libs"
+  },
+  "hunters": ["h1-identity", "h2-data", "h3-edge", "h4-client", "h5-release", "h6-ai-log"],
+  "phase3_verifiers": ["v3-csrf", "v3-session", "v3-ssrf"],
+  "phase5_verifiers": ["v5-session", "v5-ssrf"],
+  "hunter_tier": "scoped Sonnet 5.5, investigation",
+  "verifier_tier": "scoped Sonnet 5.5, fresh per candidate and per retained needs_validation record",
+  "critic": "parent synthesis of wave 1; no distinct final-clean critic",
+  "agents_spent": 11,
+  "agents_planned": "6 hunt lanes; no budget cap",
+  "run_status": "complete",
+  "collected_at": "2026-10-22 16:21 CT (21:21 UTC)",
+  "reported_at": "2026-10-22 16:52 CT (21:52 UTC)",
+  "validators": {
+    "findings": "PASS 3",
+    "coverage_ledger": "PASS 39"
+  },
+  "confirmed": 0,
+  "needs_validation": 2,
+  "rejected": 1
+}

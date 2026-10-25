@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -429,23 +430,17 @@ describe('upload endpoint streamed body cap', () => {
     expect(readMultipartFormData).not.toHaveBeenCalled()
   })
 
-  it('still hard-stops the live node request stream past the cap', async () => {
+  it('rejects a live node request stream past the cap with 413 before the parse', async () => {
     vi.resetModules()
     readMultipartFormData.mockReset()
-    readMultipartFormData.mockResolvedValue([{ data: new Uint8Array(1), filename: 'a.png' }])
     getHeader.mockReturnValue('1024')
 
-    const req = new EventEmitter() as EventEmitter & { destroy: ReturnType<typeof vi.fn> }
-    req.destroy = vi.fn()
-
+    const req = new PassThrough()
     const parseBody = await loadParseBody()
-    await expect(parseBody({ node: { req } })).resolves.toEqual([
-      { data: expect.any(Uint8Array), filename: 'a.png' },
-    ])
-
-    req.emit('data', { byteLength: MAX_UPLOAD_REQUEST_SIZE + 1 })
-    expect(req.destroy).toHaveBeenCalledTimes(1)
-    expect(req.destroy.mock.calls[0]?.[0]).toMatchObject({ statusCode: 413 })
+    const pending = expect(parseBody({ node: { req } })).rejects.toMatchObject({ statusCode: 413 })
+    req.write(Buffer.alloc(MAX_UPLOAD_REQUEST_SIZE + 1))
+    await pending
+    expect(readMultipartFormData).not.toHaveBeenCalled()
   })
 })
 

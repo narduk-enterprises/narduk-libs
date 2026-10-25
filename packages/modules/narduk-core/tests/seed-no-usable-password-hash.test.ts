@@ -13,8 +13,10 @@ import { describe, expect, it } from 'vitest'
 
 const RUNTIME_DIR = fileURLToPath(new URL('../runtime', import.meta.url))
 
-// The shape `hashUserPassword()` returns: a 16-byte salt, a colon, a 256-bit key.
-const HASH_SHAPE = /\b[0-9a-f]{32}:[0-9a-f]{64}\b/iu
+// The shape `hashUserPassword()` returns: a 16-byte salt, a colon, a 256-bit key; or a bcrypt
+// string, which `verifyUserPassword` also accepts. Matched anywhere, so an `INSERT ... SELECT`
+// or a column `DEFAULT` cannot hide one.
+const HASH_SHAPE = /\b[0-9a-f]{32}:[0-9a-f]{64}\b|\$2[aby]\$\d{2}\$[./a-z0-9]{53}/iu
 
 function sqlFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -135,6 +137,10 @@ describe('published SQL carries no usable password hash', () => {
       [`'${hash}'`],
     )
     expect(HASH_SHAPE.test(`-- ${hash}`)).toBe(true)
+    const bcrypt = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
+    expect(HASH_SHAPE.test(`INSERT INTO users (id, password_hash) SELECT 'x', '${bcrypt}';`)).toBe(
+      true,
+    )
     expect(
       passwordHashTerms(
         `INSERT INTO users (id, password_hash) VALUES ('1', NULL) ON CONFLICT(id) DO UPDATE SET password_hash = excluded.password_hash;`,

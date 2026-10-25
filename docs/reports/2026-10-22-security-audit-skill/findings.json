@@ -1,0 +1,239 @@
+[
+  {
+    "verdict": "rejected",
+    "fingerprint": "narduk-core.csrf.builtin-prefix-skips-normalizer",
+    "title": "Built-in CSRF prefixes skip the path normalizer used for declared exemptions",
+    "description": "The CSRF middleware returns before isCsrfExemptPath when event.path starts with a built-in webhook, cron, callback, auth, or Nuxt Content prefix, or equals /api/owner-tag. Declared exemptions separately refuse percent signs, backslashes, empty segments, and dot segments. That early return does not drop the X-Requested-With check on a different route, because this stack's middleware and router observe one decoded path and the router does not resolve dot segments.",
+    "claimed_root_cause": "The CSRF middleware exempts five hardcoded prefixes and one exact path with event.path prefix or equality checks, and does not apply the normalization refusal that declared exemptions use.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "line": 71,
+        "scope": "csrf middleware",
+        "description": "After the method and enabled checks, the handler reads event.path from the request."
+      },
+      {
+        "kind": "propagation",
+        "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "line": 73,
+        "scope": "builtin prefix exemption",
+        "description": "The condition matches the webhook, cron, callback, auth, and content prefixes, or exact equality with the owner-tag path, before isCsrfExemptPath."
+      },
+      {
+        "kind": "sink",
+        "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "line": 80,
+        "scope": "csrf middleware",
+        "description": "On a match the handler returns without requiring X-Requested-With and without calling isCsrfExemptPath."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "line": 73,
+        "description": "The five prefix checks and the owner-tag equality run, and return, before the declared-path matcher at the later isCsrfExemptPath calls."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+        "line": 97,
+        "description": "The declared-matcher comment says a percent escape, empty segment, or dot segment is never exempt because the router may resolve that spelling to a different route."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+        "line": 104,
+        "description": "isCsrfExemptPath returns false when the pathname contains a percent sign, a backslash, or an empty segment."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+        "line": 106,
+        "description": "isCsrfExemptPath returns false when any segment is . or .."
+      },
+      {
+        "file": "packages/modules/narduk-core/node_modules/h3/dist/index.mjs",
+        "line": 1996,
+        "description": "h3 1.15.11 createAppEventHandler sets event._path from _decodePath before the middleware stack runs."
+      },
+      {
+        "file": "node_modules/.pnpm/ufo@1.6.4/node_modules/ufo/dist/index.mjs",
+        "line": 131,
+        "description": "ufo decodePath percent-decodes the path after preserving %2F and does not remove dot segments."
+      },
+      {
+        "file": "packages/modules/narduk-core/node_modules/h3/dist/index.mjs",
+        "line": 2250,
+        "description": "The h3 router matches event.path, the same value the CSRF middleware reads, after stripping only the query string."
+      },
+      {
+        "file": "node_modules/.pnpm/radix3@1.1.2/node_modules/radix3/dist/index.mjs",
+        "line": 31,
+        "description": "radix3 1.1.2 lookup splits the path on / and treats . and .. as ordinary segments; it does not resolve them to another route."
+      }
+    ],
+    "reason": "The early return is real and does not select a different state-changing route. Locked h3 1.15.11 decodes the path once before middleware; locked ufo 1.6.4 leaves %2F encoded and leaves . and .. in place; Nitro 2.13.4 registers API routes on that same event.path through radix3 1.1.2, which matches segments literally. An unencoded dot segment is already removed by the URL parser in the Cloudflare worker entry (new URL(request.url).pathname) before localFetch, so the prefix check then sees the collapsed path and does not treat it as a webhook, cron, callback, auth, or content path. A percent-encoded dot segment survives that URL parse, becomes a literal .. segment in event.path, and stays that segment for the router, so it does not become another registered route. The owner-tag check is exact equality, so a longer or dotted spelling does not take the early return. The isCsrfExemptPath comment describes a second resolution this router does not perform; skipping that matcher is inconsistent hardening, not a cross-route CSRF bypass. Route rules run before this middleware and do not renormalize the path onto another handler afterward."
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "narduk-core.session.secure-follows-request-protocol",
+    "title": "Layer session Secure flag follows the request protocol header",
+    "description": "setLayerUserSession, replaceLayerUserSession, clearLayerUserSession, and getLayerUserSession pass resolveSessionConfig to h3 useSession, which seals the layer session and sets its cookie. resolveSessionConfig sets cookie.secure only when getRequestProtocol(event) returns https, and sets sameSite to lax. That object does not set httpOnly. Locked h3 1.15.11 spreads a default cookie of path /, secure true, and httpOnly true, then overlays this config, so the protocol bit replaces the default Secure flag while HttpOnly remains unless a caller override removes it. That HttpOnly default is calibration, not a second defect. createSession writes a different cookie and sets httpOnly plus secure from a localhost or 127.0.0.1 Host prefix; it does not close this flag. A caller cookie override can force secure false, but that caller is the app, the same principal as the helper. Locked h3 returns https when x-forwarded-proto is exactly the string https, and otherwise only when node.req.connection.encrypted is truthy. A header of http does not by itself force http on an encrypted socket. The unit-test stub uses an empty connection, so a missing header yields secure false and an exact https header yields secure true. The helper does not read Host. On the Nitro Cloudflare handlers locked in this workspace, node-mock-http 1.0.4 sets connection.encrypted only when its protocol option is exactly https, while those handlers pass URL.protocol (https: or http:). That comparison fails, so the socket bit stays unset and an exact https header is the only input that makes the flag true. Whether the deployed edge replaces X-Forwarded-Proto with the scheme it terminated is not in this repository. This session did not mint a cookie.",
+    "claimed_root_cause": "cookie.secure is bound to getRequestProtocol(event) === 'https'. On the unencrypted stub the in-repo test builds, x-forwarded-proto of exactly https selects secure true and its absence selects secure false. Locked h3 does not treat any other header value as https, and the locked Nitro Cloudflare adapter does not mark the socket encrypted from URL.protocol.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "line": 163,
+        "scope": "layer session write",
+        "description": "setLayerUserSession takes the request event and writes the layer session. The untrusted input is the event protocol, not the session data. getLayerUserSession at line 160 uses the same config and can mint a cookie when the request has none."
+      },
+      {
+        "kind": "propagation",
+        "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "line": 66,
+        "scope": "cookie flags",
+        "description": "secure is true only when getRequestProtocol(event) returns https. sameSite is lax. This object does not set httpOnly. A caller cookie override spread after secure can replace it."
+      },
+      {
+        "kind": "sink",
+        "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "line": 168,
+        "scope": "h3 useSession",
+        "description": "useSession receives that config. h3's default cookie sets httpOnly and secure true, then this config's secure value replaces the default, so the Set-Cookie Secure option is the protocol-derived boolean."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "line": 66,
+        "description": "The Secure flag is the equality of getRequestProtocol(event) with https. Host is not consulted."
+      },
+      {
+        "file": "packages/modules/narduk-core/tests/user-session.test.ts",
+        "line": 95,
+        "description": "A stub whose headers are only host 127.0.0.1:3011, with an empty connection, expects secure false. The assertion does not show a Host special case."
+      },
+      {
+        "file": "packages/modules/narduk-core/tests/user-session.test.ts",
+        "line": 101,
+        "description": "The test named for HTTPS behind Cloudflare expects secure true when x-forwarded-proto is https. It does not cover a missing or non-https header on a public host."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/auth.ts",
+        "line": 164,
+        "description": "createSession sets secure from a localhost or 127.0.0.1 Host prefix and sets httpOnly on the previous line. That is a different cookie."
+      },
+      {
+        "file": "node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs",
+        "line": 320,
+        "description": "getRequestProtocol returns https only when x-forwarded-proto is exactly https, otherwise only when connection.encrypted is truthy."
+      },
+      {
+        "file": "node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs",
+        "line": 1427,
+        "description": "useSession passes setCookie a default of secure true and httpOnly true, then overlays config.cookie, so the protocol bit replaces Secure and HttpOnly remains."
+      },
+      {
+        "file": "node_modules/.pnpm/node-mock-http@1.0.4/node_modules/node-mock-http/dist/index.mjs",
+        "line": 1,
+        "description": "callNodeRequestHandler sets connection.encrypted from an existing bit or protocol === 'https'. The mock socket does not start encrypted."
+      },
+      {
+        "file": "node_modules/.pnpm/nitropack@2.13.4_better-sqlite3@12.11.1_drizzle-orm@0.45.2_@cloudflare+workers-types@4._206b69838a909de6c9d0970648a8f2cd/node_modules/nitropack/dist/presets/cloudflare/runtime/_module-handler.mjs",
+        "line": 107,
+        "description": "The Cloudflare module handler passes protocol: url.protocol into localFetch. URL.protocol includes the colon, so it does not satisfy the mock's exact https check. The legacy worker handler passes the same field."
+      }
+    ],
+    "blockers": [
+      "No bounded observation of a Set-Cookie was made. Local execution cannot provide an OS sandbox that denies external network, starts from an empty allowlisted environment, mounts the target read-only, and enforces CPU, memory, process, file, disk, and wall-clock limits.",
+      "Whether the deployed edge replaces X-Forwarded-Proto with the scheme it terminated, before the Worker reads it, is not in this repository. On the locked adapter a value other than exactly https leaves Secure false because the socket bit is not set from URL.protocol."
+    ],
+    "validation_plan": {
+      "local": "Offline, call resolveSessionConfig with the existing unencrypted stub and with in-process fixtures that set connection.encrypted true or leave it unset, and set x-forwarded-proto to absent, http, or https. Record cookie.secure. Separately, compare the locked node-mock-http protocol check with the Cloudflare handler's protocol argument and record whether a URL protocol of https: sets connection.encrypted. Do not send traffic.",
+      "deployment": "The owner inspects an already-accepted Worker request that writes a session, or the route's platform header policy, and records whether X-Forwarded-Proto equals the scheme the edge terminated. Do not send a new or modified request."
+    }
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "narduk-core.ssrf.unpinned-non-node-fetch",
+    "title": "Validated URL fetch skips IP pinning outside Node",
+    "description": "fetchWithValidatedRedirects, also exported as fetchUrlSafely, is the helper this file documents as the SSRF-protected outbound fetch. No production or test caller in this repository passes a URL into it. After validateUrl accepts the URL, resolveAndAssertPublicHost must accept a public address before any dial, except the test-mode localhost skip. On that public path createPinnedDispatcher returns undefined when process.versions.node is not a string. Undefined is not the unavailable result, so the fetch is not refused. The call uses the normalized hostname URL and omits dispatcher. The 429 fallback fetch reuses that same optional dispatcher. An empty address list also returns undefined, but only because validation was skipped, which on this path is the test-mode localhost bypass. Private-literal checks, the pre-fetch DNS classification, and manual redirect revalidation still run. None of them binds the later dial to an address already accepted. The comment that non-Node platform fetch has no rebinding window is not a control.",
+    "claimed_root_cause": "IP pinning is omitted whenever isNodeRuntime is false, including after a public address was accepted, and the following fetch uses the hostname. An undefined pin result is not the fail-closed unavailable result. The comment that platform fetch has no rebinding window is not an in-repo control.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 541,
+        "scope": "validated fetch",
+        "description": "fetchWithValidatedRedirects accepts a URL string and is the exported SSRF fetch. fetchUrlSafely aliases it. No route in this repository calls either name."
+      },
+      {
+        "kind": "propagation",
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 603,
+        "scope": "dns check",
+        "description": "resolveAndAssertPublicHost must accept the hostname before any dial, except the test-mode localhost bypass that leaves the address list empty."
+      },
+      {
+        "kind": "propagation",
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 231,
+        "scope": "pin gate",
+        "description": "createPinnedDispatcher returns undefined when isNodeRuntime is false, even if the address list is non-empty. That skips the pinned lookup and is not the unavailable result."
+      },
+      {
+        "kind": "sink",
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 699,
+        "scope": "outbound fetch",
+        "description": "fetch is called with the normalized hostname URL. A dispatcher is added only when one was built. A skipped pin sends no dispatcher."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 27,
+        "description": "The file requires the nodejs_compat flag before the DNS and fetch helpers can bundle on Workers."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 203,
+        "description": "isNodeRuntime is true only when process.versions.node is a string. The adjacent comment says Workers do not expose it."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 229,
+        "description": "An empty address list returns undefined before the runtime check. That is the intentional test-mode skip, distinct from the non-Node return."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 684,
+        "description": "The fetch is refused only when pin construction returns unavailable. An undefined pin result is not refused."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 703,
+        "description": "The fetch call comments that a dispatcher is undici-specific and that other runtimes ignore the unknown key."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "line": 804,
+        "description": "The 429 fallback fetch uses the same normalized URL and the same optional dispatcher, so a skipped pin is skipped there too."
+      },
+      {
+        "file": "packages/modules/narduk-core/package.json",
+        "line": 79,
+        "description": "The package maps ./server/* onto ./runtime/server/*.ts. The helper sits in that published server tree and is a named export."
+      }
+    ],
+    "blockers": [
+      "No production or test caller in this repository passes a URL into fetchWithValidatedRedirects or fetchUrlSafely. A cross-principal effect requires an app outside this repository to supply an attacker-influenced URL.",
+      "Whether nodejs_compat sets process.versions.node is not in this repository. If it does, the UndiciAgent branch runs; a throw there fails closed, and a constructed dispatcher is still subject to the comment that non-Node fetch ignores it. Neither outcome is proven here.",
+      "Whether workerd re-resolves the hostname after resolveAndAssertPublicHost, or dials only addresses the platform already treats as public, is not in this repository. The log line claiming no rebinding window is a comment, not a control.",
+      "Local execution is blocked. This session has no OS sandbox that denies external network, starts from an empty allowlisted environment, mounts the target and toolchain read-only, confines writes to scratch, and enforces explicit CPU, memory, process, file, disk, and wall-clock limits. A stubbed fetch would show only the URL and dispatcher arguments, not a platform dial."
+    ],
+    "validation_plan": {
+      "local": "Offline source check, with no network I/O: when process.versions.node is not a string and the address list is non-empty, createPinnedDispatcher returns undefined, and fetchWithValidatedRedirects does not take the unavailable branch before calling fetch with the normalized URL and no dispatcher. A fixture may replace the DNS resolver and global fetch with in-process recorders that perform no I/O and use one public fixture address. The source-level gap holds if the helper does not return the SSRF_BLOCKED error and the recorder receives the original URL with no dispatcher. That fixture does not observe a platform dial.",
+      "deployment": "Owner records the deployed worker compatibility_flags, whether nodejs_compat makes process.versions.node a string in that workerd, and the workerd fetch DNS contract for that flag: whether the dial is bound to addresses the isolate already resolved or the hostname is resolved again at connect time. Do not issue a fetch from production."
+    }
+  }
+]

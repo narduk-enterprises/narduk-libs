@@ -1,5 +1,133 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.47.0
+
+### Minor Changes
+
+- 0324b3a: `db migrate-deployment` accepts a second write context. Besides a
+  successful same-repository `workflow_run`, a `push` or `workflow_dispatch` on
+  the production branch may migrate the commit it runs on (`GITHUB_SHA` equals
+  `--sha`) when `--gate-verified "<gateCheck>@<sha>"` names exactly
+  `deployment.promotion.gateCheck` and `--gate-workflow` names the CI workflow
+  file, and the tool itself reads GitHub (`GITHUB_TOKEN`: `actions`, `checks`,
+  `pull-requests` read, on the manifest's repository only) and finds that
+  workflow's newest run on the commit green (check run -> check suite -> Actions
+  workflow run of that file, trusted event, ordered by `run_number`, never
+  `started_at`), or a same-repository pull request that merged as that commit
+  with an identical tree. A red or running newest run, a tie holding a red, any
+  API error, a missing token, a differing `GH_REPO`, a preview target or a
+  bundle refuses. `--check-context` runs that proof alone, with no Cloudflare
+  credential and no write; it reports a gate that is not green and fails on
+  anything else that would refuse a write (including an unreadable GitHub).
+  Fixes operator-portal#2791, where a promote workflow on `push` could never
+  apply a pending migration.
+
+## 0.46.0
+
+### Minor Changes
+
+- 512d454: Make a local MapKit map easy to get running.
+
+  - `narduk-app dev --mapkit -- <command>` runs the child under the shared
+    MapKit signing persona (`nvault run -p apple -e prd -c mapkit-signing`), so
+    a map app's dev script names no selector. The retired-Doppler migration
+    message now names it.
+  - The Nuxt token route prints a one-time fix to the server console when it
+    answers `503` (names the missing `APPLE_*` variables), `500` (key not
+    PKCS#8, or a stale value in wrangler vars or `.dev.vars`), or `403` for a
+    loopback host that `nardukMapKit.allowedHosts` leaves out. Names only, never
+    values.
+  - New runbook: `packages/modules/narduk-mapkit/docs/local-development.md`.
+
+### Patch Changes
+
+- 922e148: List `@narduk-enterprises/narduk-notify` in the libs explorer
+  inventory and in the generated capability catalog.
+
+## 0.45.6
+
+### Patch Changes
+
+- Release the dependencies recorded on main. The published version's manifest
+  still carries the previous ranges:
+
+  - `dependencies.zod`: ^4.4.3 -> ^4.6.6
+
+## 0.45.5
+
+### Patch Changes
+
+- 0ba5cb8: Add three reusable shipped-design patterns: NeSettle (PACC·TRAC’s
+  one-shot card arrival), NeTimelineHero (TX Spends’ number-led period
+  selector), and NeStatementHero (KZFR’s current-state statement). Include
+  reduced-motion behavior, responsive layouts, honest data gaps, typed props,
+  design cards and complete Explorer examples. Update shared-component ownership
+  inventories.
+- da0d75c: `versions-promote` refuses (stale-promote) when production has no
+  single visible live version (split traffic, or a live version outside the
+  listed window), unless `--force`. `ship` re-reads production before a
+  failed-proof rollback and never rolls back over a version another writer
+  deployed. `ship -m` checks the deploy token and Access variables before
+  committing, and undoes its commit on any refusal or error before the push.
+  `ship` treats `*API_KEY*` environment values (except `NUXT_PUBLIC_*`) as
+  secrets in the public-asset leak scan. A derived staging config refuses a
+  production Durable Object binding that names another Worker (`script_name`).
+  `db migrate`/`db status` check the database id bound in `--wrangler-config`
+  against contract-owned databases. The node fetch transport drops
+  `authorization`, `cookie` and `proxy-authorization` on a cross-origin
+  redirect.
+- d0d2242: `versions-promote` reads the live version with the strict reader:
+  tied or undated newest deployments refuse (stale-promote) unless `--force`. An
+  unnamed `deploy rollback` refuses them too. `deploy rollback` refuses a
+  `pull_request` (or other non-promote) event, as `versions-promote` does.
+  `versions-promote` refuses (staging-not-proven) when
+  `Config/cloudflare-app.json` exists but does not parse, instead of dropping
+  the staging gate. The staging gate searches up to the default version window
+  and no longer calls a live version missing from the listing untagged.
+  `deploy versions-upload` refuses a caller `--message` inside a Workers Build,
+  so the branch label promote trusts comes from `WORKERS_CI_BRANCH`. Migration
+  files sort numerically (`9999` before `10000`), and a migration source the
+  ledger would not keep (anything but `app`, `app:*`, `package:*`, `@scope/*`)
+  is refused before its first apply. `verify --live` refuses a health, smoke or
+  edge path that resolves to another origin. Foundation: the comment stripper
+  behind items 14 and 15 skips string contents, and item 12 reads single-quoted
+  `binding` and `account_id` in `wrangler.toml`.
+- f65cef9: Add the round-8 feel primitives to narduk-shell: `useUndoToast()` (a
+  7 second Undo toast with a countdown bar and a promise of `undone` or
+  `committed`, on the Nuxt UI toaster), `useTimeAgo()` and `NeRelativeTime` (one
+  shared 30 second ticker, `<time datetime>` with an absolute title, relative
+  while recent and a date after a week), `NePriceCell` (a fixed-width tabular
+  figure whose up/down tint changes colour only), `NeStickyActionBar` (the phone
+  bottom call to action with safe-area padding and a matching spacer), `NeTabs`
+  and `useRouteTab()` (`?tab=` kept with `router.replace`, roving focus, the
+  active tab scrolled into view), a global `:focus-visible` ring (2px accent
+  outline, 2px offset; it replaces the browser default ring in every consuming
+  app, so expect a visible change on focused controls) and the `.ne-safe-top` /
+  `.ne-safe-bottom` utilities. Every addition is new surface; no existing export
+  changes. Add `usePageSeo()` and `buildPageTitle()` to narduk-seo for the
+  `Page · Site` browser title. Update the shared-component inventories and
+  Explorer examples.
+
+## 0.45.4
+
+### Patch Changes
+
+- fe63fd8: Widen the `@nuxt/ui` peer dependency from exactly `4.11.1` to
+  `>=4.11.1 <5`, matching narduk-core and narduk-auth, so apps on Nuxt UI 4.12
+  can install these packages (narduk-libs#1981).
+
+## 0.45.3
+
+### Patch Changes
+
+- 2b280db: `foundation:check` reads the Nuxt app's own wrangler config. In a
+  hybrid repo (a data-plane Worker's `wrangler.jsonc` at the repo root, the Nuxt
+  app under `web/` or `apps/web/`), item 1.2 and the other items that resolve
+  the app's wrangler config now judge `web/wrangler.jsonc` against the web app's
+  `Config/cloudflare-app.json`, instead of demanding the root Worker's bindings
+  there. A Nuxt app with no wrangler config of its own still falls back to the
+  first config at a known path (narduk-libs#1967).
+
 ## 0.45.2
 
 ### Patch Changes

@@ -411,9 +411,9 @@ async function inflate(compressed: Uint8Array, expectedBytes: number): Promise<U
 function parseHeader(bytes: Uint8Array): TemporalChunkHeader {
   let parsed: unknown
   try {
-    parsed = JSON.parse(new TextDecoder().decode(bytes))
+    parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
   } catch (error: unknown) {
-    throw new Error('Temporal artifact header is not valid JSON', { cause: error })
+    throw new Error('Temporal artifact header is not valid UTF-8 JSON', { cause: error })
   }
   if (!isRecord(parsed)) throw new Error('Temporal artifact header must be an object')
   const dates = parsed.dates
@@ -458,8 +458,19 @@ function parseRgbComposition(descriptor: unknown): TemporalRgbCompositionDescrip
   throw new Error('Temporal RGB composition descriptor is invalid')
 }
 
+/** A bbox that is not four finite numbers, or runs backwards, would blank the layer silently. */
+export function assertValidBBox(bbox: unknown, label: string): void {
+  if (!Array.isArray(bbox)) return
+  const [west, south, east, north] = bbox as number[]
+  if (bbox.length !== 4 || !bbox.every(Number.isFinite) || west! > east! || south! > north!) {
+    throw new Error(`${label} bbox is invalid or inverted`)
+  }
+}
+
 function validateManifestEnvelope(manifest: TemporalRasterManifest): void {
   if (!isRecord(manifest)) throw new Error('Temporal manifest must be an object')
+  assertValidBBox(manifest.bbox, 'Temporal manifest')
+  assertValidBBox(manifest.coastlineStencil?.bbox, 'Temporal manifest coastline stencil')
   if (manifest.schema !== 'earth-data-temporal-raster-v1') {
     throw new Error('Temporal manifest schema is unsupported')
   }

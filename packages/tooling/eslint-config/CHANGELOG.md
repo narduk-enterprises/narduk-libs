@@ -1,5 +1,69 @@
 # @narduk-enterprises/eslint-config
 
+## 3.4.0
+
+### Minor Changes
+
+- cd278d5: Add web-app audit rules. `core` now reports redirect-like query reads
+  that skip a same-origin guard (`narduk/require-safe-redirect-query`, with
+  `guards`/`params` options), native `alert`/`confirm`/`prompt` in app code, and
+  `vue/no-v-html` without the community layer. `design-system` reports `vh` in
+  inline styles (`narduk/no-viewport-vh-units`). The raw palette, arbitrary
+  colour and `vh`/`screen` class bans move from
+  `better-tailwindcss/no-restricted-classes`, which switched itself off when
+  `tailwindcss` did not resolve from the lint cwd, to
+  `narduk/no-restricted-utility-classes`, which needs no Tailwind and now sees
+  variants (`hover:text-slate-500`), `!` and `/opacity` modifiers, and arbitrary
+  colours. `createAppLintConfig` takes `allowedRawPaletteFiles` for chart
+  palettes. A native `<header>` in a page is no longer reported. The opt-in
+  `a11y` pack knows Nuxt and Nuxt UI links, labels and controls, and replaces
+  upstream's static-element rules with `narduk/no-static-element-interactions`.
+  Each is `warn`, so an app that adopts this version can go red until its
+  findings are fixed.
+
+  `narduk-auth` annotates `AuthExchangePanel.vue`'s `next` read, which its
+  exchange route sanitizes server-side, for the new redirect rule.
+
+## 3.3.5
+
+### Patch Changes
+
+- 0ba5cb8: Add three reusable shipped-design patterns: NeSettle (PACC·TRAC’s
+  one-shot card arrival), NeTimelineHero (TX Spends’ number-led period
+  selector), and NeStatementHero (KZFR’s current-state statement). Include
+  reduced-motion behavior, responsive layouts, honest data gaps, typed props,
+  design cards and complete Explorer examples. Update shared-component ownership
+  inventories.
+- 1428ddf: Journeys verify refuses shot/video paths outside the attempt
+  directory, a promote run id that is not the attempt directory name, fused step
+  ids and all-skipped scenarios, digests no longer collide on `;+`, `must()`
+  matches names exactly, and typed text stays one argv element. eslint-config's
+  CSRF and Worker-runtime rules no longer go quiet on a read-method fall-through
+  route, a `logCsrf*` callee, or a served `fixtures/` or `.test.` route.
+  narduk-testkit's fake D1 counts CTE-led writes and rejects multi-statement
+  `prepare()`.
+- c211173: `no-process-env-in-worker-runtime` sees an imported `node:process`
+  and `global.process`; `require-limit-on-drizzle-list-queries` no longer treats
+  `or()` with one primary-key arm as a single row and checks a stored select
+  that is later returned or awaited; `require-validated-query` reports a raw
+  read of a query that is also parsed; `require-fetch-timeout` ignores
+  `timeout`/`signal` set to `undefined`, `null` or `void 0`.
+- f65cef9: Add the round-8 feel primitives to narduk-shell: `useUndoToast()` (a
+  7 second Undo toast with a countdown bar and a promise of `undone` or
+  `committed`, on the Nuxt UI toaster), `useTimeAgo()` and `NeRelativeTime` (one
+  shared 30 second ticker, `<time datetime>` with an absolute title, relative
+  while recent and a date after a week), `NePriceCell` (a fixed-width tabular
+  figure whose up/down tint changes colour only), `NeStickyActionBar` (the phone
+  bottom call to action with safe-area padding and a matching spacer), `NeTabs`
+  and `useRouteTab()` (`?tab=` kept with `router.replace`, roving focus, the
+  active tab scrolled into view), a global `:focus-visible` ring (2px accent
+  outline, 2px offset; it replaces the browser default ring in every consuming
+  app, so expect a visible change on focused controls) and the `.ne-safe-top` /
+  `.ne-safe-bottom` utilities. Every addition is new surface; no existing export
+  changes. Add `usePageSeo()` and `buildPageTitle()` to narduk-seo for the
+  `Page · Site` browser title. Update the shared-component inventories and
+  Explorer examples.
+
 ## 3.3.4
 
 ### Patch Changes

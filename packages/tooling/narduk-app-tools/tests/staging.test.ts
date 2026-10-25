@@ -642,7 +642,13 @@ describe('checkStagingServesSha', () => {
 describe('versions-promote with staging enabled', () => {
   const PROD_VERSION = 'prod-version'
   function promoteContext(stagingVersions: WorkerVersion[]) {
-    const production = client([deployment('prod-old')], [tagged(PROD_VERSION, SHA)])
+    const production = client(
+      [deployment('prod-old')],
+      [
+        tagged(PROD_VERSION, SHA),
+        { ...tagged('prod-old'), metadata: { created_on: '2026-10-14T00:00:00Z' } },
+      ],
+    )
     const staging = client([deployment(STAGING_VERSION)], stagingVersions)
     return {
       production,
@@ -688,5 +694,68 @@ describe('versions-promote with staging enabled', () => {
       context,
     )
     expect(result.outcome).toBe('dry-run')
+  })
+})
+
+describe('ponytail-5 repro (apptools-src #8, #9)', () => {
+  it('#8 refuses production when the app declaration does not parse', async () => {
+    const { root, appDir } = checkout()
+    writeFileSync(join(root, 'Config', 'cloudflare-app.json'), '{ "deployment": ')
+    const production = client(
+      [deployment('prod-old')],
+      [
+        tagged('prod-version', SHA),
+        { ...tagged('prod-old'), metadata: { created_on: '2026-10-14T00:00:00Z' } },
+      ],
+    )
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--no-gate-attestation', 'test', '--force']),
+      {
+        client: production.client,
+        env: ACTIONS_ENV,
+        resolveWorkerName: () => 'harmony-hot-sauce',
+        appDir,
+        log: () => {},
+        ancestry: () => 'unknown',
+      },
+    )
+    expect(result.outcome).toBe('staging-not-proven')
+    expect(production.deployed).toEqual([])
+  })
+
+  it('#9 pages past 20 versions and never calls a missing row untagged', async () => {
+    const versions = Array.from({ length: 25 }, (_, index) =>
+      tagged(`v-${String(index)}`, index === 24 ? SHA : OTHER),
+    )
+    const live = client([deployment('v-24')], versions).client
+    const paged = {
+      ...live,
+      listVersions: async (limit: number) => ({
+        versions: versions.slice(0, limit),
+        complete: limit >= versions.length,
+        limit,
+        source: 'api' as const,
+      }),
+    }
+    expect(await checkStagingServesSha(SHA, 's', paged)).toBeNull()
+    const missing = client([deployment('v-gone')], versions).client
+    expect(await checkStagingServesSha(SHA, 's', missing)).not.toMatch(/no commit tag/u)
+  })
+})
+
+describe('ponytail-5 repro (apptools-src #4)', () => {
+  it('#4 refuses to derive a config that keeps a cross-script Durable Object binding', () => {
+    expect(() =>
+      planStagingConfig({
+        root: '/r',
+        production: {
+          ...PRODUCTION_WRANGLER,
+          durable_objects: {
+            bindings: [{ name: 'ROOM', class_name: 'Room', script_name: 'harmony-hot-sauce' }],
+          },
+        },
+        deployment: block(),
+      }),
+    ).toThrow(/durable_objects/u)
   })
 })

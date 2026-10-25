@@ -77,14 +77,23 @@ describe('classifyWorkerRuntimeFile — layout signals', () => {
 
   it('never classifies test or fixture files as Worker runtime', () => {
     for (const filename of [
-      '/repo/server/api/users.post.test.ts',
+      '/repo/server/utils/users.test.ts',
       '/repo/tests/server/api/users.ts',
       '/repo/server/__fixtures__/handler.ts',
-      '/repo/server/api/users.spec.ts',
     ]) {
       const result = classifyWorkerRuntimeFile(filename, options)
       expect(result.isWorkerRuntime).toBe(false)
       expect(result.reason).toBe('test-or-fixture')
+    }
+  })
+
+  it('still treats a test-named file inside the served route tree as Worker runtime', () => {
+    for (const filename of [
+      '/repo/server/api/users.post.test.ts',
+      '/repo/server/api/users.spec.ts',
+      '/repo/server/api/fixtures/seed.post.ts',
+    ]) {
+      expect(classifyWorkerRuntimeFile(filename, options).isWorkerRuntime).toBe(true)
     }
   })
 

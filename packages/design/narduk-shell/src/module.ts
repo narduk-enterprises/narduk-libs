@@ -303,6 +303,11 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'useReducedMotion',
       from: resolver.resolve('./runtime/composables/use-reduced-motion'),
     })
+    // The URL-backed tab (`?tab=`). Pairs with NeTabs but needs no component.
+    addImports({
+      name: 'useRouteTab',
+      from: resolver.resolve('./runtime/composables/use-route-tab'),
+    })
     // The first `n` rows of a list, then all of them on request. Pairs with
     // NeShowMore but needs no component on its path.
     addImports({
@@ -312,6 +317,18 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     addImports({
       name: 'useSlashFocus',
       from: resolver.resolve('./runtime/composables/use-slash-focus'),
+    })
+    // Round-8 feel set (README § Feel primitives): the shared-ticker relative
+    // time and the Gmail-style undo toast, plus useRouteTab above. Plain
+    // composables with no `Ne*` component on their path (`useUndoToast` raises a
+    // Nuxt UI toast), so they too ride along with `components: false`.
+    addImports({
+      name: 'useTimeAgo',
+      from: resolver.resolve('./runtime/composables/use-time-ago'),
+    })
+    addImports({
+      name: 'useUndoToast',
+      from: resolver.resolve('./runtime/composables/use-undo-toast'),
     })
 
     if (options.components === false) return

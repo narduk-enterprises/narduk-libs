@@ -25,7 +25,12 @@ function isRowReturningStatement(sql: string): boolean {
 
 /** Does this statement change rows, so `changes()`/`last_insert_rowid()` mean something? */
 function isMutatingStatement(sql: string): boolean {
-  return /^(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql.trim())
+  const code = stripNonCode(sql).trim()
+  // A CTE-led write: `WITH c AS (...) INSERT INTO ...`.
+  return (
+    /^(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(code) ||
+    /^WITH\b[\s\S]*\)\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(code)
+  )
 }
 
 /**
@@ -268,6 +273,10 @@ class FakeD1Database implements D1Database {
   }
 
   prepare(query: string): D1PreparedStatement {
+    // D1 prepares exactly one statement; `exec()` is the multi-statement call.
+    if (/;\s*[^\s;]/.test(stripNonCode(query))) {
+      throw new Error('D1_ERROR: prepare() accepts a single statement; use exec() for several.')
+    }
     return new FakeD1PreparedStatement(this.#database, query)
   }
 

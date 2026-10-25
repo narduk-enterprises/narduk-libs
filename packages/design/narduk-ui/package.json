@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-ui",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": false,
   "description": "Narduk shared interface library. Ships the Narduk Status Design System token layer and the instruments component family.",
   "type": "module",
@@ -47,7 +47,7 @@
     "@vue/server-renderer": "3.5.42",
     "@vue/test-utils": "2.4.11",
     "eslint": "^10.8.0",
-    "happy-dom": "20.10.6",
+    "happy-dom": "21.0.4",
     "prettier": "^3.8.3",
     "typescript": "~6.0.3",
     "vitest": "^4.1.11",

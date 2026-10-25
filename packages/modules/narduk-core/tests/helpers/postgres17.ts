@@ -26,8 +26,12 @@ export interface TestDatabase {
 }
 
 export interface TestPostgres {
-  /** A new, empty database with its own connection. */
-  createDatabase: () => Promise<TestDatabase>
+  /**
+   * A new, empty database with its own connection. `searchPath` is set on that
+   * connection only (the test's own SQL), never on `url`, so a runtime that
+   * connects with `url` sees the server's default `search_path`.
+   */
+  createDatabase: (options?: { searchPath?: string }) => Promise<TestDatabase>
   stop: () => Promise<void>
   /** `SHOW server_version` of the server under test, e.g. `17.10`. */
   version: string
@@ -100,7 +104,7 @@ export async function startPostgres17(): Promise<TestPostgres> {
   let counter = 0
   return {
     version,
-    async createDatabase() {
+    async createDatabase(options = {}) {
       const name = `t_${process.pid}_${Date.now().toString(36)}_${counter++}`
       // Not the cluster default (C here): the stock postgres:17 image is
       // en_US.utf8, where text range comparisons do not order by bytes. A test
@@ -123,7 +127,11 @@ export async function startPostgres17(): Promise<TestPostgres> {
       if (!created) throw new Error('The test server has neither ICU nor en_US.utf8 collation.')
       const url = new URL(adminUrl)
       url.pathname = `/${name}`
-      const sql = postgres(url.toString(), { max: 4, onnotice: () => {} })
+      const sql = postgres(url.toString(), {
+        max: 4,
+        onnotice: () => {},
+        ...(options.searchPath ? { connection: { search_path: options.searchPath } } : {}),
+      })
       const database: TestDatabase = {
         url: url.toString(),
         sql,

@@ -65,35 +65,12 @@ export const DEFAULT_URL_WORKER_ENV: UrlWorkerEnv = {
 const CRAWLER_USER_AGENT = 'OGPreviewBot/1.0 (+https://ogpreview.app/bot)'
 
 /**
- * Alternative User-Agents for fallback when rate limited
- * These mimic popular platform crawlers that sites often allow
- */
-const FALLBACK_USER_AGENTS = [
-  'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-  'LinkedInBot/1.0 (compatible; Mozilla/5.0; +http://www.linkedin.com)',
-  'Twitterbot/1.0',
-  'Discordbot/2.0 (+https://discord.com)',
-  'WhatsApp/2.0',
-  'TelegramBot (like TwitterBot)',
-  'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)',
-  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-]
-
-/**
  * Returns the crawler User-Agent string
  * Uses a consistent, honest User-Agent that identifies the service as a crawler
  * This helps sites identify and allow/block the crawler appropriately via robots.txt
  */
 function selectUserAgent(_url: string): string {
   return CRAWLER_USER_AGENT
-}
-
-/**
- * Returns a fallback User-Agent by index
- * Used when we get rate limited to try alternative User-Agents
- */
-function selectFallbackUserAgent(index: number): string {
-  return FALLBACK_USER_AGENTS[index % FALLBACK_USER_AGENTS.length]!
 }
 
 /**
@@ -765,171 +742,14 @@ export async function fetchWithValidatedRedirects(
       }
 
       // Check response status
-      // Handle 429 (Too Many Requests) with fallback User-Agents
+      // A 429 is the origin's verdict: report it, never retry under another identity.
       if (response.status === 429) {
-        if (DEBUG)
-          console.log(`[fetchWithValidatedRedirects] Got 429, trying fallback User-Agents...`)
-
-        // Release the original 429 response before issuing fallback requests.
-        // Leaving its body unconsumed can hold the socket/stream open while
-        // we fan out N additional fetches for each fallback UA.
         await drainUnusedResponse(response, DEBUG)
-
-        // Try fallback User-Agents in order
-        for (let fallbackIndex = 0; fallbackIndex < FALLBACK_USER_AGENTS.length; fallbackIndex++) {
-          const fallbackUserAgent = selectFallbackUserAgent(fallbackIndex)
-          if (DEBUG)
-            console.log(
-              `[fetchWithValidatedRedirects] Trying fallback ${fallbackIndex + 1}/${FALLBACK_USER_AGENTS.length}: ${fallbackUserAgent.substring(0, 50)}...`,
-            )
-
-          try {
-            const fallbackHeaders: HeadersInit = {
-              'User-Agent': fallbackUserAgent,
-              Accept:
-                'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-              'Accept-Language': 'en-US,en;q=0.9',
-              DNT: '1',
-              Connection: 'keep-alive',
-              'Upgrade-Insecure-Requests': '1',
-              'Sec-Fetch-Dest': 'document',
-              'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-Site': 'none',
-              'Sec-Fetch-User': '?1',
-              'Cache-Control': 'max-age=0',
-              Referer: `${urlObjForHeaders.protocol}//${urlObjForHeaders.hostname}/`,
-              Origin: `${urlObjForHeaders.protocol}//${urlObjForHeaders.hostname}`,
-            }
-
-            const fallbackResponse = await fetch(normalizedUrl, {
-              signal: controller.signal,
-              headers: fallbackHeaders,
-              redirect: 'manual',
-              // Reuse the current iteration's pinned dispatcher so the
-              // fallback attempts hit the same validated public IP.
-              ...(pinnedDispatcher
-                ? ({ dispatcher: pinnedDispatcher } as unknown as Record<string, unknown>)
-                : {}),
-            } as RequestInit)
-
-            if (DEBUG)
-              console.log(
-                `[fetchWithValidatedRedirects] Fallback ${fallbackIndex + 1} returned status: ${fallbackResponse.status}`,
-              )
-
-            // If fallback succeeded (2xx), use it
-            if (fallbackResponse.ok) {
-              if (DEBUG)
-                console.log(
-                  `[fetchWithValidatedRedirects] Fallback ${fallbackIndex + 1} succeeded!`,
-                )
-              // Continue with the fallback response — same policy as the main
-              // 200 path: reject only known non-HTML; empty/unknown may still be HTML.
-              const contentType = fallbackResponse.headers.get('content-type') ?? ''
-              if (isKnownNonHtmlContentType(contentType)) {
-                console.error(
-                  `[fetchWithValidatedRedirects] Fallback invalid content type: ${contentType}`,
-                )
-                await drainUnusedResponse(fallbackResponse, DEBUG)
-                return {
-                  ok: false,
-                  error: {
-                    code: 'INVALID_CONTENT_TYPE',
-                    message: 'URL does not return HTML content',
-                    details: contentType,
-                  },
-                }
-              }
-
-              // Use the fallback response
-              const reader = fallbackResponse.body?.getReader()
-              if (!reader) {
-                await drainUnusedResponse(fallbackResponse, DEBUG)
-                continue // Try next fallback
-              }
-
-              // Reuse a single TextDecoder across chunks. Allocating a new one
-              // per chunk breaks multi-byte UTF-8 sequences that straddle chunk
-              // boundaries and also churns garbage on every iteration.
-              const decoder = new TextDecoder()
-              let html = ''
-              let totalSize = 0
-              let oversize = false
-              try {
-                for (;;) {
-                  const { done, value } = await reader.read()
-                  if (done) break
-
-                  totalSize += value.length
-                  if (totalSize > MAX_RESPONSE_SIZE) {
-                    oversize = true
-                    break
-                  }
-
-                  html += decoder.decode(value, { stream: true })
-                }
-              } finally {
-                // Always release the underlying stream, even when we abort the
-                // loop on oversize payloads. Without this, undici can hold the
-                // socket open until GC and leak resources under load.
-                try {
-                  await reader.cancel()
-                } catch (cancelError: unknown) {
-                  if (DEBUG) {
-                    console.log(
-                      '[fetchWithValidatedRedirects] Failed to cancel fallback reader:',
-                      cancelError instanceof Error ? cancelError.message : String(cancelError),
-                    )
-                  }
-                }
-              }
-              if (oversize) {
-                return {
-                  ok: false,
-                  error: {
-                    code: 'RESPONSE_TOO_LARGE',
-                    message: `Response too large: ${totalSize} bytes`,
-                    details: `Exceeded limit of ${MAX_RESPONSE_SIZE} bytes`,
-                  },
-                }
-              }
-              html += decoder.decode()
-
-              return {
-                ok: true,
-                html,
-                finalUrl: normalizedUrl,
-              }
-            }
-
-            // If fallback also got 429, try next one.
-            if (fallbackResponse.status === 429) {
-              await drainUnusedResponse(fallbackResponse, DEBUG)
-              continue
-            }
-
-            // Remaining responses here are !ok (handled by `if (fallbackResponse.ok)` above).
-            await drainUnusedResponse(fallbackResponse, DEBUG)
-            continue
-          } catch (fallbackError: unknown) {
-            // If fallback fails, try next one
-            if (DEBUG)
-              console.log(
-                `[fetchWithValidatedRedirects] Fallback ${fallbackIndex + 1} failed:`,
-                fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-              )
-            continue
-          }
-        }
-
-        // All fallbacks failed
-        console.error(`[fetchWithValidatedRedirects] All fallback User-Agents failed for 429`)
         return {
           ok: false,
           error: {
             code: 'RATE_LIMITED',
-            message: 'Too many requests. All fallback methods failed.',
-            details: `Tried ${FALLBACK_USER_AGENTS.length} fallback User-Agents`,
+            message: 'Too many requests. Please try again later.',
           },
         }
       }

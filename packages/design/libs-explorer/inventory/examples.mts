@@ -151,6 +151,26 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'The first few rows of a list, then Show all N; pairs with useRowLimit().',
   ),
   shell(
+    'NeRelativeTime',
+    'Relative time',
+    'A live "3 minutes ago" on one shared 30 second clock, with the absolute time in its title and a date after a week.',
+  ),
+  shell(
+    'NePriceCell',
+    'Price cell',
+    'A figure in a fixed-width, tabular cell; the up/down tint changes colour only, never width.',
+  ),
+  shell(
+    'NeStickyActionBar',
+    'Sticky action bar',
+    'The phone bottom call to action: safe-area padding, and a spacer so it never covers the last row.',
+  ),
+  shell(
+    'NeTabs',
+    'Tabs',
+    'A tab strip with roving focus and the active tab kept in view; optionally kept in the URL as ?tab=.',
+  ),
+  shell(
     'NeCsvDownload',
     'CSV download',
     'Downloads exactly the rows in view, raw values, missing as empty.',
@@ -184,6 +204,17 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'NeCommandPaletteTrigger',
     'Command palette trigger',
     'The header button that looks like a search field and opens the palette.',
+  ),
+  shell('NeSettle', 'Settle', 'PACC·TRAC’s one-shot, no-bounce arrival after a state change.'),
+  shell(
+    'NeTimelineHero',
+    'Timeline hero',
+    'TX Spends’ number-led headline and selectable period bars.',
+  ),
+  shell(
+    'NeStatementHero',
+    'Statement hero',
+    'KZFR’s current-state headline, including last-known and unknown states.',
   ),
   shell('NeHero', 'Hero', 'The top of a landing page: headline, title, description and buttons.'),
   shell('NeFeatureGrid', 'Feature grid', 'Feature tiles in a responsive grid, one list item each.'),

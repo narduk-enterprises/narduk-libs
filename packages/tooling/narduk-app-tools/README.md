@@ -23,7 +23,7 @@ diagnostics, performance budgets, and favicon assets.
 ## Local development (`narduk-app dev`)
 
 ```sh
-narduk-app dev [--credentials <none|nvault>] [--project <name>] \
+narduk-app dev [--mapkit | --credentials <none|nvault>] [--project <name>] \
   [--environment <name>] [--config <name>] [--dry-run] -- <command...>
 ```
 
@@ -39,6 +39,15 @@ stay process-local for that one run and are never written to a file (company-hq
 plane 4 "Local workstation overlay"). A partial selector is refused by name
 rather than resolved to some nearby scope. `--dry-run` prints the exact command
 without running it.
+
+`--mapkit` is that route with the shared MapKit JS signing persona already
+selected (`apple/prd/mapkit-signing`, which sets `APPLE_TEAM_ID`, `APPLE_KEY_ID`
+and `APPLE_PRIVATE_KEY`), so a map app's script is
+`narduk-app dev --mapkit -- nuxt dev --host 127.0.0.1`. It refuses
+`--credentials` and a selector beside it; an app that also needs its own secrets
+nests the second route in the child. The narduk-mapkit
+[local development runbook](../../modules/narduk-mapkit/docs/local-development.md)
+covers the rest of a working local map.
 
 ### Migrating off the retired Doppler wrapper
 
@@ -339,10 +348,11 @@ narduk-app manifests validate [--checkout <dir>] [--wrangler <path>]... [--json 
 ```
 
 - **Which config.** Every `--wrangler` path given (a staging or preview config
-  too), else the manifest's `worker.wranglerConfig`, else the first wrangler
-  config at a known path. JSON/JSONC is read with `jsonc-parser`, so `//` in a
-  URL and `*/15` in a cron are string content; `wrangler.toml` is read for the
-  same top-level facts.
+  too), else the manifest's `worker.wranglerConfig`, else the wrangler config
+  beside the Nuxt app (`web/`, `apps/web/`), else the first wrangler config at a
+  known path. JSON/JSONC is read with `jsonc-parser`, so `//` in a URL and
+  `*/15` in a cron are string content; `wrangler.toml` is read for the same
+  top-level facts.
 - **Bindings and crons** (`bindings.d1`, `kv`, `r2`, `queues`, `cron`,
   `durableObjects`) are compared as sorted sets on both sides, and only the
   kinds the manifest declares. Queues read as `<binding>:producer` and
@@ -532,10 +542,15 @@ persona, read-only drift checks, database locks, expand/contract review and
 recovery steps are in [D1 deployment migrations](docs/deployment-migrations.md).
 
 `db migrate-deployment --target production --sha <verified-sha>` migrates before
-promotion; `--check` is read-only and fails on pending or divergent history.
-`db bundle --output <file>` packages SQL/data for trusted preview tooling
-without giving D1 credentials to PR code. Existing apps must adopt the workflow
-steps; installing the package alone does not activate migration writes.
+promotion; `--check` is read-only and fails on pending or divergent history. A
+write runs under a successful `workflow_run`, or under a `push` /
+`workflow_dispatch` on the production branch with
+`--gate-verified "<gateCheck>@<sha>" --gate-workflow <ci workflow file>`, where
+the tool reads that workflow's run from GitHub itself; `--check-context` proves
+that context without writing. `db bundle --output <file>` packages SQL/data for
+trusted preview tooling without giving D1 credentials to PR code. Existing apps
+must adopt the workflow steps; installing the package alone does not activate
+migration writes.
 
 An app whose D1 estate is mixed -- some databases migrated, one whose schema is
 owned by a contract and a refresh job -- declares `deployment.databaseOwnership`

@@ -146,7 +146,7 @@ export function sessionRuntimeConfigSeed(
     session: {
       name: LAYER_USER_SESSION_NAME,
       maxAge: DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
-      password: env?.NUXT_SESSION_PASSWORD || '',
+      password: env?.NUXT_SESSION_PASSWORD || env?.SESSION_PASSWORD || '',
     },
   }
 }

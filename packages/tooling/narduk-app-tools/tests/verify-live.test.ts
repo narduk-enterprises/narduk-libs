@@ -182,6 +182,16 @@ describe('verify --live argument parsing', () => {
     expect(parsed.allowDegraded).toBe(false)
   })
 
+  it('ponytail-5 apptools-src #17: refuses a probe path that resolves to another origin', () => {
+    for (const path of ['https://good.example/api/health', '//good.example/', '/\\good.example/'])
+      expect(() =>
+        parseVerifyArgs(['--live', 'https://broken.example', '--health-path', path]),
+      ).toThrow(/origin/u)
+    expect(() =>
+      parseVerifyArgs(['--live', 'https://broken.example', '--smoke-path', '//good.example/']),
+    ).toThrow(/origin/u)
+  })
+
   it('refuses usage it cannot act on', () => {
     expect(() => parseVerifyArgs([])).toThrow('Usage: narduk-app verify --live')
     expect(() => parseVerifyArgs(['--live', '--expect-sha', SHA])).toThrow('needs a base URL')

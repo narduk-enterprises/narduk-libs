@@ -1,11 +1,13 @@
 # @narduk-enterprises/narduk-auth
 
-## Peer: `@nuxt/ui` at `4.11.1`
+## Peer: `@nuxt/ui` 4.x (`>=4.7.1 <5`)
 
 The components and pages this package ships (the auth cards and panels,
 `AdminUsersTab`, `AppUserMenu`, the sign-in pages) render Nuxt UI, so `@nuxt/ui`
-is a peer at exactly `4.11.1`, the version narduk-core and narduk-shell pin
-(narduk-libs#1033). An app on narduk-core already installs it.
+is a peer. The range admits an existing app on Nuxt UI 4.7 or later instead of
+forcing the `4.11.1` that narduk-core is tested against (narduk-libs#1033,
+#1940); the app's own `@nuxt/ui` is the one that runs, and a generated app pins
+the version the generator carries.
 
 ## Native app sign-in (opt-in, local backend)
 
@@ -261,6 +263,15 @@ An app on narduk-core's `databaseBackend: 'postgres'` applies the Postgres
 translations in `drizzle-pg/` instead. They carry the same file names and the
 same tables as `drizzle/`, `drizzle-pg/0001`–`0006`, and are exported as
 `@narduk-enterprises/narduk-auth/drizzle-pg/*`.
+
+**In a named schema** (narduk-libs#1953): set `nardukCore.postgresSchema` once
+and the auth tables follow it, like every core table, so an app with its own
+`public.users` or `public.api_keys` is left alone. Apply this set and core's
+with `applyMigrations(..., { schema })`; see
+[narduk-core: tables in their own schema](../narduk-core/README.md#tables-in-their-own-schema-postgresschema).
+`tests/schema-migration-parity.test.ts` and
+`tests/postgres-runtime.custom-schema.integration.test.ts` run the parity diff
+and the whole runtime suite in the `narduk` schema.
 
 Apply narduk-core's `runtime/drizzle-pg/0000`–`0008` **first**: every auth table
 that names a user references `users(id)`, so the auth files fail on a database

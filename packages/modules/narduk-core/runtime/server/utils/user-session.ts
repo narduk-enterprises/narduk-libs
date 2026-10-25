@@ -44,6 +44,13 @@ function sessionMaxAgeFrom(value: unknown): number {
     : DEFAULT_USER_SESSION_MAX_AGE_SECONDS
 }
 
+/** Secure unless served over plain HTTP to localhost or 127.0.0.1 (any port), as `createSession` does. */
+function secureSessionCookie(event: H3Event): boolean {
+  const hostname = (getRequestHeader(event, 'host') ?? '').replace(/:\d+$/u, '')
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1'
+  return !isLocalhost || getRequestProtocol(event) === 'https'
+}
+
 export function resolveSessionConfig(
   event: H3Event,
   overrides: Partial<SessionConfig> = {},
@@ -63,7 +70,7 @@ export function resolveSessionConfig(
     ...configOverrides,
     cookie: {
       sameSite: 'lax',
-      secure: getRequestProtocol(event) === 'https',
+      secure: secureSessionCookie(event),
       ...cookieOverrides,
     },
   }

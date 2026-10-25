@@ -43,6 +43,13 @@ export const SIGNALS: Readonly<Record<SignalState, SignalDescriptor>> = Object.f
   },
 });
 
+/** A zone-less date-time string is UTC, not the viewer's local time. */
+function toDate(observedAt: Date | string): Date {
+  if (observedAt instanceof Date) return observedAt;
+  const zoneless = /T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(observedAt);
+  return new Date(zoneless ? `${observedAt}Z` : observedAt);
+}
+
 /**
  * Classify an observation against the interval its own source publishes on.
  *
@@ -67,7 +74,7 @@ export function classifySignal(
   if (observedAt == null) return "void";
   if (!(intervalMinutes > 0)) return "void";
 
-  const observed = observedAt instanceof Date ? observedAt : new Date(observedAt);
+  const observed = toDate(observedAt);
   const time = observed.getTime();
   if (!Number.isFinite(time)) return "void";
 
@@ -87,7 +94,7 @@ export function ageMinutes(
   now: Date = new Date(),
 ): number | null {
   if (observedAt == null) return null;
-  const observed = observedAt instanceof Date ? observedAt : new Date(observedAt);
+  const observed = toDate(observedAt);
   const time = observed.getTime();
   if (!Number.isFinite(time)) return null;
   return Math.floor((now.getTime() - time) / 60_000);

@@ -1,4 +1,4 @@
-import { getQuery, readBody } from 'h3'
+import { getQuery, getRequestHeader, readRawBody } from 'h3'
 
 import { apiError } from './errors'
 
@@ -64,6 +64,9 @@ export interface RequestBodyRefusals {
   /** The query string does not match the schema. */
   misasked: string
 }
+
+/** The default cap on a request body, in bytes. */
+const MAX_BODY_BYTES = 1024 * 1024
 
 /** The machine-readable `data.code` refusals below are tagged with. */
 export const REQUEST_BODY_REFUSAL_CODES = Object.freeze({
@@ -159,6 +162,7 @@ export async function readQuery<S extends z.ZodType>(
  * @param unreadable what to say when the payload is not JSON at all --
  *                   `{ message, code }`, the same shape a route's own field
  *                   refusals are typically kept in.
+ * @param maxBytes   the largest body accepted (default 1 MiB); a larger one is a 413.
  * @returns the parsed body, or `{}` when the request carried none. Never
  *          `undefined`: a schema whose fields are all optional accepts a
  *          body-less POST, and a required field still refuses -- the schema
@@ -167,19 +171,37 @@ export async function readQuery<S extends z.ZodType>(
 export async function readRawJsonBody(
   event: H3Event,
   unreadable: { message: string; code: string },
+  maxBytes = MAX_BODY_BYTES,
 ): Promise<unknown> {
-  let raw: unknown
+  const refuse = (status: number) => apiError(status, unreadable.message, { code: unreadable.code })
+
+  // A declared size over the cap is refused before a byte is buffered.
+  const declared = Number(getRequestHeader(event, 'content-length'))
+  if (declared > maxBytes) throw refuse(413)
+
+  let text: string | undefined
   try {
-    // `strict` matches what `readValidatedBody` asks for: a payload that is
-    // not JSON is a refusal rather than a silent `undefined`.
-    raw = await readBody(event, { strict: true })
+    text = await readRawBody(event, 'utf8')
   } catch (err) {
-    // h3 refuses an unparseable payload with its own 400 whose message is
-    // "Invalid JSON body" -- machine-facing text, and the one refusal on this
-    // path that was never given words. Anything else it throws (a method it
-    // will not read a body for at all) is not ours to reword.
+    // Anything h3 throws (a method it will not read a body for at all) is not
+    // ours to reword.
     if ((err as { statusCode?: number } | null)?.statusCode !== 400) throw err
-    throw apiError(400, unreadable.message, { code: unreadable.code })
+    throw refuse(400)
+  }
+  // A chunked body declares no length; it is refused once it has been read.
+  if (text && text.length > maxBytes) throw refuse(413)
+
+  let raw: unknown
+  if (text) {
+    // Only a JSON media type is a JSON body: a form post or text/plain (what a
+    // cross-site form can send without a preflight) is a refusal, not a parse.
+    const type = (getRequestHeader(event, 'content-type') ?? '').split(';')[0]!.trim().toLowerCase()
+    if (type !== 'application/json' && !type.endsWith('+json')) throw refuse(415)
+    try {
+      raw = JSON.parse(text)
+    } catch {
+      throw refuse(400)
+    }
   }
 
   // `null` as well as `undefined`: a client that sends the four characters

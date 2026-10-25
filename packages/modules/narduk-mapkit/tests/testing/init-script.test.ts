@@ -80,6 +80,19 @@ describe('fakeMapKitInitScript', () => {
     expect(runtime.inspect.annotationCounts(pin).added).toBe(1)
   })
 
+  it('resolves load() to a scoped namespace that is not window.mapkit (K-10), serialized', async () => {
+    const runtime = runtimeOf(evaluateInitScript())
+    const scoped = await runtime.load({ libraries: ['map', 'annotations'] })
+    expect(scoped).not.toBe(runtime.mapkit)
+
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const map = new scoped.Map(host)
+    const pin = new scoped.MarkerAnnotation(new scoped.Coordinate(30, -88), { title: 'Buoy' })
+    map.addAnnotation(pin)
+    expect(map.annotations).toHaveLength(1)
+  })
+
   it('keeps the fidelity rule across the realm boundary', () => {
     const runtime = runtimeOf(evaluateInitScript())
     let caught: unknown

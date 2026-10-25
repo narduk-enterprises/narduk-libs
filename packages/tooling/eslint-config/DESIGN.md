@@ -759,6 +759,40 @@ real bound (`orderBy(desc(createdAt)).limit(100)`) rather than a
 `// narduk-bounded: <reason>` comment exists for sets that are bounded by
 construction, and requires a reason so review can check it.
 
+### Web-app audit rules: precision choices
+
+`narduk/no-static-element-interactions` exists because upstream's two rules
+reported 16 findings on pacc-trac and 6 were not defects: a `role="dialog"`
+routing Escape, a drag-and-drop zone, a `<header>` landmark routing menu keys,
+and three `@click.capture` handlers that swallow the click ending a drag. The
+upstream rules take no options, so the pack turns them off and runs one rule
+that inspects static elements only. The remaining findings were real.
+
+`narduk/require-safe-redirect-query` requires every use of a redirect-like query
+value to reach a guard, rather than tracking it to a navigation sink: a value
+stored in a `computed` or sent to the server is invisible to a sink check, and
+both shapes exist in the estate. It follows one `const` binding. A value
+forwarded to a route that sanitizes server-side is the one legitimate miss, and
+takes a disable comment that names the server guard (narduk-auth's
+`AuthExchangePanel.vue` is the example). On pacc-trac it reported 4 reads: one
+naive `startsWith('/')` check that `//evil.example` passes, and three calls to
+the app's own guards, which the `guards` option names.
+
+`narduk/no-restricted-utility-classes` replaces a plugin rule rather than adding
+a guard that throws when `tailwindcss` does not resolve. The shared packages
+that compose `design-system` (narduk-devices, narduk-tenancy, narduk-ai) have no
+Tailwind install, and a palette or `vh` ban is a class-name regex that never
+needed one. It reads class strings only where a class is expected (class
+attributes, `:class`/`:ui`, class-merging callees, `classes` variables), so a
+`'blue'` argument or a `title="text-slate-500"` is not reported. A token
+touching an interpolation is skipped: `text-${tone}-500` is not a class until
+runtime. On pacc-trac it reported 1037 palette classes, 448 arbitrary colours
+and 2 `vh` heights; the samples read were all real.
+
+Native dialogs use the core `no-restricted-globals` and
+`no-restricted-properties` rules rather than a plugin rule, because their scope
+analysis already ignores a shadowing local.
+
 ### `no-render-clock` precision choices
 
 The rule is an error, so it stays inside one component: a composable that reads

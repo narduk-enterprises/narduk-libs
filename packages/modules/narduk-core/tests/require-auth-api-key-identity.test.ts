@@ -77,4 +77,10 @@ describe('requireAuth API-key principal', () => {
       apiKey: { id: 'key-1', expiresAt: null },
     })
   })
+
+  it('refuses a key whose expiry is the epoch', async () => {
+    db.rows = [{ apiKey: keyRow(0), user: USER }]
+
+    await expect(requireAuth(bearerEvent())).rejects.toMatchObject({ statusCode: 401 })
+  })
 })

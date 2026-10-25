@@ -1,5 +1,10 @@
 # Canonical MapKit Workspace
 
+> **Superseded on 2026-09-17 by `docs/api-2.1.md`:** one package. New apps use
+> the `@narduk-enterprises/narduk-mapkit/nuxt` export. Do not adopt the frozen
+> `@narduk-enterprises/narduk-mapkit-nuxt`; the Nuxt-adapter direction and
+> migration step 2 below are historical.
+
 This decision record began with the local and GitHub inventory run on July 4,
 2026 and was implemented on July 14, 2026. This repository is the canonical web
 MapKit source under the `narduk-enterprises` organization.
@@ -84,12 +89,13 @@ Swift package (`GeoGridKit`) rather than in this MapKit wrapper.
 
 The tile seam this package exposes is intentionally structural, not a dependency
 on any grid-rendering package: `createMapKitAsyncTileOverlay`
-(`src/client/runtime.ts:186-216`) accepts a per-tile
-`MapKitTileOverlayImageSource` — a plain function type resolving to
-`Promise<ImageSource> | ImageSource` (`src/client/runtime.ts:44-54`).
-`GeoGridWeb` (or any other renderer) plugs into that seam from the consumer
-side; no core changes were needed here to support it, and none should be —
-adding a grid/scalar decoder or renderer to this package would duplicate
+(`src/client/runtime.ts:179-206`) accepts a per-tile
+`MapKitTileOverlayImageSource` — a plain function type that must return a
+`Promise<ImageSource | null>` (`src/client/runtime.ts:40-46`). A callback that
+returns a bare image throws inside the wrapper, which reports it and paints
+nothing. `GeoGridWeb` (or any other renderer) plugs into that seam from the
+consumer side; no core changes were needed here to support it, and none should
+be — adding a grid/scalar decoder or renderer to this package would duplicate
 `GeoGridWeb`'s job and couple a framework-neutral MapKit wrapper to one
 product's rendering stack.
 

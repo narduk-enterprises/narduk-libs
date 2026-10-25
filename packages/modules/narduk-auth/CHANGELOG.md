@@ -1,5 +1,134 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.37.8
+
+### Patch Changes
+
+- Updated dependencies [736e874]
+  - @narduk-enterprises/narduk-app@1.23.0
+
+## 1.37.7
+
+### Patch Changes
+
+- Updated dependencies [a296973]
+  - @narduk-enterprises/narduk-app@1.22.0
+  - @narduk-enterprises/narduk-core@2.37.5
+
+## 1.37.6
+
+### Patch Changes
+
+- Updated dependencies [d18d969]
+  - @narduk-enterprises/narduk-core@2.37.4
+
+## 1.37.5
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies [92fd524]
+  - @narduk-enterprises/narduk-platform@2.4.2
+  - @narduk-enterprises/narduk-app@1.21.0
+  - @narduk-enterprises/narduk-core@2.37.3
+
+## 1.37.4
+
+### Patch Changes
+
+- cd278d5: Add web-app audit rules. `core` now reports redirect-like query reads
+  that skip a same-origin guard (`narduk/require-safe-redirect-query`, with
+  `guards`/`params` options), native `alert`/`confirm`/`prompt` in app code, and
+  `vue/no-v-html` without the community layer. `design-system` reports `vh` in
+  inline styles (`narduk/no-viewport-vh-units`). The raw palette, arbitrary
+  colour and `vh`/`screen` class bans move from
+  `better-tailwindcss/no-restricted-classes`, which switched itself off when
+  `tailwindcss` did not resolve from the lint cwd, to
+  `narduk/no-restricted-utility-classes`, which needs no Tailwind and now sees
+  variants (`hover:text-slate-500`), `!` and `/opacity` modifiers, and arbitrary
+  colours. `createAppLintConfig` takes `allowedRawPaletteFiles` for chart
+  palettes. A native `<header>` in a page is no longer reported. The opt-in
+  `a11y` pack knows Nuxt and Nuxt UI links, labels and controls, and replaces
+  upstream's static-element rules with `narduk/no-static-element-interactions`.
+  Each is `warn`, so an app that adopts this version can go red until its
+  findings are fixed.
+
+  `narduk-auth` annotates `AuthExchangePanel.vue`'s `next` read, which its
+  exchange route sanitizes server-side, for the new redirect rule.
+  - @narduk-enterprises/narduk-app@1.20.4
+  - @narduk-enterprises/narduk-core@2.37.2
+
+## 1.37.3
+
+### Patch Changes
+
+- 0f8f69d: The MCP OAuth token request now purges a bounded batch of the oldest
+  expired `auth_oauth_kv` rows instead of every expired row. Account deletion
+  for a principal with no backend stamp now uses the Supabase password check
+  when either the build config or the running Worker's `AUTH_BACKEND` says
+  Supabase.
+- 82f5b78: Security fixes: deleting a local account with no password (Sign in
+  with Apple, magic link) now requires a sign-in within the last 10 minutes;
+  completing a password reset revokes the user's other sessions before writing
+  the new hash; the MCP bearer guard covers both the `/mcp` and `/mcp/`
+  spellings, whichever one `resourcePath` is configured with; an MCP token
+  exchange the library refuses (for example a wrong PKCE verifier) releases its
+  one-time code claim so the real client can still redeem it.
+- Updated dependencies [873c869]
+- Updated dependencies [fa247c2]
+- Updated dependencies [5ee4d42]
+- Updated dependencies [cbb7b84]
+- Updated dependencies [82f5b78]
+- Updated dependencies [82f5b78]
+  - @narduk-enterprises/narduk-core@2.37.2
+  - @narduk-enterprises/narduk-app@1.20.4
+  - @narduk-enterprises/narduk-platform@2.4.1
+
+## 1.37.2
+
+### Patch Changes
+
+- fe63fd8: Pin `@nuxt/image` to 2.1.0 in narduk-core. 2.2.0 registers a server
+  auto-import whose `from` is an object, which nitropack 2.13.5 cannot resolve,
+  so `nuxt typecheck` crashed with `input.replace is not a function` in every
+  generated app. Also document the widened `@nuxt/ui` peer range in the
+  narduk-auth and narduk-core READMEs.
+- Updated dependencies [fe63fd8]
+  - @narduk-enterprises/narduk-core@2.37.1
+
+## 1.37.1
+
+### Patch Changes
+
+- Updated dependencies [b67ae79]
+  - @narduk-enterprises/narduk-core@2.37.0
+
+## 1.37.0
+
+### Minor Changes
+
+- e3345c2: An existing app can adopt narduk-core and narduk-auth on Postgres.
+  `nardukCore.postgresSchema` (default `public`) puts every core and auth table
+  in a named schema, so an app-owned `public.users` or `public.api_keys` of
+  another shape is never touched (narduk-libs#1953). Three more opt-outs, each
+  defaulting to today's behaviour (narduk-libs#1940):
+  `nardukCore.csrf.enabled: false` turns the CSRF middleware off,
+  `nardukCore.health: false` leaves `/api/health` to the app's own route, and
+  `@nuxt/ui` is now a peer range (`>=4.7.1 <5`) instead of a pinned core
+  dependency. With default options behaviour is unchanged for D1 and Postgres
+  apps, with two things to know: an app that uses the UI modules (`coreModules`
+  on) must now list `@nuxt/ui` itself, since core no longer pulls it in
+  (generated apps already do), and `runtimeConfig.nardukCsrf.enabled` and
+  `runtimeConfig.postgresSchema` are new keys. A hand-written Vitest alias for
+  `#narduk-core/schema` that points at `pg-schema.ts` also needs
+  `#narduk-core/postgres-schema` (apps that read `.nuxt/tsconfig.json` through
+  `nuxtVitestAliases()` get it automatically).
+
+### Patch Changes
+
+- Updated dependencies [e3345c2]
+  - @narduk-enterprises/narduk-core@2.36.0
+
 ## 1.36.0
 
 ### Minor Changes

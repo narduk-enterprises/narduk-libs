@@ -1,5 +1,64 @@
 # @narduk-enterprises/narduk-app
 
+## 1.23.0
+
+### Minor Changes
+
+- 736e874: Nonce-based `script-src` without `'unsafe-inline'`. New
+  `@narduk-enterprises/narduk-app/server/csp-nonce`: `getCspNonce(event)` mints
+  a per-request nonce and `installCspNonce(nitroApp)` stamps it on every
+  `<script>` of a Nuxt-rendered page (the inline hydration payload and import
+  map included) and makes that HTML `private, no-store`. `buildSecurityHeaders`
+  / `applySecurityHeaders` take an optional `nonce`, added to `script-src` of
+  both CSPs with `'unsafe-inline'` dropped there. Opt-in: without a nonce
+  nothing changes. `pnpm prove:nonce` proves it against a real Nuxt build.
+
+## 1.22.0
+
+### Minor Changes
+
+- a296973: `buildSecurityHeaders` takes an optional enforced `csp` (a
+  `Content-Security-Policy` header) beside `reportOnlyCsp`; absent, nothing
+  changes. New `@narduk-enterprises/narduk-app/server/request-id`
+  (`resolveRequestId`, `stampRequestId`, `applyRequestId`, `installRequestId`)
+  and `/server/request-id-error-handler` (a Nitro `errorHandler` that adds a
+  top-level `requestId` to `/api/` error bodies). `installServerErrorCapture`
+  now reads `event.context.requestId` before `cf-ray` / `x-request-id`. Closes
+  narduk-libs#2031.
+
+## 1.21.0
+
+### Minor Changes
+
+- 92fd524: Add `@narduk-enterprises/narduk-app/server/security-headers`:
+  `buildSecurityHeaders()` and `applySecurityHeaders()` give any h3/Nitro app
+  the baseline response headers (nosniff, frame options, referrer policy, HSTS
+  on https, optional Permissions-Policy and `X-Robots-Tag`) and an
+  app-allowlisted Content-Security-Policy served only as report-only.
+
+  The generator's pinned `narduk-auth` moves with its `narduk-app` dependency.
+
+## 1.20.4
+
+### Patch Changes
+
+- fa247c2: readRawJsonBody now refuses non-JSON content types and bodies over 1
+  MiB; upgrade keeps the old CI pin when the caller grant cannot be widened;
+  Dependabot npm open-pull-requests-limit is 2 again.
+- 5ee4d42: narduk-app: apiErrorMessage ignores a non-string message, and
+  readAppCookie keeps the first duplicate, unquotes values and cannot return a
+  prototype member. create-narduk-app: the database flag is read past comments
+  in either quote style, the GitHub Packages Dependabot file carries the
+  toolchain ceilings and cooldown exclusion, `narduk:unmanaged` now protects
+  package.json, and upgrade no longer throws on a scoped name, a low
+  localDevNuxtPort or an uppercase capability. narduk-ui: a missing tile's
+  reason is not colored as a change, an unknown chip state renders void, and a
+  bad `decimals` falls back instead of throwing. narduk-charts: README and
+  SECURITY now describe the pnpm workflow. design-system-build: the preview
+  sanitizer rejects every @import, remote url() and external form/href/srcset, a
+  planned card must author and render its own id, a failed swap keeps the
+  previous preview, and a stale .output is refused.
+
 ## 1.20.3
 
 ### Patch Changes

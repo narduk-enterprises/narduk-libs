@@ -1,5 +1,23 @@
 # @narduk-enterprises/narduk-devices
 
+## 0.7.3
+
+### Patch Changes
+
+- 0f8f69d: Device claim and credential races now fail closed. A completion proof
+  is spent in the same batch that creates the device, a reissue checks the
+  revocation generation, a rotation is gated on the credential version, an
+  idempotency key reused with different claim material is a conflict, an
+  approval token is only issued while the device is pending, and `prune` also
+  deletes expired challenges.
+- 82f5b78: `openSession` re-reads the device and credential after inserting the
+  session row and refuses (revoking that row) when a `revokeDevice` or
+  same-class `rotateCredential` committed while it was verifying the signature,
+  so no getter (`getSession`, `getSessionByToken`,
+  `getSessionByTokenWithDevice`, `requireDeviceSession`) ever sees such a
+  session as live. Sessions of the other credential class are untouched by a
+  rotation, as before.
+
 ## 0.7.2
 
 ### Patch Changes

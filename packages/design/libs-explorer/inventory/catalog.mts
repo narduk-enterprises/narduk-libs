@@ -42,6 +42,9 @@ export interface PackageSetup {
 }
 
 const SHELL_DEMOS = [
+  'ne-settle',
+  'ne-timeline-hero',
+  'ne-statement-hero',
   'ne-page-header',
   'ne-section-header',
   'ne-status-badge',
@@ -164,6 +167,19 @@ export const CATALOG: Record<string, CatalogEntry> = {
   '@narduk-enterprises/narduk-maps': {
     kind: 'visual',
     capabilities: ['SVG map', 'GL map', 'basemap style', 'choropleth', 'marks', 'OpenFreeMap'],
+  },
+  '@narduk-enterprises/narduk-notify': {
+    kind: 'server',
+    capabilities: [
+      'APNs',
+      'Live Activity push',
+      'Resend email',
+      'notification preferences',
+      'delivery audit',
+    ],
+    prerequisites: [
+      'An APNs auth key and a Resend API key in secret bindings, and the D1 migration applied.',
+    ],
   },
   '@narduk-enterprises/narduk-platform': {
     kind: 'contract',

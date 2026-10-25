@@ -1,1 +1,1 @@
-{"version":3,"file":"mapkit-token.get.d.ts","sourceRoot":"","sources":["../../../../src/nuxt/runtime/server/mapkit-token.get.ts"],"names":[],"mappings":"AAmGA;;;;GAIG;AACH,wBAAgB,4BAA4B,IAAI,IAAI,CAEnD;;AAkBD,wBA6BE"}
+{"version":3,"file":"mapkit-token.get.d.ts","sourceRoot":"","sources":["../../../../src/nuxt/runtime/server/mapkit-token.get.ts"],"names":[],"mappings":"AAwGA;;;;GAIG;AACH,wBAAgB,4BAA4B,IAAI,IAAI,CAEnD;AAkBD,eAAO,MAAM,wBAAwB,yHACmF,CAAA;AAWxH,wBAAgB,kCAAkC,IAAI,IAAI,CAEzD;;AAsDD,wBAwCE"}

@@ -14,7 +14,8 @@
       "#layer": ["./runtime"],
       "#layer/*": ["./runtime/*"],
       "#narduk-core/schema": ["./runtime/server/database/schema.ts"],
-      "#narduk-core/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"]
+      "#narduk-core/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"],
+      "#narduk-core/postgres-schema": ["./runtime/internal/postgres-schema.ts"]
     }
   },
   "include": [
@@ -40,6 +41,10 @@
     "runtime/app/utils/ssrNowClock.ts",
     "runtime/app/utils/liveProduct.ts",
     "runtime/app/utils/mutationMethods.ts",
+    "runtime/app/utils/sameOrigin.ts",
+    "runtime/app/composables/useAppFetch.ts",
+    "runtime/app/composables/useCsrfFetch.ts",
+    "runtime/app/plugins/fetch.client.ts",
     "runtime/app/utils/serverResource.ts",
     "runtime/app/utils/sharedClock.ts",
     "runtime/app/utils/preferencesState.ts",
@@ -53,6 +58,7 @@
     "runtime/server/middleware/01-head-as-get.ts",
     "runtime/server/middleware/securityHeaders.ts",
     "runtime/server/middleware/csrf.ts",
+    "runtime/server/middleware/cors.ts",
     "runtime/server/handlers/canonicalRedirect.ts",
     "runtime/server/handlers/cspReport.post.ts",
     "runtime/server/error-sanitizer.ts",
@@ -67,6 +73,7 @@
     "runtime/server/api/runtime/status.get.ts",
     "runtime/server/database/d1RoundTrips.ts",
     "runtime/server/database/pg-schema.ts",
+    "runtime/server/database/pg-table.ts",
     "runtime/server/database/schema.ts",
     "runtime/server/health/**/*.ts",
     "runtime/server/utils/atomic-batch.ts",
@@ -87,6 +94,7 @@
     "runtime/server/utils/d1Cache.ts",
     "runtime/server/rate-limit/**/*.ts",
     "runtime/server/utils/publishedDataHandler.ts",
+    "runtime/server/utils/rateLimit.ts",
     "runtime/server/utils/rateLimitedHandler.ts",
     "runtime/server/utils/validatedHandler.ts",
     "runtime/server/utils/mutationValidation.ts",
@@ -113,6 +121,11 @@
     "runtime/server/utils/sessionGrant.ts",
     "runtime/server/utils/sse.ts",
     "runtime/server/utils/ssrfHostIpPolicy.ts",
+    "runtime/server/utils/demo.ts",
+    "runtime/server/utils/mutation.ts",
+    "runtime/server/utils/unfurlResponseUtils.ts",
+    "runtime/server/utils/urlValidator.ts",
+    "runtime/server/routes/cdn-cgi/image/[...path].ts",
     "runtime/server/utils/user-session.ts",
     "runtime/server/utils/worker-env.ts",
     "runtime/server/utils/workerCache.ts",
@@ -121,7 +134,9 @@
     "src/**/*.ts",
     "tests/**/*.ts",
     // The D1 query harness, imported from source by the D1 driver tests.
-    "../../tooling/narduk-testkit/src/d1.ts"
+    "../../tooling/narduk-testkit/src/d1.ts",
+    // The Postgres migration runner, applied from source by the schema parity tests.
+    "../narduk-postgres/src/**/*.ts"
   ],
   "exclude": [
     // A standalone Nuxt app driven by `scripts/prove-nonce.mjs`, not layer

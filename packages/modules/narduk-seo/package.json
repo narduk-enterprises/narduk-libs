@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-seo",
-  "version": "2.13.0",
+  "version": "2.14.1",
   "private": false,
   "type": "module",
   "description": "SEO, structured data, sitemap, robots, and OpenGraph Nuxt module for Narduk Cloudflare apps.",
@@ -99,7 +99,7 @@
     "nuxt-site-config": "4.2.3",
     "ohash": "^2.0.11",
     "ufo": "^1.6.4",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@narduk-enterprises/eslint-config": "workspace:*",
@@ -111,7 +111,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "@vue/test-utils": "^2.4.10",
     "eslint": "^10.8.0",
-    "happy-dom": "^20.9.0",
+    "happy-dom": "^21.0.4",
     "nuxt": "^4.5.2",
     "nuxt-og-image": "6.8.0",
     "playwright": "1.61.1",
@@ -123,7 +123,7 @@
   },
   "peerDependencies": {
     "@narduk-enterprises/narduk-core": ">=2.11.0 <3.0.0",
-    "@nuxt/ui": "4.11.1",
+    "@nuxt/ui": ">=4.11.1 <5",
     "nuxt": ">=4.0.0",
     "nuxt-og-image": "6.8.0"
   },

@@ -238,7 +238,10 @@ describe('sha to version resolution', () => {
 
   it('takes GITHUB_SHA when no --sha is given, and prints the version it will replace', async () => {
     const { context: ctx, calls } = context(
-      [version('v-new', SHA)],
+      [
+        version('v-new', SHA),
+        version('v-old', undefined, { metadata: { created_on: '2026-09-16T00:00:00Z' } }),
+      ],
       [deployment('d1', 'v-old', '2026-09-17T01:00:00Z')],
     )
     const result = await runVersionsPromote(parseVersionsPromoteArgs([]), ctx)
@@ -418,6 +421,15 @@ describe('the upload side of the commit link', () => {
     ).toEqual(['--tag', SHA, '--message', `Workers Builds main @ ${SHA.slice(0, 12)}`])
   })
 
+  it('ponytail-5 apptools-src #10: refuses a caller --message inside a Workers Build', () => {
+    expect(() =>
+      resolveVersionTagArgs(['--message', 'Workers Builds main @ deadbeef1234'], {
+        WORKERS_CI_COMMIT_SHA: SHA,
+        WORKERS_CI_BRANCH: 'feature',
+      }),
+    ).toThrow(/--message/u)
+  })
+
   it('leaves a caller-supplied tag alone and adds nothing outside a Workers Build', () => {
     expect(resolveVersionTagArgs(['--tag', 'mine'], { WORKERS_CI_COMMIT_SHA: SHA })).toEqual([])
     expect(resolveVersionTagArgs(['--tag=mine'], { WORKERS_CI_COMMIT_SHA: SHA })).toEqual([])
@@ -537,7 +549,10 @@ describe('B2 -- every documented exit code is reachable', () => {
     const boom = (): never => {
       throw new Error(`wrangler ${on} exited 1`)
     }
-    const base = stubClient([numbered('v1', SHA, 5)], [deployment('d1', 'v0', '2026-09-17T01:00Z')])
+    const base = stubClient(
+      [numbered('v1', SHA, 5), version('v0', undefined, { number: 4 })],
+      [deployment('d1', 'v0', '2026-09-17T01:00Z')],
+    )
     return { ...base.client, [on]: async () => boom() }
   }
 
@@ -1545,6 +1560,7 @@ describe('--gate-verified binds the gate result to the promoted commit (narduk-l
     numbered('v-target', SHA, 12),
     numbered('v-other', OTHER, 11),
     version('v-untagged', undefined, { number: 10 }),
+    version('v-live', undefined, { number: 9 }),
   ]
   const live = [deployment('d1', 'v-live', '2026-09-17T01:00:00Z')]
 
@@ -2285,5 +2301,49 @@ describe('the double-dispatch recovery names only what the consumer workflow acc
     // A workflow_dispatch with no inputs is the operator-portal state that 422'd.
     writeFileSync(workflow, 'on:\n  workflow_dispatch:\n')
     expect(readPromoteDispatchInputs(appDir)).toEqual({ verifiedSha: false, versionId: false })
+  })
+})
+
+describe('ponytail-5 repro (apptools-src #6, #7)', () => {
+  it('#6 refuses a promote when tied newest deployments disagree on the live version', async () => {
+    const versions = [
+      version('v-new', 'cccccccccccccccccccccccccccccccccccccccc', { number: 30 }),
+      version('v-mid', SHA, { number: 20 }),
+      version('v-old', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', { number: 10 }),
+    ]
+    const tied = [
+      deployment('d-new', 'v-new', '2026-09-17T03:00:00Z'),
+      deployment('d-old', 'v-old', '2026-09-17T03:00:00Z'),
+    ]
+    const { context: ctx, calls } = context(versions, tied)
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA]), ctx)
+    expect(result.outcome).toBe('stale-promote')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('#6 refuses an unnamed rollback from tied newest deployments', async () => {
+    const tied = [
+      deployment('d1', 'v-good', '2026-09-17T01:00:00Z'),
+      deployment('d-new', 'v-new', '2026-09-17T03:00:00Z'),
+      deployment('d-old', 'v-old', '2026-09-17T03:00:00Z'),
+    ]
+    const { context: ctx, calls } = context([], tied)
+    const result = await runRollback(parseRollbackArgs([]), ctx)
+    expect(result.outcome).toBe('rollback-refused')
+    expect(calls.rolledBack).toEqual([])
+  })
+
+  it('#7 refuses a rollback from a pull_request event', async () => {
+    const { context: ctx, calls } = context(
+      [],
+      [
+        deployment('d1', 'v-good', '2026-09-17T01:00:00Z'),
+        deployment('d2', 'v-bad', '2026-09-17T02:00:00Z'),
+      ],
+      { ...ACTIONS_ENV, GITHUB_EVENT_NAME: 'pull_request' },
+    )
+    const result = await runRollback(parseRollbackArgs([]), ctx)
+    expect(result.outcome).toBe('guard-refused')
+    expect(calls.rolledBack).toEqual([])
   })
 })

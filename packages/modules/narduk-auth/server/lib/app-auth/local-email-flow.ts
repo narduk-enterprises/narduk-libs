@@ -167,6 +167,15 @@ export async function completeLocalEmailPassword(
     return rejectConsumedLink(event, tokenHash)
   }
 
+  // Old sessions die before the credential changes: if revoking fails, the
+  // old password still stands and no session outlives the reset (ponytail-5).
+  if (existingUser) {
+    if (useRuntimeConfig(event).authNativeClients?.length) {
+      await useNativeAuth(event).revokeUser(existingUser.id)
+    }
+    await revokeUserAuthSessions(event, existingUser.id)
+  }
+
   const passwordHash = await hashUserPassword(body.newPassword)
   if (link.purpose === 'setup' && !existingUser) {
     await executeDatabaseQuery(
@@ -196,10 +205,6 @@ export async function completeLocalEmailPassword(
   }
 
   await recordLocalEmailVerification(event, user.id, link.email, consumedAt)
-  if (useRuntimeConfig(event).authNativeClients?.length) {
-    await useNativeAuth(event).revokeUser(user.id)
-  }
-  await revokeUserAuthSessions(event, user.id)
   const sessionUser = await establishLocalSessionUser(event, user, {
     authProvider: 'email',
     authProviders: ['email'],

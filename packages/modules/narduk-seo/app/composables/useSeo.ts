@@ -15,7 +15,7 @@ import { resolveSafeCanonicalUrl } from '../utils/safeCanonicalUrl'
 import type { SeoOgImageOptions } from '../utils/ogImageDefinition'
 import type { MaybeRefOrGetter } from 'vue'
 
-interface SeoOptions {
+export interface SeoOptions {
   author?: string
   canonicalUrl?: string
   description: MaybeRefOrGetter<string>

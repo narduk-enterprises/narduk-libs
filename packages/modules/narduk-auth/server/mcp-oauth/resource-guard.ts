@@ -5,6 +5,8 @@ import { mcpOAuthConfig, mcpOAuthUnauthorized } from '../utils/mcp-oauth'
 const BEARER = /^bearer\s+\S+$/iu
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
+const trimSlash = (path: string) => (path.length > 1 ? path.replace(/\/+$/u, '') : path)
+
 /**
  * The MCP resource path is exempt from narduk-core's X-Requested-With check
  * so OAuth clients can call it, which makes a cookie there unsafe. Every
@@ -14,7 +16,10 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
  */
 export default defineEventHandler((event) => {
   const config = mcpOAuthConfig(event)
-  if (!config || getRequestURL(event).pathname !== config.resourcePath) return
+  // The router dispatches `/mcp/` to `/mcp` and the CSRF exemption matches
+  // either spelling, so both sides are compared without a trailing slash.
+  if (!config) return
+  if (trimSlash(getRequestURL(event).pathname) !== trimSlash(config.resourcePath)) return
   if (config.resource !== `${config.issuer}${config.resourcePath}`) {
     throw createError({ statusCode: 404, statusMessage: 'Not Found' })
   }

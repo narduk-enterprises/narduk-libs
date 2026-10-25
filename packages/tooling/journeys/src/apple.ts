@@ -210,24 +210,56 @@ function fingerprint(tree: string): string {
   return (tree.match(/[\w.-]+/g) ?? []).sort().join(' ')
 }
 
+/**
+ * What the screen SAYS: for a JSON hierarchy (`idb ui describe-all`) only the
+ * string values, so a number in a frame (`"x":201`) is never a label; otherwise
+ * the raw text.
+ */
+function screenText(tree: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(tree)
+  } catch {
+    return tree
+  }
+  const out: string[] = []
+  const walk = (value: unknown): void => {
+    if (typeof value === 'string') out.push(value)
+    else if (Array.isArray(value)) for (const item of value) walk(item)
+    else if (value && typeof value === 'object') for (const item of Object.values(value)) walk(item)
+  }
+  walk(parsed)
+  return out.join('\n')
+}
+
+/** Case-insensitive whole-token match: `SCHEDULED` is not inside `UNSCHEDULED`. */
+function reads(text: string, needle: string): boolean {
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'iu').test(text)
+}
+
 function readLanding(tree: string, landing: AppleLanding, before?: string): LandingVerdict {
-  const haystack = tree.toLowerCase()
-  const missing = landing.requires.filter((needle) => !haystack.includes(needle.toLowerCase()))
-  const forbidden = (landing.forbids ?? []).filter((needle) =>
-    haystack.includes(needle.toLowerCase()),
-  )
+  const haystack = screenText(tree)
+  const missing = landing.requires.filter((needle) => !reads(haystack, needle))
+  const forbidden = (landing.forbids ?? []).filter((needle) => reads(haystack, needle))
   // A landing that was ALREADY TRUE before the gesture proves nothing about the
   // gesture. Found by the first live run: a scroll beat whose text is readable
   // both before and after passed instantly, and the next beat then pressed a
   // coordinate the scroll had not reached yet. Requiring the screen to have
   // MOVED is what turns that from a plausible video into a red run.
-  const stuck = before !== undefined && fingerprint(tree) === before
-  if (missing.length === 0 && forbidden.length === 0 && !stuck) return { landed: true, tree }
+  // `unchanged` inverts it: the screen must be exactly as it was.
+  const same = before !== undefined && fingerprint(tree) === before
+  const stuck = same && !landing.unchanged
+  const moved = before !== undefined && !same && landing.unchanged === true
+  if (missing.length === 0 && forbidden.length === 0 && !stuck && !moved) {
+    return { landed: true, tree }
+  }
   const parts: string[] = []
   if (missing.length > 0) parts.push(`nothing reading ${missing.map(quote).join(', ')}`)
   if (forbidden.length > 0) {
     parts.push(`${forbidden.map(quote).join(', ')} still on screen, which this beat forbids`)
   }
+  if (moved) parts.push('the screen changed, but this beat declares it unchanged')
   if (stuck && parts.length === 0) {
     parts.push('the screen never moved, so the gesture landed nowhere')
   } else if (stuck) {
@@ -455,7 +487,7 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
   const { journey, scenarioId, mode, profile, options, sleep, now } = args
   const { control, injector } = options
   const startedAt = new Date(now())
-  const attemptId = makeRunId(args.commit, startedAt)
+  const attemptId = makeRunId(args.commit, startedAt, scenarioId)
   const paths = runPaths({
     outRoot: options.outRoot,
     environment: options.environment,
@@ -560,10 +592,7 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
       // What the screen was BEFORE the gesture, so the landing can insist it
       // moved. A `wait` beat performs nothing and is exempt by construction; so
       // is a landing that declares `unchanged`.
-      const before =
-        step.press.kind === 'wait' || step.lands.unchanged
-          ? undefined
-          : fingerprint(injector.describe())
+      const before = step.press.kind === 'wait' ? undefined : fingerprint(injector.describe())
       try {
         performGesture(injector, step.press)
       } catch (error) {

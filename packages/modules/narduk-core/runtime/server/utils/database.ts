@@ -12,7 +12,7 @@ import * as d1Schema from '../database/schema'
 
 import { useHyperdriveConnectionString } from './hyperdrive'
 import { useLogger } from './logger'
-import { readWorkerRuntimeEnv } from './worker-env'
+import { readWorkerRuntimeEnv, readWorkerRuntimeEnvValue } from './worker-env'
 
 import type { H3Event } from 'h3'
 
@@ -200,8 +200,11 @@ function resolveDatabaseBackend(event: H3Event): unknown {
   try {
     return (useRuntimeConfig(event) as Record<string, unknown>).databaseBackend ?? 'd1'
   } catch (error) {
+    // A scheduled handler may have no runtime config; the worker env is then the
+    // only declaration. Never guess a backend: a wrong guess hits the wrong database.
     if (isCloudflareScheduledEvent(event)) {
-      return 'd1'
+      const declared = readWorkerRuntimeEnvValue(event, 'NUXT_DATABASE_BACKEND')
+      if (typeof declared === 'string' && declared.trim()) return declared.trim()
     }
     throw error
   }

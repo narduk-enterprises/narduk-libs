@@ -2,7 +2,11 @@ import { drizzle } from 'drizzle-orm/d1'
 import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { tenancyInvites, tenancyMemberships } from '../server/database/tenancy-schema'
+import {
+  tenancyAuditEvents,
+  tenancyInvites,
+  tenancyMemberships,
+} from '../server/database/tenancy-schema'
 import { createTenancy, TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 
 import { MIGRATION_SQL } from './support/database'
@@ -30,6 +34,82 @@ describe('D1 transaction integration', () => {
   afterAll(async () => {
     vi.restoreAllMocks()
     await runtime.dispose()
+  })
+
+  it('keeps scoped invitations within the existing membership on D1', async () => {
+    const tenancy = createTenancy(drizzle(binding))
+    const org = await tenancy.createOrg({
+      slug: 'd1-scope',
+      name: 'D1 scope',
+      createdByUserId: 'scope-owner',
+    })
+    const resource = { kind: 'vessel', id: 'invited' }
+    const invitee = 'scope-invitee'
+    const { token } = await tenancy.createInvite({
+      orgId: org.id,
+      invitedByUserId: 'scope-owner',
+      email: 'scope@example.com',
+      role: 'operator',
+      resource,
+    })
+    expect(await codeOf(tenancy.acceptInvite({ token, userId: invitee }))).toBe('forbidden')
+    expect(
+      (
+        await tenancy.resolveRole({
+          orgId: org.id,
+          userId: invitee,
+          resource: { kind: 'vessel', id: 'sibling' },
+        })
+      ).role,
+    ).toBeNull()
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: invitee,
+      role: 'admin',
+    })
+    const racing = createTenancy(
+      interleaveBeforeWrite(drizzle(binding), 'insert', tenancyAuditEvents, () =>
+        binding
+          .prepare(
+            "UPDATE tenancy_memberships SET role = 'viewer' WHERE org_id = ? AND user_id = ?",
+          )
+          .bind(org.id, invitee)
+          .run(),
+      ),
+    )
+    expect(await codeOf(racing.acceptInvite({ token, userId: invitee }))).toBe('conflict')
+    const pending = await binding
+      .prepare('SELECT accepted_at FROM tenancy_invites WHERE org_id = ?')
+      .bind(org.id)
+      .first<{ accepted_at: number | null }>()
+    expect(pending?.accepted_at).toBeNull()
+    const overrides = await binding
+      .prepare('SELECT count(*) AS n FROM tenancy_resource_role_overrides WHERE org_id = ?')
+      .bind(org.id)
+      .first<{ n: number }>()
+    expect(overrides?.n).toBe(0)
+    expect((await tenancy.resolveRole({ orgId: org.id, userId: invitee })).role).toBe('viewer')
+    await tenancy.setMemberRole({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: invitee,
+      role: 'admin',
+    })
+    const accepted = await tenancy.acceptInvite({ token, userId: invitee })
+    expect(accepted.membership.role).toBe('admin')
+    expect((await tenancy.resolveRole({ orgId: org.id, userId: invitee, resource })).role).toBe(
+      'operator',
+    )
+    expect(
+      (
+        await tenancy.resolveRole({
+          orgId: org.id,
+          userId: invitee,
+          resource: { kind: 'vessel', id: 'sibling' },
+        })
+      ).role,
+    ).toBe('admin')
   })
 
   it('admits one presenter and preserves the last owner on the actual D1 driver', async () => {

@@ -30,14 +30,16 @@ export type ColorScheme = 'light' | 'dark'
 /** Page → frame. */
 export type ToFrame =
   | { type: 'explorer:theme'; scheme: ColorScheme }
-  /** Apply this demo state; the frame answers with its canonical query. */
-  | { type: 'explorer:query'; query: Record<string, string> }
+  /** Apply this demo state; the frame answers with its canonical query, echoing `seq`. */
+  | { type: 'explorer:query'; seq: number; query: Record<string, string> }
 
 /**
  * Frame → page. `cause` says who changed the state: `user` for a control in
  * the frame (the page records a history entry), `sync` for the frame's
  * canonical answer to a load or an `explorer:query` (the page only rewrites
  * its URL in place, so a malformed link is corrected without a new entry).
+ * A `sync` carries the `seq` of the last query it answers; the page drops one
+ * that is not its latest, so a late answer never rewrites a newer URL.
  */
 export type FromFrame =
   | { type: 'explorer:ready'; surface: Surface }
@@ -47,6 +49,7 @@ export type FromFrame =
       type: 'explorer:state'
       surface: Surface
       cause: 'user' | 'sync'
+      seq?: number
       query: Record<string, string>
     }
 
@@ -76,9 +79,18 @@ export function readFromFrame(data: unknown): FromFrame | null {
         ? { type: message.type, surface, name: message.name, detail: message.detail }
         : null
     case 'explorer:state':
-      return (message.cause === 'user' || message.cause === 'sync') &&
-        isRecordOfStrings(message.query)
-        ? { type: message.type, surface, cause: message.cause, query: message.query }
+      if (!isRecordOfStrings(message.query)) return null
+      if (message.cause === 'user') {
+        return { type: message.type, surface, cause: message.cause, query: message.query }
+      }
+      return message.cause === 'sync' && typeof message.seq === 'number'
+        ? {
+            type: message.type,
+            surface,
+            cause: message.cause,
+            seq: message.seq,
+            query: message.query,
+          }
         : null
     default:
       return null
@@ -94,7 +106,9 @@ export function readToFrame(data: unknown): ToFrame | null {
       : null
   }
   if (message.type === 'explorer:query') {
-    return isRecordOfStrings(message.query) ? { type: message.type, query: message.query } : null
+    return isRecordOfStrings(message.query) && typeof message.seq === 'number'
+      ? { type: message.type, seq: message.seq, query: message.query }
+      : null
   }
   return null
 }

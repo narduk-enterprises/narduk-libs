@@ -283,6 +283,23 @@ describe('custom delete route built on the helper (#1051)', () => {
     expect(state.deleted).toBe(0)
   })
 
+  it('reads the running Worker backend, not only the build-frozen one (ponytail-5 s8 #11)', async () => {
+    // Build froze `local`; the Worker runs `AUTH_BACKEND=supabase`. An unstamped
+    // principal must still get the Supabase password check, not recency alone.
+    state.backend = 'local'
+    const principal = { ...SUPABASE_EMAIL_USER }
+    delete (principal as { authBackend?: string }).authBackend
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+    const event = { context: { cloudflare: { env: { AUTH_BACKEND: 'supabase' } } } }
+    await expect(
+      deleteCurrentUserAccount(event as never, principal as never, {}),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: 'Current password is required to delete this account.',
+    })
+    expect(state.deleted).toBe(0)
+  })
+
   it("refuses when the re-authenticated session is not the principal's account", async () => {
     // A victim's API key resolves the principal; the cookie is the attacker's
     // own session, so the attacker's own password must not unlock the delete.
@@ -350,5 +367,32 @@ describe('custom delete route built on the helper (#1051)', () => {
     await expect(customDelete({})).rejects.toMatchObject({ statusCode: 400 })
     await expect(customDelete({ currentPassword: 'old-local-password' })).resolves.toBeUndefined()
     expect(state.signIns).toEqual([])
+  })
+})
+
+/**
+ * Ponytail-5 repro (#2003 auth-tenancy-pg #1): a local Sign in with Apple user
+ * has `password_hash = null`. With no hash and an old session, the stock route
+ * must still demand recent re-authentication. Red before the fix.
+ */
+describe('local account with no password (ponytail-5 repro)', () => {
+  beforeEach(() => {
+    state.backend = 'local'
+    state.deleted = 0
+    state.localHashChecks = 0
+    state.localPasswordHash = null
+    state.sessionCreatedAt = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString()
+    state.signIns = []
+    state.upstreamDeletes = []
+    state.user = {
+      ...SUPABASE_EMAIL_USER,
+      authBackend: 'local',
+      authProviders: ['apple'],
+    } as AppSessionUser
+  })
+
+  it('refuses {} from a 29-day-old session instead of deleting the account', async () => {
+    await expect(deleteAccount({})).rejects.toMatchObject({ statusCode: 403 })
+    expect(state.deleted).toBe(0)
   })
 })

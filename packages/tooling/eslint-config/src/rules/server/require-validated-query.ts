@@ -144,17 +144,22 @@ export default {
           }
 
           const variable = sourceCode.getDeclaredVariables(parent)[0] ?? null
-          const validated = (variable?.references ?? []).some((reference: any) => {
-            if (!reference.isRead?.()) return false
-            const identifier = reference.identifier
-            const lifted = liftedExpression(identifier)
-            const kind = parseCallKind(lifted.parent)
-            if (kind !== 'schema') return false
-            return (lifted.parent.arguments ?? []).some(
-              (argument: any) =>
-                argument === lifted.expression || unwrapTsWrappers(argument) === lifted.expression,
-            )
-          })
+          // Every read must be the schema parse's argument: one parse does not
+          // cover a raw use of the same variable.
+          const reads = (variable?.references ?? []).filter((reference: any) =>
+            reference.isRead?.(),
+          )
+          const validated =
+            reads.length > 0 &&
+            reads.every((reference: any) => {
+              const lifted = liftedExpression(reference.identifier)
+              if (parseCallKind(lifted.parent) !== 'schema') return false
+              return (lifted.parent.arguments ?? []).some(
+                (argument: any) =>
+                  argument === lifted.expression ||
+                  unwrapTsWrappers(argument) === lifted.expression,
+              )
+            })
           if (validated) return
 
           context.report({ node: callee, messageId: 'requireValidation' })

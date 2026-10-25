@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-uploads",
-  "version": "1.22.0",
+  "version": "1.22.1",
   "private": false,
   "type": "module",
   "description": "R2 upload and image delivery Nuxt module for Narduk Cloudflare apps.",
@@ -95,7 +95,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "@vue/test-utils": "^2.4.10",
     "eslint": "^10.8.0",
-    "happy-dom": "^20.9.0",
+    "happy-dom": "^21.0.4",
     "nuxt": "^4.5.2",
     "playwright": "1.61.1",
     "prettier": "^3.8.3",

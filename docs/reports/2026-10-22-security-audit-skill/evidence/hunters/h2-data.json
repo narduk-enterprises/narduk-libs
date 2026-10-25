@@ -1,0 +1,286 @@
+{
+  "units": [
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-devices::packages%2Fmodules%2Fnarduk-devices%23device%20identity%20binding::packages%2Fmodules%2Fnarduk-devices::ATTACK-CLASSES.md%23Access%20control",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-devices/README.md",
+        "packages/modules/narduk-devices/drizzle/0001_devices.sql",
+        "packages/modules/narduk-devices/server/utils/devices-atomic.ts",
+        "packages/modules/narduk-devices/server/utils/devices-complete-claim.ts",
+        "packages/modules/narduk-devices/server/utils/devices-context-proof.ts",
+        "packages/modules/narduk-devices/server/utils/devices-lockout.ts",
+        "packages/modules/narduk-devices/server/utils/devices-revocation.ts",
+        "packages/modules/narduk-devices/server/utils/devices-signing.ts",
+        "packages/modules/narduk-devices/server/utils/devices-start-claim.ts",
+        "packages/modules/narduk-devices/server/utils/devices.ts",
+        "packages/modules/narduk-devices/server/utils/guards.ts",
+        "packages/modules/narduk-devices/shared/utils/lockout-policy.ts",
+        "packages/modules/narduk-devices/tests/devices-claim-completion.test.ts",
+        "packages/modules/narduk-devices/tests/devices-session.test.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-devices/server/utils/devices.ts",
+            "packages/modules/narduk-devices/server/utils/devices-signing.ts",
+            "packages/modules/narduk-devices/server/utils/devices-context-proof.ts",
+            "packages/modules/narduk-devices/server/utils/devices-complete-claim.ts",
+            "packages/modules/narduk-devices/server/utils/devices-start-claim.ts",
+            "packages/modules/narduk-devices/server/utils/devices-atomic.ts",
+            "packages/modules/narduk-devices/drizzle/0001_devices.sql"
+          ],
+          "invariant": "A device session is opened only when the signed request matches the resolved device, credential, installation, resource, class, and version, the signature verifies against the recorded key, and the replay row is unique. Claim completion copies org, resource, hardware, and public key from the token and session rows rather than from caller-supplied tenancy.",
+          "method": "source",
+          "result": "requestBindsTo compares the signed device id, installation id, credential id, class, version, and resource to the rows. openSession verifies the signature over the canonical bytes, rejects timestamp skew and a challenge for another device, and inserts the replay on conflict-do-nothing. Completion SQL binds the claim session id and inserts the device from the pending unexpired session. Context-bound proofs omit installationId because the cloud mints it; the library compares the other signed fields to the session and verifies against the recorded key, not a caller-supplied key. Default ids are crypto.randomUUID. No lower-trust field selects another tenant's device.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-devices/server/utils/devices.ts",
+            "packages/modules/narduk-devices/server/utils/guards.ts",
+            "packages/modules/narduk-devices/server/utils/devices-revocation.ts",
+            "packages/modules/narduk-devices/README.md",
+            "packages/modules/narduk-devices/tests/devices-session.test.ts"
+          ],
+          "invariant": "A route guard accepts only a bearer whose digest matches an active session of the required credential class. Revoke and rotate end the affected sessions in the same batch as the credential change. The session row id is not a bearer.",
+          "method": "source",
+          "result": "requireDeviceSession hashes the Authorization bearer through getSessionByTokenWithDevice and returns 401 when absent and 403 when the class differs. README states the bearer is the secret and the session id is not. revokeDeviceAtomically and rotateCredentialAtomically revoke sessions in one batch; rotate filters to the rotated credential class. devices-session.test.ts expects the other class to remain and the ingest heartbeat to report stale. That class split is the documented control, not a missed revoke. The guard does not re-read device generation because the batch already revoked the sessions of the affected class.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-devices/server/utils/devices.ts",
+            "packages/modules/narduk-devices/server/utils/devices-lockout.ts",
+            "packages/modules/narduk-devices/shared/utils/lockout-policy.ts",
+            "packages/modules/narduk-devices/README.md",
+            "packages/modules/narduk-devices/tests/devices-claim-completion.test.ts"
+          ],
+          "invariant": "completeClaim must not charge the owner's claim token until the caller's org and resource match the token. completeClaimWithRecordedApproval has no caller org; ceremony failures on that path are counted against the shared token subject on purpose. A first completion without deviceProof does not authenticate the device, and reissue without a proof is refused.",
+          "method": "source",
+          "result": "completeClaim sets callerScopeMatches to org-and-resource match. When that is false, runCompleteClaim records only the caller's account and IP subjects and returns unauthorized_user, which is the #533 control. completeClaimWithRecordedApproval sets callerScopeMatches to a function that returns true, so hardware_mismatch and the other completionBlocker refusals are recorded against token.tokenHash. That digest is the same sha256 startClaim stores and checks. Five failures in 900 seconds lock the token for 900 seconds, including a later startClaim. devices-claim-completion.test.ts names this shared lockout and states that locking the rightful device is the point of the counter. README scopes the do-not-charge-until-org-match rule to completeClaim and says startClaim and completion share the token counter to bound guessing. The session id is a UUID and is not treated as a secret, but spending the ceremony budget is the control the package tests. Without deviceProof the interface comment requires the caller to verify the request first; reissueOnIdempotentReplay without a proof throws invalid before any credential is issued; a proof-less race loser does not receive deviceId. Account and IP subjects are namespaced by purpose; token and device subjects are intentionally not.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-postgres::packages%2Fmodules%2Fnarduk-postgres%23query%20and%20schema%20boundary::packages%2Fmodules%2Fnarduk-postgres::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-postgres/src/health.ts",
+        "packages/modules/narduk-postgres/src/index.ts",
+        "packages/modules/narduk-postgres/src/migrate.ts",
+        "packages/modules/narduk-postgres/src/node.ts",
+        "packages/modules/narduk-postgres/src/parameters.ts",
+        "packages/modules/narduk-postgres/src/roles.ts",
+        "packages/modules/narduk-postgres/src/supabase.ts",
+        "packages/modules/narduk-postgres/src/tuning.ts",
+        "packages/modules/narduk-postgres/src/worker.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-postgres/src/parameters.ts",
+            "packages/modules/narduk-postgres/src/roles.ts",
+            "packages/modules/narduk-postgres/src/migrate.ts",
+            "packages/modules/narduk-postgres/src/health.ts",
+            "packages/modules/narduk-postgres/src/index.ts"
+          ],
+          "invariant": "Values that reach SQL are bind parameters. Identifiers that must be interpolated are restricted to an allowlist or a lower_snake_case pattern before quoting. Migration file names are gated before the trusted file body is executed.",
+          "method": "source",
+          "result": "placeholderTuples emits only $n placeholders. setRoleStatement uses assertPostgresRole against the frozen role list. quoteIdentifier rejects anything other than /^[a-z_][a-z0-9_]*$/ before GRANT text is built. assertMigrationsTable and assertMigrationsSchema use the same snake_case pattern, and the schema form also rejects pg_* and names longer than 63 characters, before search_path or the ledger name is interpolated. Ledger existence uses a bound parameter. Health checks use SELECT 1 and bind extension names. Applied-migration inserts use parameters. The SQL bodies executed by the migrator are the package's own migration files after isMigrationName accepts the file name. No request-shaped string is concatenated into those statements inside this package.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-postgres/src/parameters.ts",
+            "packages/modules/narduk-postgres/src/tuning.ts",
+            "packages/modules/narduk-postgres/src/supabase.ts",
+            "packages/modules/narduk-postgres/src/node.ts",
+            "packages/modules/narduk-postgres/src/worker.ts"
+          ],
+          "invariant": "Connection setup does not take a lower-trust request field into a SQL statement. Startup options that are interpolated are application connection configuration. Supabase URLs that disable TLS or set a role on the transaction pooler are refused.",
+          "method": "source",
+          "result": "placeholderTuplesWithCasts splices each cast string after the placeholder with no allowlist. The only in-repo production caller passes the literals uuid, text, text, and text. The cast argument is chosen by the application that already holds the executor, and the helper does not claim to validate type names. toNodePostgresOptions builds a libpq options string as -c key=value from startup parameters, including applicationName. That name is connection configuration, not a query parameter, and the worker postgres.js path passes an options object instead. supabase.ts refuses sslmode disable, allow, and prefer, and refuses a role on the transaction pooler. node.ts forwards the connection string and driver options to the application's connect function and does not itself assemble SQL.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-timeseries::packages%2Fmodules%2Fnarduk-timeseries%23series%20query%20tenant%20binding::packages%2Fmodules%2Fnarduk-timeseries::ATTACK-CLASSES.md%23Access%20control",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-timeseries/src/clock.ts",
+        "packages/modules/narduk-timeseries/src/influx.ts",
+        "packages/modules/narduk-timeseries/src/policy.ts",
+        "packages/modules/narduk-timeseries/src/timescale/index.ts",
+        "packages/modules/narduk-timeseries/src/timescale/query.ts",
+        "packages/modules/narduk-timeseries/src/timescale/retention.ts",
+        "packages/modules/narduk-timeseries/src/timescale/series.ts",
+        "packages/modules/narduk-timeseries/src/timescale/tables.ts",
+        "packages/modules/narduk-timeseries/src/timescale/write.ts",
+        "packages/modules/narduk-timeseries/src/types.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-timeseries/src/timescale/query.ts",
+            "packages/modules/narduk-timeseries/src/timescale/tables.ts",
+            "packages/modules/narduk-timeseries/src/timescale/series.ts",
+            "packages/modules/narduk-timeseries/src/timescale/write.ts",
+            "packages/modules/narduk-timeseries/src/timescale/index.ts",
+            "packages/modules/narduk-timeseries/src/policy.ts"
+          ],
+          "invariant": "Every history read and write is restricted to the vessel id the caller passed, as a bound parameter. A rollup bucket cannot select an arbitrary table. Series ids that enter an array predicate are positive integers.",
+          "method": "source",
+          "result": "buildRollupQuery, planTrackQuery, and the series list query all use WHERE vessel_id = $1::uuid. Series ids are checked as positive integers, joined into one text parameter, and cast with string_to_array to bigint[]. Paths are passed as JSON text and expanded with jsonb_array_elements_text rather than split on commas. rollupTable resolves the bucket through a frozen map with hasOwnProperty and throws BUCKET_UNKNOWN otherwise. Numeric and track inserts use placeholders only; the series id written for a point is the id resolved for that vessel and path. The library binds the supplied vessel id and does not authenticate the caller to the vessel. That authorization belongs to the application that already holds the executor. Retention vessel ids are rejected when they contain a comma and are then bound.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-timeseries/src/timescale/query.ts",
+            "packages/modules/narduk-timeseries/src/timescale/retention.ts",
+            "packages/modules/narduk-timeseries/src/timescale/index.ts",
+            "packages/modules/narduk-timeseries/src/clock.ts",
+            "packages/modules/narduk-timeseries/src/types.ts",
+            "packages/modules/narduk-timeseries/src/influx.ts"
+          ],
+          "invariant": "A caller-supplied now cannot move a rollup read earlier than the tier floor or deepen a retention delete. Rollup table refresh and drop_chunks target only the package's own relations. The Influx adapter is a caller-owned parity query, not a tenant gate.",
+          "method": "source",
+          "result": "clipRollupRange requires tierWindowMs or the literal unrestricted, and clampQueryNowMs uses the later of real now and the supplied now, so a past client clock cannot lower the floor. clampRetentionNow uses the earlier now, so a future clock cannot deepen deletes. assertRetentionTarget allows only the package's history relations. drop_chunks and refresh_continuous_aggregate interpolate names that rollupTable or the frozen table constants already fixed, with the window bound as parameters. TrackQuery has no tierWindowMs. types.ts assigns the raw and track read clip to the consumer and enforces track tier depth by per-tier DELETE. queryTrack still binds vessel_id. The in-flight resolve key joins length-prefixed series cache keys with '|'; a path containing '|' can share one promise, and the loser fails closed with SERIES_UNRESOLVED rather than receiving another vessel's rows. assertHostSafeFlux caps the Influx window and timeout and substitutes Date.toISOString for the two markers. The flux body and any tenant filter remain the caller's, which the file states.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-uploads::packages%2Fmodules%2Fnarduk-uploads%23caller%20authorization%20for%20object%20access::packages%2Fmodules%2Fnarduk-uploads::ATTACK-CLASSES.md%23Access%20control",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-core/runtime/server/utils/mutation.ts",
+        "packages/modules/narduk-uploads/README.md",
+        "packages/modules/narduk-uploads/runtime/app/composables/useUpload.js",
+        "packages/modules/narduk-uploads/runtime/server/api/upload.post.js",
+        "packages/modules/narduk-uploads/runtime/server/routes/images/[...slug].get.js",
+        "packages/modules/narduk-uploads/runtime/server/utils/r2.js",
+        "packages/modules/narduk-uploads/src/module.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-uploads/runtime/server/api/upload.post.js",
+            "packages/modules/narduk-uploads/src/module.ts",
+            "packages/modules/narduk-core/runtime/server/utils/mutation.ts",
+            "packages/modules/narduk-uploads/runtime/app/composables/useUpload.js"
+          ],
+          "invariant": "POST /api/upload does not parse or store a body until the mutation wrapper has resolved an authenticated user.",
+          "method": "source",
+          "result": "The route is defineUserMutation with parseBody. buildMutationContextWithBody enforces the rate limit, then resolveUserWithScopes, then parseBody. The upload handler never reads the user object, and it does not implement a per-object owner check. The package's model is an authenticated write and a public UUID URL, not an owner ACL. The client composable posts FormData to that route and adds no second authorization decision. requireAuth itself lives in narduk-core and was not reviewed past this call order.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-uploads/runtime/server/routes/images/[...slug].get.js",
+            "packages/modules/narduk-uploads/runtime/server/utils/r2.js",
+            "packages/modules/narduk-uploads/README.md",
+            "packages/modules/narduk-uploads/src/module.ts"
+          ],
+          "invariant": "GET and HEAD /images/** are public by the package's stated model. Object helpers that accept a caller-chosen key do not authorize, and the package says the caller must scope them.",
+          "method": "source",
+          "result": "The image handler is defineEventHandler with no session check. README states the route is public, that a key outside every prefix is 404 before R2, and that uploadToR2, deleteFromR2, and readR2AsBase64 do not decide who may use a key. Those helpers pass the caller key to the binding. The HTTP routes do not call delete or read-as-base64. No source path serves an object because a lower-trust caller named an arbitrary key on the public route without passing the prefix and content-type checks.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-uploads::packages%2Fmodules%2Fnarduk-uploads%23object%20key%20and%20content%20boundary::packages%2Fmodules%2Fnarduk-uploads::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-uploads/README.md",
+        "packages/modules/narduk-uploads/runtime/server/api/upload.post.js",
+        "packages/modules/narduk-uploads/runtime/server/routes/images/[...slug].get.js",
+        "packages/modules/narduk-uploads/runtime/server/utils/r2.js",
+        "packages/modules/narduk-uploads/runtime/server/utils/upload.js",
+        "packages/modules/narduk-uploads/src/module.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-uploads/runtime/server/api/upload.post.js",
+            "packages/modules/narduk-uploads/runtime/server/utils/upload.js",
+            "packages/modules/narduk-uploads/runtime/server/utils/r2.js"
+          ],
+          "invariant": "The public upload route stores only bytes whose magic matches the raster allow-list, under a server-generated key, and never under a client filename or client Content-Type.",
+          "method": "source",
+          "result": "POST requires Content-Length, caps the body, and calls validateUploadFiles before sniffing. sniffUploadImageType returns image/png, image/jpeg, image/gif, image/webp, or image/avif, or empty. An empty sniff is 415 and nothing is written. The stored key is uploads/ plus crypto.randomUUID plus the extension of the sniffed type. The client filename is not used as a key. uploadToR2 itself does not validate content type; the route passes the sniffed type. A direct caller of uploadToR2 can write another prefix or type, and README says the serve path still allow-lists type.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h2-data",
+          "reviewed_paths": [
+            "packages/modules/narduk-uploads/runtime/server/routes/images/[...slug].get.js",
+            "packages/modules/narduk-uploads/runtime/server/utils/upload.js",
+            "packages/modules/narduk-uploads/src/module.ts",
+            "packages/modules/narduk-uploads/README.md"
+          ],
+          "invariant": "The image route reads R2 only with the same slug that matched a configured prefix, and it will not stream a content type outside the raster allow-list.",
+          "method": "source",
+          "result": "getRouterParam supplies slug. prefixes.find uses startsWith, and a miss is 404 before r2.get or r2.head. There is no second decode between that check and the storage call. The module rejects an empty prefix at setup because it would serve the bucket. The default prefix is uploads/. contentTypeFor uses the extension map only when typeFromExtension is set and the extension is in EXTENSION_TYPES; otherwise it uses the stored type. isAllowedUploadContentType then requires one of the five rasters, and the response sets X-Content-Type-Options nosniff. R2 keys are not filesystem paths, so a dot-dot segment does not escape the prefix. The prefix is not required to end with a delimiter. GET does not re-sniff the object bytes.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [],
+  "hardening": [
+    "placeholderTuplesWithCasts in packages/modules/narduk-postgres/src/parameters.ts splices the cast string into SQL with no type-name allowlist. The only in-repo production caller, timescale series resolve, passes the literals uuid, text, text, and text. An application that forwarded a request string as a cast would inject; the helper does not document casts as trusted identifiers the way quoteIdentifier does for GRANT names.",
+    "toNodePostgresOptions interpolates applicationName into a libpq -c key=value options string. applicationName is application connection configuration. The Hyperdrive worker path passes a postgres.js options object and does not build that string.",
+    "Timescale in-flight series resolution joins length-prefixed seriesCacheKey values with '|'. A path containing '|' can make two descriptor sets share one promise. The waiter looks up its own length-prefixed keys in the first query's rows and fails closed with SERIES_UNRESOLVED. That is not a cross-vessel read.",
+    "Rollup seriesIds and series-list paths are not capped before they are bound. Output rows are capped by DEFAULT_MAX_SERIES_ROWS and the rollup and track row ceilings. Resource accumulation was excluded for this unit; the missing request-list cap is a limit gap, not a tenant escape.",
+    "queryTrack has no required tierWindowMs. Rollup reads require a positive window or the explicit literal unrestricted. types.ts assigns the raw and track read clip to the consumer and deletes track rows per tier in retention. A past now cannot lower the rollup floor because clampQueryNowMs keeps the later clock.",
+    "The Influx parity adapter substitutes ISO dates into caller-owned flux and does not add a vessel predicate. assertHostSafeFlux caps the window at four days and the timeout at 120 seconds and rejects a query that mentions a token or omits aggregateWindow. The file says the adapter is temporary and the caller owns the query.",
+    "Image prefix matching is startsWith and does not require a trailing slash. The default prefix is uploads/ and an empty prefix is rejected at module setup. An operator prefix without a delimiter can admit a neighboring key that shares the string prefix.",
+    "GET /images/** allow-lists the stored or extension-derived content type and sets nosniff, and it does not re-sniff bytes. uploadToR2 will store a non-allow-listed type; the serve path returns 415 for that object. Public GET of UUID keys under the prefix is the documented model.",
+    "completeClaimWithRecordedApproval without deviceProof authorizes a first completion from the recorded approval plus four wire values. The interface comment says those values are not a secret and tells the caller to pass deviceProof or verify the signed request first. reissueOnIdempotentReplay without a proof throws before credentials are issued. That caller-verify mode is documented, so it is not a library claim that the proof-less path authenticates the device.",
+    "Recorded-approval failures, including hardware_mismatch before any proof, are written against the claim token digest because callerScopeMatches returns true. Five such failures lock startClaim and completion for that token for 900 seconds. devices-claim-completion.test.ts says locking the rightful device is the point of the counter, and README scopes the #533 do-not-charge-until-org-match rule to completeClaim. The session id is a random UUID that the org console and appliance can display, so a holder of the id can spend the ceremony budget. That is the designed shared counter, not a missed tenancy check.",
+    "issueChallenge accepts a device id and does not issue a session. Bounding unauthenticated challenge minting is a resource-exhaustion question, and that class was not assigned for narduk-devices.",
+    "devices idempotency_key uniqueness is global. Caller-chosen keys are not required to be unguessable, so a colliding key across tenants conflicts. The library does not treat the key as a tenant capability."
+  ],
+  "uncovered": [
+    {
+      "surface": "packages/modules/narduk-core/runtime/server/utils/mutation.ts defineUserMutation",
+      "boundary": "resolveUserWithScopes and requireAuth session establishment",
+      "subsystem": "packages/modules/narduk-core",
+      "attack_class": "Access control",
+      "starting_paths": ["packages/modules/narduk-core/runtime/server/utils/mutation.ts"],
+      "reason": "POST /api/upload depends on defineUserMutation resolving a user before parseBody. Only that call order was read. The authentication implementation, scope check, and session cookie or bearer handling were not reviewed and belong to a peer package."
+    },
+    {
+      "surface": "narduk-tenancy requireOrgRole before device mint, approve, and revoke",
+      "boundary": "org-admin authorization of device claim administration",
+      "subsystem": "packages/modules/narduk-tenancy",
+      "attack_class": "Access control",
+      "starting_paths": ["packages/modules/narduk-devices/README.md"],
+      "reason": "narduk-devices documents that the consumer must call requireOrgRole before mint, approve, and revoke, and that the package itself performs no user authentication. The tenancy helper was not opened. Any HTTP route a consumer maps onto createDevices is that consumer's boundary."
+    }
+  ]
+}

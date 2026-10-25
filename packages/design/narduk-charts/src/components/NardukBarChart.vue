@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 
 import { useChart } from '../composables/useChart'
+import { useChartAnimation } from '../composables/useChartAnimation'
 import { useTooltip } from '../composables/useTooltip'
 import { defaultBarChartLabel } from '../utils/chartA11y'
 import { chartThemeClass, STUDIO_LOOK_CLASS, studioFigureClasses } from '../utils/chartTheme'
@@ -62,8 +63,14 @@ const props = withDefaults(
     colors?: string[]
     dark?: boolean
     dir?: 'ltr' | 'rtl'
+    /** Wait for first visibility before drawing in; requires animate. */
+    drawOnVisible?: boolean
     formatTickValue?: (value: number) => string
     formatXLabel?: (label: string, index: number) => string
+    /** Category formatter; takes precedence over formatXLabel. */
+    formatXTick?: (label: string, index: number) => string
+    /** Value-axis formatter; takes precedence over formatTickValue. */
+    formatYTick?: (value: number) => string
     height?: number
     labels: string[]
     legendGroupLabel?: string
@@ -131,6 +138,7 @@ const props = withDefaults(
     stacked: false,
     stackedPercent: false,
     animate: true,
+    drawOnVisible: false,
     barRadius: 4,
     respectReducedMotion: true,
     yScale: 'linear',
@@ -181,7 +189,8 @@ function valueText(b: BarRect): string {
 
 function formatXAt(i: number): string {
   const raw = props.labels[i] ?? ''
-  return props.formatXLabel ? props.formatXLabel(raw, i) : raw
+  const format = props.formatXTick ?? props.formatXLabel
+  return format ? format(raw, i) : raw
 }
 
 const isHorizontal = computed(() => props.orientation === 'horizontal')
@@ -324,6 +333,11 @@ const figureClasses = computed(() => studioFigureClasses(rootChartClasses.value)
 
 const runAnimation = computed(() => effectiveAnimate(props.animate))
 
+function formatYValue(value: number, fallback: string): string {
+  const format = props.formatYTick ?? props.formatTickValue
+  return format ? format(value) : fallback
+}
+
 // ── Series visibility ────────────────────────────────────────
 
 const hiddenSeries = ref(new Set<string>())
@@ -420,7 +434,7 @@ const yMap = computed(() => {
 const yTicksForDisplay = computed(() =>
   yMap.value.ticks.map(t => ({
     ...t,
-    label: props.formatTickValue ? props.formatTickValue(t.value) : t.label,
+    label: formatYValue(t.value, t.label),
   })),
 )
 
@@ -759,18 +773,7 @@ function onBarPointerDown(bar: BarRect, e: MouseEvent) {
 
 // ── Animation ────────────────────────────────────────────────
 
-// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131: one-time paint seed; onMounted owns the flag after setup
-const animated = ref(!runAnimation.value)
-
-onMounted(() => {
-  if (runAnimation.value) {
-    requestAnimationFrame(() => {
-      animated.value = true
-    })
-  } else {
-    animated.value = true
-  }
-})
+const animated = useChartAnimation(containerRef, runAnimation, () => props.drawOnVisible)
 
 // ── Legend ────────────────────────────────────────────────────
 

@@ -23,7 +23,7 @@
  */
 import { computed } from 'vue'
 
-import { formatDate } from '../../format'
+import { formatDate, instantOf } from '../../format'
 
 import { isLegalPlaceholder } from './ne-legal-page-types'
 import NePageHeader from './NePageHeader.vue'
@@ -50,9 +50,8 @@ const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/
 function isoOf(value: NeDateInput): string | undefined {
   if (value === null || value === undefined) return undefined
   if (typeof value === 'string' && CALENDAR_DATE.test(value)) return value
-  const instant =
-    value instanceof Date ? value.getTime() : typeof value === 'number' ? value : Date.parse(value)
-  return Number.isFinite(instant) ? new Date(instant).toISOString() : undefined
+  const instant = instantOf(value)
+  return instant === undefined ? undefined : new Date(instant).toISOString()
 }
 
 /** `null` when there is nothing to show — never a "Last updated —". */

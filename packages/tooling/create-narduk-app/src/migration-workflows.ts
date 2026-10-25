@@ -1,3 +1,5 @@
+import { installPolicySteps } from './install-policy.js'
+
 import type { AppVisibility, GeneratedFile } from './types.js'
 
 const checkout = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'
@@ -12,8 +14,17 @@ function setup(): string {
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Install frozen trusted toolchain
-        run: pnpm install --frozen-lockfile
+${installPolicySteps({
+  installName: 'Install frozen trusted toolchain',
+  // Every step after setup() runs `pnpm exec narduk-app` from apps/web, where
+  // narduk-app-tools is a declared dependency. Loading its module graph here
+  // makes a missing export fail before any migration or promotion.
+  smoke: {
+    name: 'Prove narduk-app starts before it touches D1',
+    workingDirectory: 'apps/web',
+    command: 'pnpm exec narduk-app --help',
+  },
+}).join('\n')}
 `
 }
 

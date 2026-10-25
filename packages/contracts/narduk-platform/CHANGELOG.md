@@ -1,5 +1,22 @@
 # @narduk-enterprises/narduk-platform
 
+## 2.4.2
+
+### Patch Changes
+
+- Release the dependencies recorded on main. The published version's manifest
+  still carries the previous ranges:
+
+  - `dependencies.zod`: ^4.4.3 -> ^4.6.6
+
+## 2.4.1
+
+### Patch Changes
+
+- 82f5b78: `NUXT_SESSION_PASSWORD` and `NUXT_OG_IMAGE_SECRET` are minted per app
+  (`scope: 'one-app'`), and an app env contract that declares a catalog secret
+  as plain or as a Cloudflare var is rejected.
+
 ## 2.4.0
 
 ### Minor Changes

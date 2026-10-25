@@ -432,13 +432,11 @@ describe('parseProse: tables', () => {
 
   it('pads short rows, drops extra cells and honours an escaped pipe', () => {
     const [table] = parseProse('| a | b |\n|---|---|\n| 1 |\n| x \\| y | 2 | 3 |')
-    expect(table).toMatchObject({
-      type: 'table',
-      rows: [
-        [[text('1')], []],
-        [[text('x | y')], [text('2')]],
-      ],
-    })
+    expect(table).toMatchObject({ type: 'table' })
+    expect((table as { rows: unknown[] }).rows).toEqual([
+      [[text('1')], []],
+      [[text('x | y')], [text('2')]],
+    ])
   })
 
   it('is a paragraph when the delimiter row does not match the header', () => {

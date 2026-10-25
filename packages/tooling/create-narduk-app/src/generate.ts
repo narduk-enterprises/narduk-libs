@@ -9,7 +9,7 @@ import {
   createPromoteGateScript,
   LINUX_CI_RUNNER_LABELS,
 } from './ci-workflow.js'
-import { DEPENDABOT_COOLDOWN_DAYS, DEPENDENCY_UPDATE_LIMITS } from './dependency-policy.js'
+import { dependabotPolicyLines } from './dependency-policy.js'
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { brandFiles } from './brand.js'
 import { socialPreviewFiles } from './social-previews.js'
@@ -777,17 +777,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      timezone: 'America/Chicago'",
         '    labels:',
         "      - 'dependencies'",
-        '    open-pull-requests-limit: 1',
-        '    cooldown:',
-        `      default-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
-        `      semver-major-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
-        '      exclude:',
-        "        - '@narduk-enterprises/*'",
-        '    ignore:',
-        ...Object.entries(DEPENDENCY_UPDATE_LIMITS).flatMap(([name, limit]) => [
-          `      - dependency-name: '${name}'`,
-          `        versions: ['${limit.inclusive ? '>' : '>='}${limit.version}']`,
-        ]),
+        '    open-pull-requests-limit: 2',
+        ...dependabotPolicyLines(),
         '    groups:',
         '      safe:',
         '        patterns:',

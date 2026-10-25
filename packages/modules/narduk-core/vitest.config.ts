@@ -1,4 +1,4 @@
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
@@ -9,6 +9,13 @@ const packageRoot = dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   plugins: [vue()],
   root: packageRoot,
+  resolve: {
+    // The module points this alias at the app's schema choice; tests that load
+    // pg-schema.ts directly get the default (`public`) unless they mock it.
+    alias: {
+      '#narduk-core/postgres-schema': join(packageRoot, 'runtime/internal/postgres-schema.ts'),
+    },
+  },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],

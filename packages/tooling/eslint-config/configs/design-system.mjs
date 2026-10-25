@@ -9,8 +9,10 @@
  *   `vue/no-restricted-html-elements` configuration, one entry per element with
  *   the v1 message. That rule is maintained, understands `is=`/dynamic
  *   components, and reports on the element name rather than v1's start-tag node.
- * - v1's Tailwind tier (`no-raw-tailwind-colors`, `no-tailwind-v3-deprecated`,
- *   `no-invalid-nuxt-ui-token`, `prefer-tailwind-var-shorthand`) is
+ * - v1's `no-raw-tailwind-colors` is `narduk/no-restricted-utility-classes`,
+ *   which needs no Tailwind install. The rest of v1's Tailwind tier
+ *   (`no-tailwind-v3-deprecated`, `no-invalid-nuxt-ui-token`,
+ *   `prefer-tailwind-var-shorthand`) is
  *   `eslint-plugin-better-tailwindcss`, which resolves classes against the app's
  *   *actual* compiled Tailwind theme instead of v1's hand-maintained token list.
  *   Validated against a real `.vue` fixture (static `class`, `:class` array, and
@@ -32,68 +34,6 @@ import narduk from '../dist/index.js'
 
 /** Nuxt UI 4 / narduk-template default Tailwind entry stylesheet. */
 const TAILWIND_ENTRY_POINT = 'app/assets/css/main.css'
-
-/** Raw Tailwind palette utilities v1's `no-raw-tailwind-colors` banned. */
-const RAW_PALETTE_COLORS = [
-  'gray',
-  'zinc',
-  'slate',
-  'stone',
-  'neutral',
-  'green',
-  'emerald',
-  'blue',
-  'red',
-  'yellow',
-  'orange',
-  'purple',
-  'pink',
-  'indigo',
-  'teal',
-  'cyan',
-  'amber',
-  'lime',
-  'fuchsia',
-  'violet',
-  'rose',
-  'sky',
-]
-
-const RAW_PALETTE_UTILITIES = [
-  'text',
-  'bg',
-  'border',
-  'ring',
-  'shadow',
-  'divide',
-  'from',
-  'via',
-  'to',
-  'outline',
-  'accent',
-  'caret',
-  'fill',
-  'stroke',
-]
-
-/**
- * Mobile web QA rule 4: `100vh` is the large viewport, so on a phone it hides
- * content behind the browser chrome. Every variant is covered by the leading
- * `(?:^|:)`; the captured prefix lets the autofix keep the variants.
- */
-const VIEWPORT_HEIGHT_MESSAGE =
-  'Use dvh or svh units, not vh or screen: `h-dvh`/`min-h-dvh` follow the visible viewport, `h-svh` is the smallest one (mobile web QA rule 4).'
-
-const VIEWPORT_HEIGHT_RESTRICTIONS = [
-  { pattern: '^((?:[^:]+:)*)h-screen$', fix: '$1h-dvh' },
-  { pattern: '^((?:[^:]+:)*)min-h-screen$', fix: '$1min-h-dvh' },
-  { pattern: '(?:^|:)max-h-screen$' },
-  // Arbitrary values: `min-h-[calc(100vh-8rem)]`, `max-h-[60vh]`. `100dvh` and
-  // `100svh` do not match because a letter sits between the digits and `vh`.
-  { pattern: '(?:^|:)[^:]*\\[[^\\]]*\\d+vh' },
-].map((restriction) => ({ ...restriction, message: VIEWPORT_HEIGHT_MESSAGE }))
-
-const RAW_PALETTE_PATTERN = `^(?:${RAW_PALETTE_UTILITIES.join('|')})-(?:${RAW_PALETTE_COLORS.join('|')})-\\d{2,3}$`
 
 /** One entry per element, carrying v1's guidance. */
 const RESTRICTED_ELEMENTS = [
@@ -120,11 +60,15 @@ const RESTRICTED_ELEMENTS = [
 ]
 
 /** v1 scoped the layout elements to pages and `app.vue` only. */
+// A native <header> stays legal: it is a landmark, and a <div> stand-in would
+// trade the a11y pack's finding for this one.
 const RESTRICTED_LAYOUT_ELEMENTS = [
-  { element: 'header', message: 'Use <UHeader> or a plain <div> instead of a native <header>.' },
-  { element: 'footer', message: 'Use <UFooter> or a plain <div> instead of a native <footer>.' },
-  { element: 'main', message: 'Use <UMain> or a plain <div> instead of a native <main>.' },
-  { element: 'nav', message: 'Use <UNavigationMenu> or a plain <div> instead of a native <nav>.' },
+  { element: 'footer', message: 'Use <UFooter>, which renders the <footer> landmark.' },
+  { element: 'main', message: 'Use <UMain>, which renders the <main> landmark.' },
+  {
+    element: 'nav',
+    message: 'Use <UNavigationMenu> or <UHeader>, which render the <nav> landmark.',
+  },
 ]
 
 /** @type {import('eslint').Linter.Config[]} */
@@ -149,6 +93,28 @@ const designSystemConfigs = [
     rules: {
       'narduk/no-shadowed-shared-component': 'warn',
       'narduk/prefer-shared-collection': 'warn',
+    },
+  },
+
+  {
+    // Raw palette, arbitrary colour and `vh`/`screen` height classes, matched by
+    // name so the ban holds when `tailwindcss` does not resolve from the lint cwd.
+    // createAppLintConfig's `allowedRawPaletteFiles` relaxes the palette half.
+    name: 'narduk/design-system-utility-classes',
+    files: ['**/*.vue'],
+    plugins: { narduk },
+    rules: {
+      'narduk/no-restricted-utility-classes': 'error',
+    },
+  },
+
+  {
+    // The inline-style half of mobile web QA rule 4.
+    name: 'narduk/design-system-viewport-units',
+    files: ['**/*.vue'],
+    plugins: { narduk },
+    rules: {
+      'narduk/no-viewport-vh-units': 'warn',
     },
   },
 
@@ -192,20 +158,9 @@ const designSystemConfigs = [
       'better-tailwindcss/no-unknown-classes': 'off',
       // Replaces narduk/no-tailwind-v3-deprecated.
       'better-tailwindcss/no-deprecated-classes': 'off',
-      // Replaces narduk/no-raw-tailwind-colors.
-      'better-tailwindcss/no-restricted-classes': [
-        'error',
-        {
-          restrict: [
-            {
-              pattern: RAW_PALETTE_PATTERN,
-              message:
-                'Raw Tailwind palette class — use a Nuxt UI semantic class (text-dimmed, text-muted, text-primary, bg-elevated, bg-muted, bg-default, border-default).',
-            },
-            ...VIEWPORT_HEIGHT_RESTRICTIONS,
-          ],
-        },
-      ],
+      // Disables itself when `tailwindcss` does not resolve from the lint cwd,
+      // so the class bans live in narduk/no-restricted-utility-classes.
+      'better-tailwindcss/no-restricted-classes': 'off',
       // Replaces narduk/prefer-tailwind-var-shorthand (`p-[var(--x)]` → `p-(--x)`).
       // Theme-resolving like the two above — canonicalising an arbitrary value
       // needs the compiled theme — so it is gated the same way rather than

@@ -1,5 +1,40 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.15.0
+
+### Minor Changes
+
+- 2b3b75e: Add four web-app audit subpaths. `http-contracts` (no Playwright
+  import, runs in a plain-Node deploy smoke) checks security headers (HSTS,
+  enforced CSP and `frame-ancestors`, `nosniff`, `Referrer-Policy`, `noindex`
+  off production) and that an unauthenticated protected API answers 401 JSON and
+  an unknown path 404 rather than a redirect to sign-in.
+  `playwright/console-guard` is an automatic fixture that fails a test on
+  `console.error` or `pageerror`, built on `createConsoleTracker`, which gains a
+  backwards-compatible `levels` option. `playwright/layout` checks horizontal
+  overflow at 320px and WCAG 2.2 touch-target size against a per-surface
+  baseline, asserted in both directions. `d1-migration-lint` flags money-named
+  REAL/FLOAT/DOUBLE/NUMERIC/DECIMAL columns and `DROP TABLE`, `DROP COLUMN` and
+  `RENAME` statements, with hash-pinned allowances that go stale when nothing
+  matches them.
+
+## 1.14.1
+
+### Patch Changes
+
+- 1428ddf: Journeys verify refuses shot/video paths outside the attempt
+  directory, a promote run id that is not the attempt directory name, fused step
+  ids and all-skipped scenarios, digests no longer collide on `;+`, `must()`
+  matches names exactly, and typed text stays one argv element. eslint-config's
+  CSRF and Worker-runtime rules no longer go quiet on a read-method fall-through
+  route, a `logCsrf*` callee, or a served `fixtures/` or `.test.` route.
+  narduk-testkit's fake D1 counts CTE-led writes and rejects multi-statement
+  `prepare()`.
+- c211173: `waitForVueHydrated` judges a Nuxt page by `#__nuxt` alone, the page
+  fixture waits briefly for a Nuxt page to hydrate before scanning for
+  mismatches, `warmUpApp` retries until the page answers 2xx/3xx, and the R2 and
+  KV fakes copy buffers and metadata and reject a list limit outside 1-1000.
+
 ## 1.14.0
 
 ### Minor Changes

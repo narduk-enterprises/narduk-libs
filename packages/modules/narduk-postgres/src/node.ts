@@ -12,7 +12,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { NardukPostgresError } from './errors.js'
-import { MIGRATION_NAME_PATTERN, type Migration, createMigrationSet } from './migrate.js'
+import {
+  type Migration,
+  type MigrationNameOptions,
+  createMigrationSet,
+  isMigrationName,
+} from './migrate.js'
 import { redactConnectionString } from './redact.js'
 import {
   type ConnectionTuning,
@@ -105,17 +110,26 @@ export async function withNodeConnection<T>(
  * A file that does not match the naming pattern is an error, not a skip: a
  * `0003_thing.sql.bak` left behind by an editor is exactly the case where
  * silently ignoring it means a migration nobody notices is missing.
+ *
+ * `allowTimestampNames` also accepts Supabase-CLI `YYYYMMDDHHMMSS_name.sql`.
  */
-export async function loadMigrationsFromDirectory(directory: string | URL): Promise<Migration[]> {
+export async function loadMigrationsFromDirectory(
+  directory: string | URL,
+  options: MigrationNameOptions = {},
+): Promise<Migration[]> {
   const path = typeof directory === 'string' ? directory : fileURLToPath(directory)
   const entries = await readdir(path, { withFileTypes: true })
   const files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name)
 
   for (const file of files) {
-    if (!MIGRATION_NAME_PATTERN.test(file)) {
+    if (!isMigrationName(file, options)) {
       throw new NardukPostgresError(
         'MIGRATION_NAME_INVALID',
-        `${file} is in the migrations directory but is not a migration. Move it out, or rename it to NNNN_lower_snake_case.sql.`,
+        `${file} is in the migrations directory but is not a migration. Move it out, or rename it to ${
+          options.allowTimestampNames === true
+            ? 'NNNN_lower_snake_case.sql or YYYYMMDDHHMMSS_lower_snake_case.sql'
+            : 'NNNN_lower_snake_case.sql'
+        }.`,
         { directory: path, name: file },
       )
     }
@@ -126,5 +140,5 @@ export async function loadMigrationsFromDirectory(directory: string | URL): Prom
       .sort((left, right) => left.localeCompare(right))
       .map(async (name) => ({ name, sql: await readFile(join(path, name), 'utf8') })),
   )
-  return createMigrationSet(sources)
+  return createMigrationSet(sources, options)
 }

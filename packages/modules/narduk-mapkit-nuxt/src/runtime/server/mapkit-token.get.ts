@@ -56,6 +56,28 @@ function routedOrigin(event: H3Event): string | null {
   })
 }
 
+/**
+ * `MAPKIT_ALLOWED_ORIGINS` as the package's `allowedHosts`: each origin's host,
+ * or the entry itself when it is already a bare host. Empty allows every host,
+ * as before; a forged `Host` on a Node listener is refused otherwise.
+ */
+function allowedHostsFrom(origins: string): string[] {
+  return origins
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      // Only a full origin is parsed: `new URL('app.example:8443')` reads
+      // `app.example:` as a scheme and yields an empty host.
+      if (!entry.includes('://')) return entry
+      try {
+        return new URL(entry).host
+      } catch {
+        return entry
+      }
+    })
+}
+
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
   const envSources = [readCloudflareEnv(event), readProcessEnv()]
@@ -71,6 +93,13 @@ export default defineEventHandler(async (event) => {
   return await mapKitTokenResponse(
     requestFromEvent(event),
     {
+      allowedHosts: allowedHostsFrom(
+        readMapKitRuntimeString(
+          envSources,
+          ['MAPKIT_ALLOWED_ORIGINS'],
+          config.mapkitAllowedOrigins,
+        ),
+      ),
       doppler: false,
       keyId: readMapKitRuntimeString(envSources, ['APPLE_KEY_ID'], config.appleKeyId),
       privateKey: readMapKitRuntimeString(

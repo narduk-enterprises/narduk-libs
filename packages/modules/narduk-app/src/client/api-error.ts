@@ -45,7 +45,14 @@ export interface ApiErrorBody {
 /** The body of a caught `$fetch` rejection, or undefined if it carried none. */
 export function apiErrorBody(err: unknown): ApiErrorBody | undefined {
   const body = (err as { data?: unknown } | null | undefined)?.data
-  return body && typeof body === 'object' ? (body as ApiErrorBody) : undefined
+  if (!body || typeof body !== 'object') return undefined
+  // A non-string `message` (an array from a hand-written route) is not a sentence.
+  const b = body as ApiErrorBody
+  return {
+    ...b,
+    message: typeof b.message === 'string' ? b.message : undefined,
+    statusMessage: typeof b.statusMessage === 'string' ? b.statusMessage : undefined,
+  }
 }
 
 /**

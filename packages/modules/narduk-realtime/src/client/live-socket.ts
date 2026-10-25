@@ -133,6 +133,9 @@ export function createLiveSocket(options: LiveSocketOptions): LiveSocket {
     }
     failures += 1
     setState('closed')
+    // onState('closed') may have stopped (or stopped and restarted) the client:
+    // then it owns the timers and the socket, and this attempt must not touch them.
+    if (current !== 'closed' || socket !== null || retryTimer !== null) return
     retryTimer = setTimeout(
       connect,
       liveSocketBackoff(failures, minBackoffMs, maxBackoffMs, random),
@@ -168,6 +171,9 @@ export function createLiveSocket(options: LiveSocketOptions): LiveSocket {
       retryTimer = null
       lastHeard = now()
       setState('open')
+      // onState('open') may have stopped the client: no timers for a closed socket.
+      if (target !== socket || current !== 'open') return
+      if (pingTimer !== null) clearInterval(pingTimer)
       pingTimer = setInterval(() => {
         if (target !== socket) return
         if (now() - lastHeard > deadMs) return lost(target)

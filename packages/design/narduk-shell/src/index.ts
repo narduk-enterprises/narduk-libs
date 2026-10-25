@@ -417,3 +417,39 @@ export type {
   NeOptimisticResult,
 } from './runtime/composables/use-optimistic'
 export type { NeSlashFocusTarget } from './runtime/composables/use-slash-focus'
+
+/**
+ * The round-8 feel set's public shapes (README § Feel primitives, § NeTabs,
+ * § NeRelativeTime, § NePriceCell, § NeStickyActionBar). The composables reach
+ * app code through `addImports`; `priceCellText` and the sizing constants are
+ * plain functions and numbers with no SFC or `@nuxt/ui` on their path, so they
+ * are re-exported as values for a CSV column or a server-rendered label.
+ */
+export {
+  NE_PRICE_CELL_CHARS,
+  NE_PRICE_CELL_FLASH_MS,
+  priceCellText,
+} from './runtime/components/ne-price-cell-types'
+export type {
+  NePriceCellKind,
+  NePriceCellProps,
+  NePriceCellTint,
+} from './runtime/components/ne-price-cell-types'
+export type { NeRelativeTimeProps } from './runtime/components/ne-relative-time-types'
+export type { NeStickyActionBarProps } from './runtime/components/ne-sticky-action-bar-types'
+export type { NeTabItem, NeTabsProps } from './runtime/components/ne-tabs-types'
+export type { NeRouteTab, NeRouteTabOptions } from './runtime/composables/use-route-tab'
+export type { NeTimeAgo, NeTimeAgoOptions } from './runtime/composables/use-time-ago'
+export type {
+  NeUndoOutcome,
+  NeUndoToast,
+  NeUndoToastOptions,
+} from './runtime/composables/use-undo-toast'
+
+export type {
+  NeSettleProps,
+  NeTimelinePeriod,
+  NeTimelineHeroProps,
+  NeStatementMarker,
+  NeStatementHeroProps,
+} from './runtime/components/ne-hall-of-fame-types'

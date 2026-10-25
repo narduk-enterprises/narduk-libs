@@ -1,0 +1,417 @@
+{
+  "units": [
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-app::packages%2Fmodules%2Fnarduk-app%23app%20module%20trust%20defaults::packages%2Fmodules%2Fnarduk-app::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+      "disposition": "covered",
+      "checks": [
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/modules/narduk-app/src/index.ts",
+            "packages/modules/narduk-app/src/server/errors.ts",
+            "packages/modules/narduk-app/src/server/http.ts",
+            "packages/modules/narduk-app/src/server/request-body.ts"
+          ],
+          "invariant": "Inherited HTTP helpers must not turn a lower-trust request header, cookie, or body into an authenticated identity, a credential-bearing Set-Cookie, or a loosened required schema.",
+          "method": "source",
+          "result": "The package re-exports server helpers only. readAppRequestHeader returns the first present source among event.req, event.request, and event.node.req and does not grant authority. readJsonBody maps an absent body to {} and still fails a schema with a required field; Zod issues stay in data. apiError puts person-facing copy in message. setAppCookie emits HttpOnly, Secure, and SameSite only when the caller passes them, and no in-package caller feeds request data into that cookie. No inherited trust default in this package authenticates a request.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": [],
+      "reviewed_paths": [
+        "packages/modules/narduk-app/src/index.ts",
+        "packages/modules/narduk-app/src/server/errors.ts",
+        "packages/modules/narduk-app/src/server/http.ts",
+        "packages/modules/narduk-app/src/server/request-body.ts"
+      ]
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-core::packages%2Fmodules%2Fnarduk-core%23list%20query%20parser::packages%2Fmodules%2Fnarduk-core::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "checks": [
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/contracts/narduk-platform/src/list-query.ts",
+            "packages/modules/narduk-core/runtime/server/utils/listQuery.ts"
+          ],
+          "invariant": "A list query from the caller must not choose SQL text, an unbounded q, or an unknown filter key.",
+          "method": "source",
+          "result": "parseListQuery validates the event query through listQuerySchema. Default strict is false, so unknown keys are ignored and warned rather than interpolated. Default max query length is 200. q, limit, and offset are schema values. No SQL is built in the parser.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/modules/narduk-core/runtime/server/list-cursor.ts",
+            "packages/modules/narduk-core/runtime/server/sql-list.ts",
+            "packages/modules/narduk-core/runtime/server/sql-search.ts"
+          ],
+          "invariant": "Request text that reaches a list statement must be a bound parameter, and sort direction and column must come from an allowlist.",
+          "method": "source",
+          "result": "readOffsetSqlPage binds q, limit, and offset. sortColumns is an app allowlist and a missing key throws 400. Direction is DESC only for the exact string desc and ASC otherwise. from, where, select, and search expressions are documented as trusted application SQL. sqliteSearchPredicate binds the needle and interpolates only the caller-supplied expression; it has no other production caller in this package. keysetAfter binds every position value. The cursor is an unsigned base64 payload capped at 2048 characters and is documented to be safe only when the route re-authorizes the read. That is an app obligation, not a parser bypass.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": [],
+      "reviewed_paths": [
+        "packages/contracts/narduk-platform/src/list-query.ts",
+        "packages/modules/narduk-core/runtime/server/list-cursor.ts",
+        "packages/modules/narduk-core/runtime/server/sql-list.ts",
+        "packages/modules/narduk-core/runtime/server/sql-search.ts",
+        "packages/modules/narduk-core/runtime/server/utils/listQuery.ts"
+      ]
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-core::packages%2Fmodules%2Fnarduk-core%23request%20trust%20and%20binding%20selection::packages%2Fmodules%2Fnarduk-core::ATTACK-CLASSES.md%23Access%20control",
+      "disposition": "candidate",
+      "checks": [
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+            "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+            "packages/modules/narduk-core/tests/csrf-exempt-paths.test.ts"
+          ],
+          "invariant": "A state-changing request must not skip the CSRF header check because of a path spelling the router can resolve onto a different route.",
+          "method": "source",
+          "result": "Declared exemptions go through isCsrfExemptPath, which refuses percent escapes, backslashes, empty segments, and dot segments because the router may resolve those spellings elsewhere. The built-in webhook, cron, callback, auth, content, and owner-tag prefixes return first on event.path.startsWith or exact equality and never reach that matcher. Whether h3 has already normalized event.path before this middleware is not in this repository.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/modules/narduk-core/runtime/server/utils/auth.ts",
+            "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+            "packages/modules/narduk-core/tests/user-session.test.ts"
+          ],
+          "invariant": "A session cookie minted for a non-local caller must be Secure without trusting a client-supplied forwarded protocol, and a sealed session must still unseal.",
+          "method": "source",
+          "result": "resolveSessionConfig sets cookie.secure from getRequestProtocol(event) being https. The package test expects secure false when that header is absent and secure true when x-forwarded-proto is https. createSession instead sets secure from a localhost Host prefix and always sets httpOnly. The sealed value is still read from the session header or cookie and must unseal. A present Bearer nk_ that fails authentication returns 401 without falling through to the cookie. Unscoped admin keys pass requireAdminRouteScopes by the documented migration.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/modules/narduk-core/runtime/server/utils/ssrfHostIpPolicy.ts",
+            "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts"
+          ],
+          "invariant": "An outbound fetch accepted as public must dial an address the private-range check already accepted, including on the Workers runtime this module requires.",
+          "method": "source",
+          "result": "validateUrl and resolveAndAssertPublicHost reject literals that isPrivateIPv4 or isPrivateIPv6 classify as private. isPrivateIPv4 returns false for exactly 192.0.0.9 and 192.0.0.10 before rejecting the rest of 192.0.0.0/24; that matches the function's non-global-unicast contract for the two globally reachable assignments in that block and is not a private-range bypass. When isNodeRuntime is false, createPinnedDispatcher returns undefined and fetch is called with the original URL and no dispatcher. The same function says non-Node fetch ignores a dispatcher. Pinning fails closed only when Agent construction returns unavailable. An undefined pin result is not refused. No route in this package passes a request URL into the helper.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/modules/narduk-core/runtime/server/utils/client-ip.ts",
+            "packages/modules/narduk-core/runtime/server/utils/database.ts",
+            "packages/modules/narduk-core/runtime/server/utils/hyperdrive.ts",
+            "packages/modules/narduk-core/runtime/server/utils/kv.ts",
+            "packages/modules/narduk-core/runtime/server/utils/rateLimit.ts",
+            "packages/modules/narduk-core/runtime/server/utils/worker-env.ts"
+          ],
+          "invariant": "Client-supplied forwarding headers and request data must not select the worker binding or the authorization principal.",
+          "method": "source",
+          "result": "getClientIp prefers cf-connecting-ip unless trustFlyClientIp is set, and reads x-forwarded-for only when trustForwardedFor is set and no edge header is present. rateLimit always passes trustForwardedFor, so the forwarded header is used only when the edge header is absent. No reviewed path authorizes from that address. useDatabase reads the DB binding only. useHyperdriveConnectionString reads the configured binding name, default HYPERDRIVE, and its error names the binding rather than a connection string. useKV defaults to the constant KV; no production caller in this package passes a request value as the name. readWorkerRuntimeEnv overlays worker bindings on process.env so worker keys win. readWorkerRuntimeEnvValue skips the key __proto__.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/modules/narduk-core/runtime/server/api/health.get.ts",
+            "packages/modules/narduk-core/runtime/server/error-sanitizer.ts",
+            "packages/modules/narduk-core/runtime/server/middleware/00-canonical-host.ts",
+            "packages/modules/narduk-core/runtime/server/middleware/cors.ts",
+            "packages/modules/narduk-core/runtime/server/middleware/securityHeaders.ts",
+            "packages/modules/narduk-core/runtime/server/utils/runtime-public.ts",
+            "packages/modules/narduk-core/runtime/server/utils/shared-secret.ts",
+            "packages/modules/narduk-core/runtime/shared/security-headers.ts",
+            "packages/modules/narduk-core/src/openapi-production.ts"
+          ],
+          "invariant": "Host redirects, CORS, shared secrets, production errors, health, and OpenAPI must not adopt a client-controlled authority or echo a secret.",
+          "method": "source",
+          "result": "Canonical redirect compares the Host header, not x-forwarded-host, and builds the Location from the configured canonical origin after collapsing leading slashes. CORS allows an origin only by exact config match, or a chrome-extension or moz-extension origin on /api/admin/scraper-extension/, and does not set Access-Control-Allow-Credentials. requireSharedSecret fails closed when the secret is unset except under import.meta.dev, and compares with timingSafeEqualText. sanitizeProductionError replaces 5xx message and statusMessage and drops data. Unset or unrecognised NUXT_OPENAPI_PRODUCTION serves nothing. Health is unauthenticated and was not seen returning secret values. The legacy CSP default still sends script-src unsafe-inline and unsafe-eval until the strict preset is enforced. authPublicSignup defaults true in the public overlay; enforcement of signup is not in this package.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [
+        "narduk-core.csrf.builtin-prefix-skips-normalizer",
+        "narduk-core.session.secure-follows-request-protocol",
+        "narduk-core.ssrf.unpinned-non-node-fetch"
+      ],
+      "unresolved": [],
+      "reviewed_paths": [
+        "packages/modules/narduk-core/runtime/server/api/health.get.ts",
+        "packages/modules/narduk-core/runtime/server/error-sanitizer.ts",
+        "packages/modules/narduk-core/runtime/server/middleware/00-canonical-host.ts",
+        "packages/modules/narduk-core/runtime/server/middleware/cors.ts",
+        "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+        "packages/modules/narduk-core/runtime/server/middleware/securityHeaders.ts",
+        "packages/modules/narduk-core/runtime/server/utils/auth.ts",
+        "packages/modules/narduk-core/runtime/server/utils/client-ip.ts",
+        "packages/modules/narduk-core/runtime/server/utils/database.ts",
+        "packages/modules/narduk-core/runtime/server/utils/hyperdrive.ts",
+        "packages/modules/narduk-core/runtime/server/utils/kv.ts",
+        "packages/modules/narduk-core/runtime/server/utils/rateLimit.ts",
+        "packages/modules/narduk-core/runtime/server/utils/runtime-public.ts",
+        "packages/modules/narduk-core/runtime/server/utils/shared-secret.ts",
+        "packages/modules/narduk-core/runtime/server/utils/ssrfHostIpPolicy.ts",
+        "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+        "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "packages/modules/narduk-core/runtime/server/utils/worker-env.ts",
+        "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+        "packages/modules/narduk-core/runtime/shared/security-headers.ts",
+        "packages/modules/narduk-core/src/openapi-production.ts",
+        "packages/modules/narduk-core/tests/csrf-exempt-paths.test.ts",
+        "packages/modules/narduk-core/tests/user-session.test.ts"
+      ]
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-realtime::packages%2Fmodules%2Fnarduk-realtime%23socket%20principal%20binding::packages%2Fmodules%2Fnarduk-realtime::ATTACK-CLASSES.md%23Access%20control",
+      "disposition": "covered",
+      "checks": [
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": [
+            "packages/modules/narduk-realtime/src/module.ts",
+            "packages/modules/narduk-realtime/src/options.ts",
+            "packages/modules/narduk-realtime/src/worker/principal.ts",
+            "packages/modules/narduk-realtime/src/worker/upgrade-origin.ts",
+            "packages/modules/narduk-realtime/src/worker/upgrade-path.ts",
+            "packages/modules/narduk-realtime/src/worker/upgrade-router.ts"
+          ],
+          "invariant": "A client must not set the principal header, choose another party's room, or complete a socket upgrade the route did not authorize.",
+          "method": "source",
+          "result": "The router strips every inbound x-narduk-* header before authorize and before a non-upgrade request is returned to the app. forwardHeaders rejects that prefix at configuration time. An authorizer may add only that prefix; any other header fails the upgrade. A route without authorize and without allowUnauthenticated throws at compile time. Origin defaults to https on the request host, rejects credentials and a wildcard, and missing Origin is refused unless allowMissingOrigin is set. matchUpgradePath decodes a parameter once and refuses an empty decode. authorizeViaRoute strips handshake headers and rejects a probe path whose interpolation is absolute, dotted, or contains a slash. The module documents that nitro.experimental.websocket must stay off because it would complete the handshake before this router. principalFromRequest parses only the header the router writes by default and returns undefined when it is absent or invalid JSON.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h3-edge",
+          "reviewed_paths": ["packages/modules/narduk-realtime/src/server/durable-object.ts"],
+          "invariant": "The base Durable Object must not accept a socket or a message on its own authority.",
+          "method": "source",
+          "result": "HibernatingDurableObject does not implement fetch. acceptTagged only accepts a socket the subclass already decided to take. The documented subclass example accepts any upgrade and does not read the principal; that example is not a registered route. Reserved close codes 1005 and 1006 are not echoed. Message authorization stays with the app override after the router.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": [],
+      "reviewed_paths": [
+        "packages/modules/narduk-realtime/src/module.ts",
+        "packages/modules/narduk-realtime/src/options.ts",
+        "packages/modules/narduk-realtime/src/server/durable-object.ts",
+        "packages/modules/narduk-realtime/src/worker/principal.ts",
+        "packages/modules/narduk-realtime/src/worker/upgrade-origin.ts",
+        "packages/modules/narduk-realtime/src/worker/upgrade-path.ts",
+        "packages/modules/narduk-realtime/src/worker/upgrade-router.ts"
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "narduk-core.csrf.builtin-prefix-skips-normalizer",
+      "title": "Built-in CSRF prefixes skip the path normalizer used for declared exemptions",
+      "description": "The lower-trust principal is a browser caller of a state-changing route. The control that should refuse an ambiguous path is isCsrfExemptPath, which the package documents and tests as refusing percent escapes, empty segments, and dot segments because the router may resolve them onto a different route. The built-in prefixes for webhooks, cron, callbacks, auth, Nuxt Content, and the exact owner-tag path return before that matcher on a raw prefix or equality check of event.path. A spelling that still begins with one of those prefixes therefore skips the X-Requested-With requirement. The decisive missing fact is whether event.path can still contain those spellings when this middleware runs.",
+      "claimed_root_cause": "The CSRF middleware exempts five hardcoded prefixes and one exact path with event.path prefix or equality checks, and does not apply the normalization refusal that declared exemptions use.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+          "line": 71,
+          "scope": "csrf middleware",
+          "description": "The handler reads event.path for a state-changing method after the enabled check."
+        },
+        {
+          "kind": "propagation",
+          "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+          "line": 73,
+          "scope": "builtin prefix exemption",
+          "description": "The prefix test matches the webhook, cron, callback, auth, and content prefixes, or the exact owner-tag path."
+        },
+        {
+          "kind": "sink",
+          "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+          "line": 80,
+          "scope": "csrf middleware",
+          "description": "The handler returns without requiring X-Requested-With and without calling isCsrfExemptPath."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "packages/modules/narduk-core/runtime/server/middleware/csrf.ts",
+          "line": 72,
+          "description": "The five prefixes and the owner-tag equality are tested before the declared-path matcher."
+        },
+        {
+          "file": "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+          "line": 96,
+          "description": "The declared matcher comment says a percent escape or dot segment must not be exempt because the router may resolve it to a different route."
+        },
+        {
+          "file": "packages/modules/narduk-core/runtime/shared/csrf-exempt-paths.ts",
+          "line": 104,
+          "description": "isCsrfExemptPath returns false when the path contains a percent sign, a backslash, an empty segment, or a dot segment."
+        },
+        {
+          "file": "packages/modules/narduk-core/tests/csrf-exempt-paths.test.ts",
+          "line": 82,
+          "description": "The test names dot-segment and percent-encoded spellings as ambiguous paths that must not earn an exemption."
+        }
+      ],
+      "blockers": [
+        "Whether h3 or Nitro has already collapsed dot segments and decoded percent-escapes in event.path before this middleware is not implemented in this repository.",
+        "If the framework presents only a normalized path, a spelling that begins with a built-in prefix cannot also address a different route, and this candidate is disproved."
+      ],
+      "validation_plan": {
+        "local": "In a sandbox, invoke the CSRF middleware with a synthetic event whose method is POST and whose path begins with a built-in prefix and also contains a dot segment or a percent sign, and assert that the middleware still requires X-Requested-With. Compare that result with isCsrfExemptPath on the same string, which returns false. Do not send the request to a deployed host.",
+        "deployment": "Owner records, from framework source or a local worker trace they already operate, whether event.path at server middleware is the raw request target or the path the router dispatches. Do not send a crafted path at production."
+      }
+    },
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "narduk-core.session.secure-follows-request-protocol",
+      "title": "Layer session Secure flag follows the request protocol header",
+      "description": "The lower-trust principal is a client that can cause getLayerUserSession or setLayerUserSession to mint the layer session cookie. resolveSessionConfig sets cookie.secure only when getRequestProtocol reports https. The package test expects that flag to be false on a stub event with no x-forwarded-proto and true when the header value is https. The sibling D1 session cookie in createSession sets Secure from a localhost Host check and always sets HttpOnly. The layer cookie therefore omits Secure whenever the protocol helper does not report https. Whether a Worker event takes that bit from a client-supplied X-Forwarded-Proto or from a value the edge overwrote is not in this repository.",
+      "claimed_root_cause": "cookie.secure for the layer session is bound to getRequestProtocol, and the in-repo test shows x-forwarded-proto is sufficient to select that bit on the event shape the helper accepts.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+          "line": 163,
+          "scope": "layer session write",
+          "description": "setLayerUserSession resolves session config and asks h3 useSession to seal and set the cookie."
+        },
+        {
+          "kind": "propagation",
+          "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+          "line": 66,
+          "scope": "cookie flags",
+          "description": "secure is true only when getRequestProtocol(event) returns https. sameSite is lax. HttpOnly is not set in this config."
+        },
+        {
+          "kind": "sink",
+          "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+          "line": 168,
+          "scope": "h3 useSession",
+          "description": "useSession receives that config, so the minted cookie carries the protocol-derived Secure flag."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+          "line": 66,
+          "description": "The Secure flag is the equality of getRequestProtocol(event) with https."
+        },
+        {
+          "file": "packages/modules/narduk-core/tests/user-session.test.ts",
+          "line": 95,
+          "description": "A stub event whose headers are only a local host expects secure false."
+        },
+        {
+          "file": "packages/modules/narduk-core/tests/user-session.test.ts",
+          "line": 101,
+          "description": "The test named for HTTPS behind Cloudflare expects secure true when x-forwarded-proto is https."
+        },
+        {
+          "file": "packages/modules/narduk-core/runtime/server/utils/auth.ts",
+          "line": 162,
+          "description": "createSession sets httpOnly and sets secure from a localhost or 127.0.0.1 Host prefix, not from the forwarded protocol."
+        }
+      ],
+      "blockers": [
+        "h3 getRequestProtocol is not implemented in this repository. The unit test shows the header effect on a partial event and does not show which value wins when a real Worker event has both a socket and X-Forwarded-Proto.",
+        "Whether the deployed edge overwrites X-Forwarded-Proto before the Worker runs is not in this repository."
+      ],
+      "validation_plan": {
+        "local": "In a sandbox, call resolveSessionConfig with the same partial event shape as the existing session test and assert cookie.secure stays true for a non-local host when x-forwarded-proto is absent or http. That is the regression aligned with createSession's localhost rule.",
+        "deployment": "Owner inspects a deployed worker login request and records whether X-Forwarded-Proto is present and equal to the edge scheme. Do not send a modified header at a production host."
+      }
+    },
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "narduk-core.ssrf.unpinned-non-node-fetch",
+      "title": "Validated URL fetch skips IP pinning outside Node",
+      "description": "The lower-trust principal is a caller of the exported fetchWithValidatedRedirects helper, which this package documents as the SSRF control for an outbound URL fetch. After resolveAndAssertPublicHost accepts a public address, createPinnedDispatcher returns no dispatcher when process.versions.node is not a string, and fetch is invoked with the original URL. The same function comments that a non-Node fetch ignores a dispatcher key. The module requires nodejs_compat to import the DNS helpers. No route in this package passes a request URL into the helper. The pre-fetch private-range check still runs; the unbound step is the later dial.",
+      "claimed_root_cause": "IP pinning is omitted whenever isNodeRuntime is false, and the following fetch uses the hostname. The comment that platform fetch has no rebinding window is not an in-repo control.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+          "line": 541,
+          "scope": "validated fetch",
+          "description": "fetchWithValidatedRedirects accepts a URL string and is the exported SSRF fetch."
+        },
+        {
+          "kind": "propagation",
+          "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+          "line": 603,
+          "scope": "dns check",
+          "description": "resolveAndAssertPublicHost must accept the hostname before any dial, except the test-mode localhost bypass."
+        },
+        {
+          "kind": "propagation",
+          "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+          "line": 231,
+          "scope": "pin gate",
+          "description": "createPinnedDispatcher returns undefined when isNodeRuntime is false, which skips the pinned lookup."
+        },
+        {
+          "kind": "sink",
+          "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+          "line": 699,
+          "scope": "outbound fetch",
+          "description": "fetch is called with the normalized URL and a dispatcher only when one was built. A skipped pin sends no dispatcher."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+          "line": 27,
+          "description": "The file requires the nodejs_compat flag before the DNS and fetch helpers can bundle on Workers."
+        },
+        {
+          "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+          "line": 203,
+          "description": "isNodeRuntime is true only when process.versions.node is a string. The comment says Workers do not expose it."
+        },
+        {
+          "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+          "line": 684,
+          "description": "The fetch is refused only when pin construction returns unavailable. An undefined pin result is not refused."
+        },
+        {
+          "file": "packages/modules/narduk-core/runtime/server/utils/urlValidator.ts",
+          "line": 703,
+          "description": "The fetch call comments that a dispatcher is undici-specific and that other runtimes ignore the unknown key."
+        }
+      ],
+      "blockers": [
+        "No production caller in packages/modules passes a request URL into fetchWithValidatedRedirects. A cross-principal effect requires an app outside this package to supply an attacker-influenced URL.",
+        "Whether nodejs_compat sets process.versions.node is not in this repository. If it does, the UndiciAgent branch runs; a throw there fails closed, and a constructed dispatcher is subject to the comment that non-Node fetch ignores it.",
+        "Whether workerd re-resolves the hostname after resolveAndAssertPublicHost, or dials only addresses the platform already treats as public, is not in this repository."
+      ],
+      "validation_plan": {
+        "local": "In a sandbox, stub isNodeRuntime to false and replace global fetch with a recorder that performs no network I/O. Call fetchWithValidatedRedirects for a hostname whose resolveAndAssertPublicHost stub returns one public fixture address. The invariant holds if the helper returns the SSRF_BLOCKED error or the recorded dial target is that fixture address rather than the original hostname.",
+        "deployment": "Owner records the deployed worker compatibility_flags and the workerd fetch DNS contract for that flag: whether the dial is bound to addresses the isolate already resolved. Do not issue a fetch from production."
+      }
+    }
+  ],
+  "hardening": [
+    "isPrivateIPv4 returns not-private for 192.0.0.9 and 192.0.0.10 before the 192.0.0.0/24 reject. The function's stated purpose is non-global-unicast rejection, and those two addresses are the globally reachable assignments inside that block. The rest of 192.0.0.0/24 still returns private. No private-network bypass is shown.",
+    "getClientIp trusts cf-connecting-ip by default and rateLimit passes trustForwardedFor. The forwarded header is consulted only when the edge header is absent, and no reviewed path authorizes from the address. Spoofing matters only off the edge the library documents.",
+    "CORS does not set Access-Control-Allow-Credentials. Extension origins are reflected only on the scraper-extension prefix. CSRF still requires some non-empty X-Requested-With value on paths that reach the header check, which is a custom-header barrier rather than a token bound to the session.",
+    "Legacy securityHeaders mode off sends script-src unsafe-inline and unsafe-eval. The shared security-headers module documents that as the existing fleet policy and keeps the strict preset off so an upgrade does not change headers.",
+    "readWorkerRuntimeEnv merges process.env under worker bindings. A missing binding can fall through to a string and then fail when used as D1 or KV. Binding names are not request-controlled. copyWorkerBindings does not special-case the key __proto__; readWorkerRuntimeEnvValue does.",
+    "The layer session cookie does not set HttpOnly in resolveSessionConfig. createSession does. That gap is the same cookie path as the Secure candidate and is not a separate root cause.",
+    "narduk-app setAppCookie omits HttpOnly, Secure, and SameSite unless the caller passes them, and it does not reject carriage return or line feed in the name, value, domain, or path. No in-package caller passes request data into the cookie.",
+    "principalFromRequest accepts a caller-chosen header name. The router strips only the x-narduk- prefix, so a custom name is not covered by that guarantee. The default header is covered.",
+    "An unsigned list cursor is documented as safe only when every read re-derives authorization. Omitting bind lets a cursor minted for one filter be replayed under another filter the same caller can already ask for.",
+    "requireSharedSecret passes an unset secret only when import.meta.dev is true. Production throws."
+  ],
+  "uncovered": []
+}

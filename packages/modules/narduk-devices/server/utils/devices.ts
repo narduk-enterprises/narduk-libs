@@ -19,6 +19,7 @@ import { runDevicesBatch } from './devices-atomic'
 import {
   completeClaimAtomically,
   type PreparedCredential,
+  proofAlreadySpent,
   reissueCredentialsAtomically,
   type ReissueOutcome,
   type ScopedNonceRef,
@@ -1006,10 +1007,10 @@ export function createDevices(
 
   /**
    * Bounded, opportunistic prune. Every DELETE is a single statement with an
-   * index-backed predicate rather than a LIMIT (D1's SQLite is built without
+   * index-backed predicate (challenges excepted, noted inline) rather than a LIMIT (D1's SQLite is built without
    * `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`), and the auth-attempt cutoff is older
    * than the widest lockout window, so nothing a live check reads is removed.
-   * The three are independent, so they go as one batch: one round trip, and a
+   * The four are independent, so they go as one batch: one round trip, and a
    * failure removes nothing rather than leaving a partial prune behind.
    */
   async function prune(before?: number): Promise<PruneExpiredResult> {
@@ -1027,6 +1028,11 @@ export function createDevices(
         .delete(devicesAuthAttempts)
         .where(lt(devicesAuthAttempts.at, at - DEVICES_LOCKOUT_MAX_WINDOW_SECONDS * 1000))
         .returning({ id: devicesAuthAttempts.id }),
+      // Unindexed on expires_at, but every prune keeps it to one TTL of rows.
+      db
+        .delete(devicesChallenges)
+        .where(lte(devicesChallenges.expiresAt, at))
+        .returning({ id: devicesChallenges.id }),
     ])
     return {
       replayEntries: replayEntries.length,
@@ -1086,6 +1092,14 @@ export function createDevices(
       const current = await findClaimToken(token.id)
       const expiresAt = current?.expiresAt ?? token.expiresAt
       const expired = current !== undefined && current.expiresAt <= now()
+      if (current && !expired && current.consumedAt === null && current.revokedAt === null) {
+        // The token is still redeemable: this call lost on its idempotency key,
+        // which a concurrent start with other claim material took first.
+        throw new DevicesError(
+          'conflict',
+          'The idempotency key was already used with different claim material.',
+        )
+      }
       return { kind: 'failure', status: expired ? 'expired' : 'revoked', expiresAt }
     }
     if (winner.hardwareFingerprint !== hardwareFingerprint) {
@@ -1244,8 +1258,9 @@ export function createDevices(
    * the *recorded* key. Single use is the caller's third leg, because where the
    * nonce is burned differs by path:
    *
-   * - a **first completion** burns it here, before the completion batch, so a
-   *   captured first-completion proof cannot later be turned into a re-issue;
+   * - a **first completion** burns it inside the completion batch, with the
+   *   device row, so a captured first-completion proof cannot later be turned
+   *   into a re-issue and a batch that fails spends nothing;
    * - a **re-issue** burns it *inside* the re-issue batch, so a caller that
    *   loses the single-writer race spends nothing and its own retry of the
    *   identical payload is admitted (narduk-libs#228 second review H2).
@@ -1699,6 +1714,7 @@ export function createDevices(
 
     const completedAt = now()
     const deviceId = nextId()
+    const proofNonce = run.completionProofNonce(session)
     const ingest = await prepareCredential('ingest', 1, null)
     const command = await prepareCredential('command', 1, null)
     const won = await completeClaimAtomically(
@@ -1712,6 +1728,7 @@ export function createDevices(
         idempotencyKey,
         completedAt,
         credentials: [ingest.prepared, command.prepared],
+        proofNonce,
       },
       nextId,
     )
@@ -1720,8 +1737,14 @@ export function createDevices(
       // Authorized: this caller passed `run.authorize` and merely lost the
       // completion race to a concurrent, equally authorized attempt. It learns
       // `deviceId` only if it also proved possession — a raw approval token or
-      // a signed `deviceProof` (third review LOW-4).
-      if (current?.status === 'claimed') return alreadyCompleted(current, run.carriesProof)
+      // a signed `deviceProof` (third review LOW-4) — and the winner did not
+      // spend that same proof, which would make this call its replay.
+      if (current?.status === 'claimed') {
+        return alreadyCompleted(
+          current,
+          run.carriesProof && !(await proofAlreadySpent(db, proofNonce)),
+        )
+      }
       if (current?.status === 'revoked') return fail('revoked')
       return fail('expired')
     }
@@ -2030,7 +2053,7 @@ export function createDevices(
       const ttlMs = input.ttlSeconds === undefined ? approvalTtlMs : input.ttlSeconds * 1000
       const expiresAt = Math.min(now() + ttlMs, session.expiresAt)
       const approvalToken = nextToken()
-      await db
+      const stamped = await db
         .update(devicesClaimSessions)
         .set({
           approvalTokenHash: await sha256Hex(approvalToken),
@@ -2040,8 +2063,26 @@ export function createDevices(
           approvalResourceId: input.resource.id,
           approvalExpiresAt: expiresAt,
         })
-        .where(eq(devicesClaimSessions.id, session.id))
-        .run()
+        // Only while still pending: a completion that committed after the read
+        // above must not gain an approval its re-issue path would accept.
+        .where(
+          and(
+            eq(devicesClaimSessions.id, session.id),
+            eq(devicesClaimSessions.status, 'pending_user_approval'),
+          ),
+        )
+        .returning({ id: devicesClaimSessions.id })
+        .all()
+      if (stamped.length === 0) {
+        const current = await findClaimSession(session.id)
+        if (current?.status === 'revoked') {
+          throw new DevicesError('revoked', `Claim session ${session.id} was revoked.`)
+        }
+        if (current?.status === 'claimed') {
+          throw new DevicesError('conflict', `Claim session ${session.id} is already completed.`)
+        }
+        throw new DevicesError('expired', `Claim session ${session.id} expired.`)
+      }
       await audit({
         orgId: input.orgId,
         actorUserId: approvedByUserId,
@@ -2154,18 +2195,19 @@ export function createDevices(
       const binds = async (session: ClaimSession): Promise<boolean> =>
         proof !== undefined && (await completionProofBinds(session, boundFields, proof))
       /**
-       * A **first** completion spends the proof here, outside the completion
-       * batch. That burn is load-bearing: without it a captured
-       * first-completion proof still satisfies every re-issue binding — same
-       * session, same key, same idempotency key — and would buy a fresh
-       * credential set (narduk-libs#228 review H1). The re-issue path burns in
-       * its own batch instead; see `completionProofNonce` below.
+       * A **first** completion refuses a spent proof here and burns it inside
+       * the completion batch, in the same transaction as the device row. That
+       * burn is load-bearing: without it a captured first-completion proof
+       * still satisfies every re-issue binding — same session, same key, same
+       * idempotency key — and would buy a fresh credential set (narduk-libs#228
+       * review H1). Burning it in the batch means a failed batch leaves it
+       * unspent, so the device's retry is not counted as a replay. The re-issue
+       * path burns in its own batch; see `completionProofNonce` below.
        */
       const proves = async (session: ClaimSession): Promise<boolean> => {
         if (proof === undefined) return false
         if (!(await binds(session))) return false
-        const ref = completionProofNonceRef(session, proof)
-        return consumeScopedNonce(ref.scope, ref.nonce, ref.expiresAt)
+        return !(await proofAlreadySpent(db, completionProofNonceRef(session, proof)))
       }
 
       return runCompleteClaim({
@@ -2468,6 +2510,23 @@ export function createDevices(
         createdAt,
       }
       await db.insert(devicesSessions).values(session).run()
+      // A revoke or rotation that committed while this open awaited the
+      // signature check ran its session-revoking batch before this row
+      // existed. Re-read the device and credential now that it does: one
+      // committed later revokes the row itself, so this closes the gap for
+      // every getter without touching the other credential class (#2003).
+      const [deviceNow, credentialNow] = await Promise.all([
+        findDevice(device.id),
+        findCredential(credential.id),
+      ])
+      if (deviceNow?.status !== 'claimed' || !credentialNow || credentialNow.revokedAt !== null) {
+        await db
+          .update(devicesSessions)
+          .set({ revokedAt: now() })
+          .where(eq(devicesSessions.id, session.id))
+          .run()
+        throw new DevicesError('revoked', 'Session open refused: revoked during open.')
+      }
       await audit({
         orgId: device.orgId,
         action: 'session.open',
@@ -2628,8 +2687,14 @@ export function createDevices(
         },
         nextId,
       )
-      // Revoked between the read above and the batch: nothing was issued.
-      if (!rotated) throw new DevicesError('revoked', `Device ${device.id} is revoked.`)
+      if (!rotated) {
+        // Revoked between the read above and the batch, or a concurrent
+        // rotation took this version first: nothing was issued either way.
+        if ((await findDevice(device.id))?.status === 'claimed') {
+          throw new DevicesError('conflict', `A concurrent rotation of ${device.id} won.`)
+        }
+        throw new DevicesError('revoked', `Device ${device.id} is revoked.`)
+      }
       // The new secret is returned exactly once.
       return issued
     },

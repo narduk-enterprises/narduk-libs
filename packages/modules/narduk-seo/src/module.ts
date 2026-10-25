@@ -23,6 +23,7 @@ import {
 import { defu } from 'defu'
 
 import { isSeoOgImageHexColor, normalizeSeoOgImageHexColor } from '../app/utils/ogImageDefinition'
+import { resolveNardukNetworkDirectoryUrl } from '../server/utils/nardukNetworkDirectory'
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
 import { mergeBotBlockRobotsGroups, readCoreBotBlockOption } from '../shared/botBlock'
 import { brandFontCss, brandHeadTags, readBrandFile } from '../shared/brand'
@@ -567,6 +568,9 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       options.networkDirectoryUrl?.trim() ||
       process.env.NUXT_PUBLIC_NARDUK_NETWORK_DIRECTORY_URL?.trim() ||
       ''
+    // Only what the request-time fetch accepts (an absolute HTTPS URL) counts.
+    const networkDirectoryConfigured =
+      resolveNardukNetworkDirectoryUrl(nardukNetworkDirectoryUrl) !== null
     const browserConsolaShim = fileURLToPath(
       new URL('../app/shims/consola-browser.ts', import.meta.url),
     )
@@ -686,7 +690,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         })
       })
     }
-    if (!nardukNetworkDirectoryUrl) {
+    if (!networkDirectoryConfigured) {
       extendRouteRules('/narduk-network', { robots: 'noindex, follow' })
       // robots adds an uppercase header; prerender responses use lowercase.
       // Normalize before nuxt-security merges both into Cloudflare _headers.
@@ -700,10 +704,10 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     nuxtOptions.sitemap = defu((nuxtOptions.sitemap ?? {}) as Record<string, unknown>, {
       // narduk-libs#1442: with no directory configured the page is an empty
       // shell, so it stays out of the sitemap until one is.
-      urls: nardukNetworkDirectoryUrl ? ['/narduk-network'] : [],
+      urls: networkDirectoryConfigured ? ['/narduk-network'] : [],
       exclude: [
         ...nonPublicSitemapRoutes,
-        ...(!nardukNetworkDirectoryUrl ? ['/narduk-network'] : []),
+        ...(!networkDirectoryConfigured ? ['/narduk-network'] : []),
       ],
     })
     nuxtOptions.robots = defu((nuxtOptions.robots ?? {}) as Record<string, unknown>, {

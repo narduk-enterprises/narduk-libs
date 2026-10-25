@@ -309,6 +309,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   let settled = 0
   let running = false
   let starting = false
+  let disposed = false
   let runPromise: Promise<void> = Promise.resolve()
   let inFlight: AbortController | null = null
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -378,7 +379,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   async function run(): Promise<void> {
     running = true
     try {
-      while (settled !== intent && isEnabled()) {
+      while (settled !== intent && isEnabled() && !disposed) {
         const token = intent
         const controller = new AbortController()
         inFlight = controller
@@ -502,6 +503,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   )
 
   onScopeDispose(() => {
+    disposed = true
     if (debounceTimer !== undefined) clearTimeout(debounceTimer)
     inFlight?.abort()
   })
@@ -539,7 +541,13 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
       const changed =
         page !== pageRef.value || search !== searchApplied.value || sort !== sortRef.value
       pageRef.value = page
-      searchInput.value = search
+      // A pending debounce means the box is ahead of the URL: keep what was typed
+      // unless the URL itself moved to a different search.
+      if (debounceTimer === undefined || search !== searchApplied.value) {
+        if (debounceTimer !== undefined) clearTimeout(debounceTimer)
+        debounceTimer = undefined
+        searchInput.value = search
+      }
       searchApplied.value = search
       sortRef.value = sort
       if (changed && schedules) schedule()

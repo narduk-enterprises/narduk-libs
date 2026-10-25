@@ -237,7 +237,7 @@ export function unwrapTsWrappers(node: any): any {
  * an unrelated `server/` ancestor (`/repo/packages/server/app/server/api/…`),
  * and the route root is always the innermost one.
  */
-function findRouteRoot(filename: string): { area: RouteArea; rest: string } | null {
+function findRouteRoot(filename: string): { area: RouteArea; rest: string; prefix: string } | null {
   const anchored = anchor(filename)
   let best: { area: RouteArea; rest: string; index: number } | null = null
 
@@ -251,7 +251,7 @@ function findRouteRoot(filename: string): { area: RouteArea; rest: string } | nu
   }
 
   if (!best) return null
-  return { area: best.area, rest: best.rest }
+  return { area: best.area, rest: best.rest, prefix: anchored.slice(0, best.index) }
 }
 
 /**
@@ -356,14 +356,20 @@ export function isCsrfExemptRoutePath(filename: string): boolean {
  * **Inside `server/api/**` or `server/routes/**` the infix stops counting.**
  * Nitro serves every module in those trees, so `deploy.test.post.ts` is a live
  * `POST /api/deploy.test` endpoint, not a test; only a real test or fixture
- * *directory* (`tests/`, `__tests__/`, `fixtures/`, …) exempts a file there.
+ * *directory* exempts a file there: one above the route root
+ * (`tests/server/api/x.ts`), or a dunder one inside it (`__tests__/`). A plain
+ * `server/api/fixtures/seed.post.ts` is served too, so it is not exempt.
  * A route suite that wants the exemption back belongs outside the route tree,
  * which is also where it has to live for Nitro not to deploy it.
  */
 export function isExemptTestPath(filename: string): boolean {
-  return analyzeServerRoutePath(filename).isServerRoute
-    ? inTestOrFixtureDirectory(filename)
-    : isTestOrFixturePath(filename)
+  const root = findRouteRoot(filename)
+  if (!root) return isTestOrFixturePath(filename)
+  const dunder = (segment: string) =>
+    /^__.*__$/.test(segment) && inTestOrFixtureDirectory(`${segment}/_`)
+  return (
+    inTestOrFixtureDirectory(`${root.prefix}/_`) || root.rest.split('/').slice(0, -1).some(dunder)
+  )
 }
 
 /* -------------------------------------------------------------------------- */
@@ -624,6 +630,12 @@ export interface HandlerMethodEvidence {
    * time, so the route serves some method the gate cannot name. See the header.
    */
   indeterminate: boolean
+  /**
+   * A read method is only one branch of the handler (`if (m === 'GET') return
+   * list()` then falls through, `m !== 'GET'` guards a body that runs for
+   * every other method), so the route also serves the methods it did not name.
+   */
+  servesOtherMethods?: boolean
 }
 
 /** `collectHandlerDeclaredMethods` plus the indeterminacy signal. */
@@ -632,6 +644,12 @@ export function collectHandlerMethodEvidence(ast: any): HandlerMethodEvidence {
   if (!ast) return { methods, indeterminate: false }
 
   let indeterminate = false
+  let servesOtherMethods = false
+  // `if (m !== 'GET') throw ...` is the idiom for a GET-only handler, not a branch.
+  const throwGuards = new Set<any>()
+  const isThrowing = (node: any): boolean =>
+    node?.type === 'ThrowStatement' ||
+    (node?.type === 'BlockStatement' && node.body?.some((s: any) => s.type === 'ThrowStatement'))
 
   // Variables initialized from a router factory, so `router.post(...)` is only
   // treated as a route declaration on an actual router — not on any object
@@ -680,8 +698,24 @@ export function collectHandlerMethodEvidence(ast: any): HandlerMethodEvidence {
     indeterminate = true
   }
 
+  /** Comparing against read methods alone leaves the other methods unspoken for. */
+  const noteBranch = (valueNode: any) => {
+    if (!isStaticallyReadableValue(valueNode, literalAliases)) return
+    const values = literalMethodsOf(valueNode, literalAliases).map((value: string) =>
+      value.toUpperCase(),
+    )
+    if (values.length > 0 && values.every((value: string) => READ_METHODS.has(value))) {
+      servesOtherMethods = true
+    }
+  }
+
   walk(ast, (node) => {
     switch (node.type) {
+      case 'IfStatement': {
+        if (isThrowing(node.consequent)) throwGuards.add(node.test)
+        break
+      }
+
       case 'CallExpression': {
         const callee = unwrapTsWrappers(node.callee)
         const calleeName = getIdentifierName(callee)
@@ -741,16 +775,26 @@ export function collectHandlerMethodEvidence(ast: any): HandlerMethodEvidence {
 
       case 'BinaryExpression': {
         if (!['===', '==', '!==', '!='].includes(node.operator)) break
-        if (isMethodSource(node.left, methodAliases)) compare(node.right)
-        else if (isMethodSource(node.right, methodAliases)) compare(node.left)
+        const value = isMethodSource(node.left, methodAliases)
+          ? node.right
+          : isMethodSource(node.right, methodAliases)
+            ? node.left
+            : null
+        if (!value) break
+        compare(value)
+        if (!(node.operator.startsWith('!') && throwGuards.has(node))) noteBranch(value)
         break
       }
 
       case 'SwitchStatement': {
         if (!isMethodSource(node.discriminant, methodAliases)) break
+        const hasDefault = (node.cases ?? []).some((switchCase: any) => !switchCase.test)
         for (const switchCase of node.cases ?? []) {
-          // `default:` has a null test and is not a method claim.
-          if (switchCase.test) compare(switchCase.test)
+          // `default:` has a null test and is not a method claim, but its
+          // presence means every method the cases did not name lands there.
+          if (!switchCase.test) continue
+          compare(switchCase.test)
+          if (hasDefault) noteBranch(switchCase.test)
         }
         break
       }
@@ -760,7 +804,7 @@ export function collectHandlerMethodEvidence(ast: any): HandlerMethodEvidence {
     }
   })
 
-  return { methods, indeterminate }
+  return { methods, indeterminate, servesOtherMethods }
 }
 
 /**
@@ -795,9 +839,11 @@ export function analyzeMutationRoute(
 
   let disposition: MethodDisposition = 'unspecified'
   if (declaredMethods.length > 0) {
-    disposition = declaredMethods.some((method) => MUTATION_METHODS.has(method))
-      ? 'mutation'
-      : 'read-only'
+    disposition =
+      (handlerEvidence.servesOtherMethods && filenameMethods.size === 0) ||
+      declaredMethods.some((method) => MUTATION_METHODS.has(method))
+        ? 'mutation'
+        : 'read-only'
   }
 
   return {

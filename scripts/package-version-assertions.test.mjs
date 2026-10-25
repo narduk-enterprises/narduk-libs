@@ -82,7 +82,7 @@ test("no package-surface test pins its own manifest's version", () => {
   const offenders = []
 
   for (const { directory } of workspace.packages) {
-    for (const file of testFilesUnder(join(directory, 'tests'))) {
+    for (const file of ['test', 'tests'].flatMap((name) => testFilesUnder(join(directory, name)))) {
       const source = readFileSync(file, 'utf8')
       if (PINS_EXACT_LITERAL.test(source) || PINS_LEADING_DIGIT.test(source)) {
         offenders.push(file.slice(repoRoot.length + 1))

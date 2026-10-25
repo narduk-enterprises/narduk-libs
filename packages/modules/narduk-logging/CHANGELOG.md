@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.0
+
+### Minor Changes
+
+- a296973: `buildSecurityHeaders` takes an optional enforced `csp` (a
+  `Content-Security-Policy` header) beside `reportOnlyCsp`; absent, nothing
+  changes. New `@narduk-enterprises/narduk-app/server/request-id`
+  (`resolveRequestId`, `stampRequestId`, `applyRequestId`, `installRequestId`)
+  and `/server/request-id-error-handler` (a Nitro `errorHandler` that adds a
+  top-level `requestId` to `/api/` error bodies). `installServerErrorCapture`
+  now reads `event.context.requestId` before `cf-ray` / `x-request-id`. Closes
+  narduk-libs#2031.
+
+## 0.5.0
+
+### Minor Changes
+
+- 6a0c7dd: Add the `./server-health` entry: a Nitro `error` hook that records
+  unhandled 5xx errors to D1 with stack-hash dedupe, a per-isolate throttle and
+  a row cap; a cron heartbeat helper (`runWithHeartbeat`); and the `jobState`
+  staleness rule (stale past twice the interval). Apps keep their own
+  migrations, job names and intervals.
+
+## 0.4.6
+
+### Patch Changes
+
+- 873c869: Redact compound key names such as userEmail, systemPrompt and
+  homeAddress by treating email, phone, address, latitude, longitude, prompt,
+  completion, body and payload as sensitive segments.
+- c211173: A `flush()` called while a drain is running now also sends the
+  records queued since that drain began.
+
 ## 0.4.5
 
 ### Patch Changes

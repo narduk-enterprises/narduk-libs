@@ -185,6 +185,14 @@ describe('nardukCore.auth install gate (narduk-libs#169)', () => {
     expect(sessionRuntimeConfigSeed(false, { NUXT_SESSION_PASSWORD: 'secret' })).toEqual({})
   })
 
+  it('seeds the SESSION_PASSWORD alias that sessionPasswordConfigured accepts (ponytail-5)', () => {
+    const env = { SESSION_PASSWORD: 'only-this-secret-is-32-characters-long' }
+    expect(sessionPasswordConfigured(env, {})).toBe(true)
+    expect(sessionRuntimeConfigSeed(true, env)).toEqual({
+      session: { name: 'nuxt-session', maxAge: 30 * 24 * 60 * 60, password: env.SESSION_PASSWORD },
+    })
+  })
+
   it('skips installModule when auth is false', async () => {
     const install = vi.fn()
     await maybeInstallNuxtAuthUtils(false, install, { env: {}, modules: [] })

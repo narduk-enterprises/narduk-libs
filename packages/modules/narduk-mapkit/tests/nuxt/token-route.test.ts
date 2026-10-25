@@ -350,3 +350,178 @@ describe('the route ceiling (opt-in, narduk-libs#485)', () => {
     expect(mounted).toHaveBeenCalledTimes(3)
   })
 })
+
+/** A one-off listener for the published route, with its own runtime config and Worker binding. */
+async function withBinding<T>(
+  config: Record<string, unknown>,
+  cloudflareEnv: Record<string, string> | undefined,
+  run: (url: string) => Promise<T>,
+): Promise<T> {
+  setTestRuntimeConfig({ public: {}, ...config })
+  const tokenRoute = (await import('../../src/nuxt/runtime/server/mapkit-token.get.js')).default
+  const app = createApp()
+  app.use(
+    defineEventHandler((event) => {
+      if (cloudflareEnv) event.context['cloudflare'] = { env: cloudflareEnv }
+    }),
+  )
+  app.use(tokenRoute)
+  const listener = createServer(toNodeListener(app))
+  await new Promise<void>((resolve) => {
+    listener.listen(0, '127.0.0.1', resolve)
+  })
+  try {
+    return await run(`http://127.0.0.1:${String((listener.address() as AddressInfo).port)}/`)
+  } finally {
+    await new Promise<void>((resolve) => {
+      listener.close(() => {
+        resolve()
+      })
+    })
+  }
+}
+
+describe('Worker bindings (ponytail-5 s5 #12)', () => {
+  const emptyConfig = { appleKeyId: '', applePrivateKey: '', appleTeamId: '' }
+
+  it('signs from event.context.cloudflare.env when runtime config holds no secrets', async () => {
+    for (const name of ['APPLE_KEY_ID', 'APPLE_PRIVATE_KEY', 'APPLE_SECRET_KEY', 'APPLE_TEAM_ID']) {
+      vi.stubEnv(name, '')
+    }
+    try {
+      const env = {
+        APPLE_KEY_ID: 'BINDKEY123',
+        APPLE_PRIVATE_KEY: await createTestPrivateKeyPem(),
+        APPLE_TEAM_ID: 'BINDTEAM12',
+      }
+      const response = await withBinding(emptyConfig, env, (url) =>
+        fetch(url, { headers: SAME_ORIGIN }),
+      )
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as { token: string }
+      expect((decodeJwt(body.token).payload as { iss: string }).iss).toBe('BINDTEAM12')
+
+      const empty = await withBinding(emptyConfig, {}, (url) =>
+        fetch(url, { headers: SAME_ORIGIN }),
+      )
+      expect(empty.status).toBe(503)
+      expect(await empty.text()).not.toContain('token":')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})
+
+describe('allowedHosts through the published route (ponytail-5 s5 #11)', () => {
+  it('serves the listed host and refuses another, with no token in the refusal', async () => {
+    const config = {
+      appleKeyId: 'KEY1234567',
+      applePrivateKey: await createTestPrivateKeyPem(),
+      appleTeamId: 'TEAM123456',
+      nardukMapKit: { allowedHosts: ['app.example'] },
+    }
+    const raw = async (host: string) =>
+      await withBinding(config, undefined, async (url) => {
+        const port = Number(new URL(url).port)
+        return await rawRequest(port, '/', host)
+      })
+
+    const allowed = await raw('app.example')
+    expect(allowed).toContain('200 ')
+    const refused = await raw('evil.example')
+    expect(refused).toContain('403 ')
+    expect(refused).not.toContain('"token"')
+  })
+})
+
+describe('local-setup hints in the server console', () => {
+  const emptyConfig = { appleKeyId: '', applePrivateKey: '', appleTeamId: '' }
+
+  async function warningsFrom(run: () => Promise<unknown>): Promise<string[]> {
+    const { resetMapKitLocalSetupHintsForTests } =
+      await import('../../src/nuxt/runtime/server/mapkit-token.get.js')
+    resetMapKitLocalSetupHintsForTests()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await run()
+      return warn.mock.calls.map((call) => String(call[0]))
+    } finally {
+      warn.mockRestore()
+    }
+  }
+
+  it('names the missing variables and the nvault route on a 503, once per process', async () => {
+    for (const name of ['APPLE_KEY_ID', 'APPLE_PRIVATE_KEY', 'APPLE_SECRET_KEY', 'APPLE_TEAM_ID']) {
+      vi.stubEnv(name, '')
+    }
+    try {
+      const warnings = await warningsFrom(async () => {
+        await withBinding({ ...emptyConfig, appleTeamId: 'TEAM123456' }, {}, async (url) => {
+          expect((await fetch(url, { headers: SAME_ORIGIN })).status).toBe(503)
+          expect((await fetch(url, { headers: SAME_ORIGIN })).status).toBe(503)
+        })
+      })
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('APPLE_KEY_ID, APPLE_PRIVATE_KEY not set')
+      expect(warnings[0]).not.toContain('APPLE_TEAM_ID')
+      expect(warnings[0]).toContain('narduk-app dev --mapkit')
+      expect(warnings[0]).toContain('nvault run -p apple -e prd -c mapkit-signing')
+      expect(warnings[0]).toContain('docs/local-development.md')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('names a loopback host that allowedHosts leaves out, and never prints a value', async () => {
+    const privateKey = await createTestPrivateKeyPem()
+    const config = {
+      appleKeyId: 'KEY1234567',
+      applePrivateKey: privateKey,
+      appleTeamId: 'TEAM123456',
+      nardukMapKit: { allowedHosts: ['app.example', '127.0.0.1:8787'] },
+    }
+    const warnings = await warningsFrom(async () => {
+      await withBinding(config, undefined, async (url) => {
+        expect((await fetch(url, { headers: SAME_ORIGIN })).status).toBe(403)
+      })
+    })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatch(
+      /refused 127\.0\.0\.1:\d+: nardukMapKit\.allowedHosts \(app\.example, 127\.0\.0\.1:8787\)/,
+    )
+    expect(warnings[0]).not.toContain(privateKey.slice(40, 80))
+    expect(warnings[0]).not.toContain('KEY1234567')
+  })
+
+  it('does not blame allowedHosts for a bare probe that lacks same-origin evidence', async () => {
+    const config = {
+      appleKeyId: 'KEY1234567',
+      applePrivateKey: await createTestPrivateKeyPem(),
+      appleTeamId: 'TEAM123456',
+      nardukMapKit: { allowedHosts: ['app.example'] },
+    }
+    const warnings = await warningsFrom(async () => {
+      await withBinding(config, undefined, async (url) => {
+        expect((await fetch(url)).status).toBe(403)
+      })
+    })
+    expect(warnings).toEqual([])
+  })
+
+  it('stays quiet for a forged non-loopback host and for a token it minted', async () => {
+    const config = {
+      appleKeyId: 'KEY1234567',
+      applePrivateKey: await createTestPrivateKeyPem(),
+      appleTeamId: 'TEAM123456',
+      nardukMapKit: { allowedHosts: ['app.example'] },
+    }
+    const warnings = await warningsFrom(async () => {
+      await withBinding(config, undefined, async (url) => {
+        const port = Number(new URL(url).port)
+        expect(await rawRequest(port, '/', 'evil.example')).toContain('403 ')
+        expect(await rawRequest(port, '/', 'app.example')).toContain('200 ')
+      })
+    })
+    expect(warnings).toEqual([])
+  })
+})

@@ -154,8 +154,14 @@ export class Canvas2DGridBackend implements GridRenderBackend {
 
     const lower = toGridFrame(state.lower)
     const upper = toGridFrame(state.upper)
-    if (lower.renderMode !== this.mode || upper.renderMode !== this.mode) return
-    if (this.mode === 'scalar' && lower.valueKind !== upper.valueKind) return
+    if (lower.renderMode !== this.mode || upper.renderMode !== this.mode) {
+      this.clear()
+      return
+    }
+    if (this.mode === 'scalar' && lower.valueKind !== upper.valueKind) {
+      this.clear()
+      return
+    }
 
     const progress = Math.max(0, Math.min(1, state.progress))
     const anchor = state.bboxAnchor ?? defaultBBoxAnchor(lower.valueKind)

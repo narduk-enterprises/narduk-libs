@@ -81,10 +81,10 @@ describe('D1 API key auth', () => {
     })
   })
 
-  it('rejects expired keys', async () => {
+  it.each([100, 0])('rejects expired keys (expires_at %i)', async (expiresAt) => {
     const rawKey = 'nk_expired_key'
     const db = createApiKeyDb({
-      expiresAt: 100,
+      expiresAt,
       keyHash: await hashApiKeyText(rawKey),
     })
 

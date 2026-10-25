@@ -459,6 +459,36 @@ export function createTenancy(
       .run()
   }
 
+  /**
+   * The audit row as a statement for a batch, written only while the membership
+   * matches `where`. Put first in the batch, it reads the same state the
+   * mutation after it reads, so the two land together or not at all.
+   */
+  function auditWhileMember(
+    membershipId: string,
+    where: SQL | undefined,
+    input: Parameters<typeof audit>[0],
+  ) {
+    return db
+      .insert(tenancyAuditEvents)
+      .select(
+        db
+          .select({
+            id: sqlText(nextId(), 'id'),
+            orgId: sqlText(input.orgId, 'org_id'),
+            actorUserId: sql<string | null>`${input.actorUserId ?? null}`.as('actor_user_id'),
+            action: sqlText(input.action, 'action'),
+            subjectKind: sqlText(input.subjectKind, 'subject_kind'),
+            subjectId: sqlText(input.subjectId, 'subject_id'),
+            detailsJson: sqlText(JSON.stringify(input.details ?? {}), 'details_json'),
+            createdAt: sqlNumber(now(), 'created_at'),
+          })
+          .from(tenancyMemberships)
+          .where(and(eq(tenancyMemberships.id, membershipId), where)),
+      )
+      .returning({ id: tenancyAuditEvents.id })
+  }
+
   async function findOrg(orgId: string): Promise<TenancyOrg | undefined> {
     return first(
       await db.select().from(tenancyOrgs).where(eq(tenancyOrgs.id, orgId)).limit(1).all(),
@@ -605,29 +635,29 @@ export function createTenancy(
     role: TenancyRole,
     actor: TenancyActor | undefined,
   ): Promise<TenancyMembership> {
-    const updated = first(
-      await db
+    const writable = and(
+      stillInRank(membership, actor),
+      role === 'owner' ? undefined : preservesAnOwner(membership.orgId, membership.userId),
+    )
+    // One batch: a role change that commits without its audit row is never
+    // re-audited, because a retry sees the role already set and returns early.
+    const [, rows] = await runTenancyBatch(db, [
+      auditWhileMember(membership.id, writable, {
+        orgId: membership.orgId,
+        actorUserId: actor?.userId,
+        action: 'membership.change',
+        subjectKind: 'membership',
+        subjectId: membership.id,
+        details: { userId: membership.userId, from: membership.role, to: role },
+      }),
+      db
         .update(tenancyMemberships)
         .set({ role, updatedAt: now() })
-        .where(
-          and(
-            eq(tenancyMemberships.id, membership.id),
-            stillInRank(membership, actor),
-            role === 'owner' ? undefined : preservesAnOwner(membership.orgId, membership.userId),
-          ),
-        )
-        .returning()
-        .all(),
-    )
+        .where(and(eq(tenancyMemberships.id, membership.id), writable))
+        .returning(),
+    ])
+    const updated = first(rows)
     if (!updated) throw await membershipWriteRefusal(membership, actor)
-    await audit({
-      orgId: membership.orgId,
-      actorUserId: actor?.userId,
-      action: 'membership.change',
-      subjectKind: 'membership',
-      subjectId: membership.id,
-      details: { userId: membership.userId, from: membership.role, to: role },
-    })
     return updated
   }
 
@@ -943,41 +973,42 @@ export function createTenancy(
           ),
         )
         .all()
-      const removed = first(
-        await db
+      const removable = and(
+        stillInRank(membership, actor),
+        preservesAnOwner(input.orgId, input.userId),
+      )
+      // One batch, so a failed override delete cannot leave the member gone
+      // and their narrowing behind for a later re-add to inherit. The override
+      // delete runs only once no membership is left for this user.
+      const [, removedRows] = await runTenancyBatch(db, [
+        auditWhileMember(membership.id, removable, {
+          orgId: input.orgId,
+          actorUserId: actor?.userId,
+          action: 'membership.remove',
+          subjectKind: 'membership',
+          subjectId: membership.id,
+          details: {
+            userId: input.userId,
+            role: membership.role,
+            clearedOverrides: orphaned.length,
+          },
+        }),
+        db
           .delete(tenancyMemberships)
+          .where(and(eq(tenancyMemberships.id, membership.id), removable))
+          .returning(),
+        db
+          .delete(tenancyResourceRoleOverrides)
           .where(
             and(
-              eq(tenancyMemberships.id, membership.id),
-              stillInRank(membership, actor),
-              preservesAnOwner(input.orgId, input.userId),
+              eq(tenancyResourceRoleOverrides.orgId, input.orgId),
+              eq(tenancyResourceRoleOverrides.userId, input.userId),
+              memberStillAsRead(input.orgId, input.userId, null),
             ),
           )
-          .returning()
-          .all(),
-      )
-      if (!removed) throw await membershipWriteRefusal(membership, actor)
-      await db
-        .delete(tenancyResourceRoleOverrides)
-        .where(
-          and(
-            eq(tenancyResourceRoleOverrides.orgId, input.orgId),
-            eq(tenancyResourceRoleOverrides.userId, input.userId),
-          ),
-        )
-        .run()
-      await audit({
-        orgId: input.orgId,
-        actorUserId: actor?.userId,
-        action: 'membership.remove',
-        subjectKind: 'membership',
-        subjectId: membership.id,
-        details: {
-          userId: input.userId,
-          role: membership.role,
-          clearedOverrides: orphaned.length,
-        },
-      })
+          .returning({ id: tenancyResourceRoleOverrides.id }),
+      ])
+      if (!first(removedRows)) throw await membershipWriteRefusal(membership, actor)
     },
 
     async setResourceRoleOverride(input) {
@@ -1179,6 +1210,16 @@ export function createTenancy(
           'forbidden',
           `Invite ${invite.id} was issued by a user who no longer holds ${invite.role} or above in org ${invite.orgId}.`,
         )
+      }
+
+      if (invite.resourceKind !== null || invite.resourceId !== null) {
+        const recipient = await findMembership(invite.orgId, userId)
+        if (!recipient || !roleAtLeast(recipient.role, invite.role)) {
+          throw new TenancyError(
+            'forbidden',
+            'Resource-scoped invitations require an existing membership at or above the invited role.',
+          )
+        }
       }
 
       const claimed = await claimInviteMembership(db, invite, userId, acceptedAt, nextId)

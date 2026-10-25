@@ -1,0 +1,117 @@
+import { getRequestProtocol, setResponseHeaders } from 'h3'
+
+import type { H3Event } from 'h3'
+
+/** A Content-Security-Policy as `directive -> sources`; an empty list emits the bare directive. */
+export type CspDirectives = Readonly<Record<string, readonly string[]>>
+
+/** A Permissions-Policy as `feature -> allowlist`; `[]` is `feature=()`, `['self']` is `feature=(self)`. */
+export type PermissionsPolicy = Readonly<Record<string, readonly string[]>>
+
+export interface SecurityHeadersConfig {
+  /** Served as an enforced `Content-Security-Policy`. Opt-in: omitted when absent. */
+  csp?: CspDirectives
+  /**
+   * Served as `Content-Security-Policy-Report-Only`, never enforced. The app
+   * supplies every allowlist; nothing is granted by default.
+   */
+  reportOnlyCsp?: CspDirectives
+  /** `X-Frame-Options`. Defaults to `DENY`. */
+  frameOptions?: 'DENY' | 'SAMEORIGIN'
+  /** `Referrer-Policy`. Defaults to `strict-origin-when-cross-origin`. */
+  referrerPolicy?: string
+  /** `Permissions-Policy`. Omitted when absent. */
+  permissionsPolicy?: PermissionsPolicy
+  /** `Strict-Transport-Security`, sent on https only. `false` turns it off. Defaults to one year with subdomains. */
+  hsts?: false | { maxAgeSeconds?: number; includeSubDomains?: boolean }
+  /** `X-Robots-Tag` value, e.g. `noindex, nofollow`. Omitted when absent. */
+  robots?: string
+}
+
+const UNSAFE_INLINE = "'unsafe-inline'"
+
+/**
+ * `directives` with `'nonce-<nonce>'` on `script-src`. A nonce makes browsers
+ * ignore `'unsafe-inline'`, so it is dropped from the output rather than left to
+ * read as a policy that allows inline scripts. A policy without `script-src` is
+ * returned as is.
+ */
+export function withScriptNonce(directives: CspDirectives, nonce: string): CspDirectives {
+  const scriptSrc = directives['script-src']
+  if (!scriptSrc) return directives
+  return {
+    ...directives,
+    'script-src': [...scriptSrc.filter((source) => source !== UNSAFE_INLINE), `'nonce-${nonce}'`],
+  }
+}
+
+export function serializeCsp(directives: CspDirectives): string {
+  return Object.entries(directives)
+    .map(([name, sources]) => [name, ...sources].join(' '))
+    .join('; ')
+}
+
+export function serializePermissionsPolicy(policy: PermissionsPolicy): string {
+  return Object.entries(policy)
+    .map(([feature, allowlist]) => `${feature}=(${allowlist.join(' ')})`)
+    .join(', ')
+}
+
+const ONE_YEAR_SECONDS = 31_536_000
+
+/**
+ * The baseline response headers for one request, lower-cased. Pure: the app
+ * resolves per-request differences (a framed route, a dev-only source) into
+ * the config it passes. A `request.nonce` (see `getCspNonce` in `./csp-nonce`)
+ * goes on `script-src` of both CSPs, replacing `'unsafe-inline'` there.
+ *
+ * Set them early in the request (a Nitro `request` hook), so a route that sets
+ * one of these headers deliberately replaces the baseline value.
+ */
+export function buildSecurityHeaders(
+  config: SecurityHeadersConfig,
+  request: { https: boolean; nonce?: string },
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': config.frameOptions ?? 'DENY',
+    'referrer-policy': config.referrerPolicy ?? 'strict-origin-when-cross-origin',
+  }
+  if (config.permissionsPolicy) {
+    headers['permissions-policy'] = serializePermissionsPolicy(config.permissionsPolicy)
+  }
+  const { nonce } = request
+  if (config.csp) {
+    headers['content-security-policy'] = serializeCsp(
+      nonce ? withScriptNonce(config.csp, nonce) : config.csp,
+    )
+  }
+  if (config.reportOnlyCsp) {
+    headers['content-security-policy-report-only'] = serializeCsp(
+      nonce ? withScriptNonce(config.reportOnlyCsp, nonce) : config.reportOnlyCsp,
+    )
+  }
+  if (request.https && config.hsts !== false) {
+    const maxAge = config.hsts?.maxAgeSeconds ?? ONE_YEAR_SECONDS
+    const includeSubDomains = config.hsts?.includeSubDomains ?? true
+    headers['strict-transport-security'] =
+      `max-age=${maxAge}${includeSubDomains ? '; includeSubDomains' : ''}`
+  }
+  if (config.robots) headers['x-robots-tag'] = config.robots
+  return headers
+}
+
+/** {@link buildSecurityHeaders} applied to an h3 event, https read from the request. */
+export function applySecurityHeaders(
+  event: H3Event,
+  config: SecurityHeadersConfig,
+  options: { nonce?: string } = {},
+): void {
+  setResponseHeaders(
+    event,
+    buildSecurityHeaders(config, {
+      https: getRequestProtocol(event) === 'https',
+      nonce: options.nonce,
+    }),
+  )
+}

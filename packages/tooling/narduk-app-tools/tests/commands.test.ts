@@ -23,7 +23,7 @@ import {
   runDeploy,
   writeFlattenedWranglerDeployConfig,
 } from '../src/deploy.js'
-import { parsePerformanceBudgetArgs } from '../src/performance.js'
+import { parsePerformanceBudgetArgs, runPerformanceBudgetCheck } from '../src/performance.js'
 
 const tempDirs: string[] = []
 
@@ -215,6 +215,20 @@ describe('app-local command planning', () => {
     } finally {
       log.mockRestore()
     }
+  })
+
+  it('ponytail-5 apptools-tests #5: a built font over budget fails, one under passes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-budget-'))
+    tempDirs.push(root)
+    mkdirSync(join(root, '.output', 'public', '_fonts'), { recursive: true })
+    writeFileSync(join(root, '.output', 'public', 'app.css'), 'a{}')
+    const font = join(root, '.output', 'public', '_fonts', 'face.woff2')
+    writeFileSync(font, Buffer.alloc(56 * 1024))
+    const fonts = () =>
+      runPerformanceBudgetCheck({ appDir: root }).violations.filter((v) => v.kind === 'font')
+    expect(fonts().map((v) => v.metric)).toEqual(['raw'])
+    writeFileSync(font, Buffer.alloc(10 * 1024))
+    expect(fonts()).toEqual([])
   })
 
   it('reads commented Wrangler JSONC and prefers it over legacy JSON', () => {

@@ -607,14 +607,18 @@ export function paintVectorTileHighlight(canvas, tile, options) {
     }
     if (!added)
         return false;
-    context.globalAlpha = style.opacity ?? 1;
+    const alpha = style.opacity ?? 1;
     if (style.casing) {
+        const casing = hairlineStroke((style.width + style.casing.extraWidth) * pixelRatio);
+        context.globalAlpha = alpha * casing.alpha;
         context.strokeStyle = style.casing.color;
-        context.lineWidth = Math.max((style.width + style.casing.extraWidth) * pixelRatio, pixelRatio * 0.5);
+        context.lineWidth = casing.width;
         context.stroke();
     }
+    const line = hairlineStroke(style.width * pixelRatio);
+    context.globalAlpha = alpha * line.alpha;
     context.strokeStyle = style.color;
-    context.lineWidth = Math.max(style.width * pixelRatio, pixelRatio * 0.5);
+    context.lineWidth = line.width;
     context.stroke();
     context.globalAlpha = 1;
     return true;
@@ -891,13 +895,12 @@ export function createVectorTileOverlaySource(options) {
         if (controller.signal.aborted || !bytes)
             return null;
         const tile = await decode(bytes, { x, y, z });
-        if (!tile)
+        // A read that began against the previous archive must not paint after clearCache.
+        if (!tile || startedAt !== generation)
             return null;
-        if (startedAt === generation) {
-            cache.set(key, tile);
-            if (highlightMissed.delete(key))
-                void refreshHighlight().catch((reason) => onError?.(reason));
-        }
+        cache.set(key, tile);
+        if (highlightMissed.delete(key))
+            void refreshHighlight().catch((reason) => onError?.(reason));
         return tile;
     }
     function decodedTile(z, x, y) {

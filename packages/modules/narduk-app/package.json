@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-app",
-  "version": "1.20.3",
+  "version": "1.23.0",
   "private": false,
   "type": "module",
   "description": "Runtime app helpers for Narduk Cloudflare and Nuxt apps.",
@@ -23,6 +23,18 @@
     "./server/errors": {
       "import": "./src/server/errors.ts"
     },
+    "./server/security-headers": {
+      "import": "./src/server/security-headers.ts"
+    },
+    "./server/csp-nonce": {
+      "import": "./src/server/csp-nonce.ts"
+    },
+    "./server/request-id": {
+      "import": "./src/server/request-id.ts"
+    },
+    "./server/request-id-error-handler": {
+      "import": "./src/server/request-id-error-handler.ts"
+    },
     "./server/request-body": {
       "import": "./src/server/request-body.ts"
     },
@@ -38,6 +50,7 @@
   ],
   "scripts": {
     "build": "pnpm run typecheck",
+    "prove:nonce": "node scripts/prove-nonce.mjs",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "lint": "narduk-lint",
@@ -56,13 +69,14 @@
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "4.1.6",
     "eslint": "^10.8.0",
+    "nuxt": "^4.5.2",
     "prettier": "^3.8.3",
     "typescript": "~6.0.3",
     "vitest": "^4.1.11",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "peerDependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "peerDependenciesMeta": {
     "zod": {

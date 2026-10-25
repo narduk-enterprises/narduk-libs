@@ -116,6 +116,30 @@ onMounted(() => {
   }
 })
 
+/** One roving tab stop for the whole plot; arrows move between points. */
+const focusedPoint = ref<string | null>(null)
+const tabStop = computed(() => {
+  if (focusedPoint.value) return focusedPoint.value
+  const si = props.series.findIndex(s => s.points.length > 0)
+  return si < 0 ? null : `${si}-0`
+})
+
+function onPointArrow(e: KeyboardEvent) {
+  const step =
+    e.key === 'ArrowRight' || e.key === 'ArrowDown'
+      ? 1
+      : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+        ? -1
+        : 0
+  if (!step) return
+  const el = e.currentTarget as Element
+  const all = [...(el.closest('svg')?.querySelectorAll<SVGElement>('.narduk-scatter-point') ?? [])]
+  const next = all[all.indexOf(el as SVGElement) + step]
+  if (!next) return
+  e.preventDefault()
+  next.focus()
+}
+
 function onPointClick(seriesName: string, pi: number, x: number, y: number) {
   emit('pointClick', { seriesName, pointIndex: pi, x, y })
 }
@@ -208,9 +232,11 @@ function onPointClick(seriesName: string, pi: number, x: number, y: number) {
             :r="animated ? pointRadius : 0"
             :fill="resolveColor(s)"
             role="button"
-            tabindex="0"
+            :tabindex="tabStop === si + '-' + pi ? 0 : -1"
             :aria-label="`${s.name} ${formatValue(p.x)}, ${formatValue(p.y)}`"
             @click="onPointClick(s.name, pi, p.x, p.y)"
+            @focus="focusedPoint = si + '-' + pi"
+            @keydown="onPointArrow"
             @keydown.enter.prevent="onPointClick(s.name, pi, p.x, p.y)"
             @keydown.space.prevent="onPointClick(s.name, pi, p.x, p.y)"
           />

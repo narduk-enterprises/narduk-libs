@@ -194,6 +194,7 @@ test('the contracts phases run the whole contracts job, audit included', () => {
   const order = [
     'versions:check',
     'scripts:test',
+    'npm-mirror-allowlist',
     'release-plan:check',
     'format:check',
     'surface:check',

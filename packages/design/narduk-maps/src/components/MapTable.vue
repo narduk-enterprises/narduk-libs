@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { safeHref } from '../href'
 import type { MapPoint } from '../types'
 
 defineProps<{
@@ -30,7 +31,7 @@ defineProps<{
         <tr v-for="point in points" :key="`p-${point.id}`">
           <th scope="row">{{ point.label }}</th>
           <td>
-            <a v-if="point.href" :href="point.href">Open</a>
+            <a v-if="safeHref(point.href)" :href="safeHref(point.href)">Open</a>
           </td>
         </tr>
       </tbody>

@@ -11,6 +11,7 @@ import {
   STANDARD_DEPLOY_COMMAND,
 } from '../../src/deployment-config.js'
 import {
+  accountIdsFromToml,
   bindingsByKindFromToml,
   evaluateItem12,
   scanDeployment,
@@ -603,6 +604,17 @@ describe('item 12.4 -- the preview-binding refusal', () => {
     )
     expect(statusOf(root, '12.4')).toBe('fail')
     expect(detailOf(root, '12.4')).toContain('d1:DB')
+  })
+
+  it('ponytail-5 apptools-src #18: reads single-quoted TOML bindings and account ids', () => {
+    expect(bindingsByKindFromToml("[[d1_databases]]\nbinding = 'PROD_DB'\n").d1).toEqual([
+      'PROD_DB',
+    ])
+    expect(
+      accountIdsFromToml(
+        `account_id = "${'a'.repeat(32)}"\n[env.personal]\naccount_id = '${'b'.repeat(32)}'\n`,
+      ),
+    ).toEqual(['a'.repeat(32), 'b'.repeat(32)])
   })
 
   it('reads a wrangler.toml array-table by its own header', () => {

@@ -1,5 +1,53 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.14.1
+
+### Patch Changes
+
+- Release the dependencies recorded on main. The published version's manifest
+  still carries the previous ranges:
+
+  - `dependencies.zod`: ^4.4.3 -> ^4.6.6
+
+## 2.14.0
+
+### Minor Changes
+
+- f65cef9: Add the round-8 feel primitives to narduk-shell: `useUndoToast()` (a
+  7 second Undo toast with a countdown bar and a promise of `undone` or
+  `committed`, on the Nuxt UI toaster), `useTimeAgo()` and `NeRelativeTime` (one
+  shared 30 second ticker, `<time datetime>` with an absolute title, relative
+  while recent and a date after a week), `NePriceCell` (a fixed-width tabular
+  figure whose up/down tint changes colour only), `NeStickyActionBar` (the phone
+  bottom call to action with safe-area padding and a matching spacer), `NeTabs`
+  and `useRouteTab()` (`?tab=` kept with `router.replace`, roving focus, the
+  active tab scrolled into view), a global `:focus-visible` ring (2px accent
+  outline, 2px offset; it replaces the browser default ring in every consuming
+  app, so expect a visible change on focused controls) and the `.ne-safe-top` /
+  `.ne-safe-bottom` utilities. Every addition is new surface; no existing export
+  changes. Add `usePageSeo()` and `buildPageTitle()` to narduk-seo for the
+  `Page · Site` browser title. Update the shared-component inventories and
+  Explorer examples.
+
+### Patch Changes
+
+- 0f8f69d: A non-HTTPS network directory URL now counts as unconfigured, so
+  `/narduk-network` stays `noindex` and out of the sitemap. Sitemap `lastmod`
+  values with no time zone are read as UTC. `useSoftwareApplicationSchema` keeps
+  the app's own `url` and links `catalogUrl` as `isPartOf`. The README now
+  states the real `publicCatalogBaseUrl` default.
+- 873c869: Host-aware noindex ignores X-Forwarded-Host, the OG preview image
+  check rejects off-origin backslash paths, and the admin OG route preview only
+  fetches same-origin paths and forwards just the accept and cookie headers.
+
+## 2.13.1
+
+### Patch Changes
+
+- fe63fd8: Widen the `@nuxt/ui` peer dependency from exactly `4.11.1` to
+  `>=4.11.1 <5`, matching narduk-core and narduk-auth, so apps on Nuxt UI 4.12
+  can install these packages (narduk-libs#1981).
+
 ## 2.13.0
 
 ### Minor Changes

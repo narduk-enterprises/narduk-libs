@@ -1,5 +1,65 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.30.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @narduk-enterprises/narduk-platform@2.4.2
+
+## 0.30.0
+
+### Minor Changes
+
+- 0ba5cb8: Add three reusable shipped-design patterns: NeSettle (PACC·TRAC’s
+  one-shot card arrival), NeTimelineHero (TX Spends’ number-led period
+  selector), and NeStatementHero (KZFR’s current-state statement). Include
+  reduced-motion behavior, responsive layouts, honest data gaps, typed props,
+  design cards and complete Explorer examples. Update shared-component ownership
+  inventories.
+- f65cef9: Add the round-8 feel primitives to narduk-shell: `useUndoToast()` (a
+  7 second Undo toast with a countdown bar and a promise of `undone` or
+  `committed`, on the Nuxt UI toaster), `useTimeAgo()` and `NeRelativeTime` (one
+  shared 30 second ticker, `<time datetime>` with an absolute title, relative
+  while recent and a date after a week), `NePriceCell` (a fixed-width tabular
+  figure whose up/down tint changes colour only), `NeStickyActionBar` (the phone
+  bottom call to action with safe-area padding and a matching spacer), `NeTabs`
+  and `useRouteTab()` (`?tab=` kept with `router.replace`, roving focus, the
+  active tab scrolled into view), a global `:focus-visible` ring (2px accent
+  outline, 2px offset; it replaces the browser default ring in every consuming
+  app, so expect a visible change on focused controls) and the `.ne-safe-top` /
+  `.ne-safe-bottom` utilities. Every addition is new surface; no existing export
+  changes. Add `usePageSeo()` and `buildPageTitle()` to narduk-seo for the
+  `Page · Site` browser title. Update the shared-component inventories and
+  Explorer examples.
+
+### Patch Changes
+
+- 1b7aeba: Fix shell edge cases: `formatRelative` no longer reads 30 days as
+  "this month"; `NeDataTable` prints a raw Date cell as an ISO instant;
+  `useRowLimit` treats an undefined cap as no cap; `useCursorCollection` refuses
+  reserved filter keys and checks its initial sort against `sortable`;
+  `useCollection` stops its loop after disposal; client table sort pins `en-US`;
+  `useTimeAgo` no longer rewrites a running clock on each join; `useUndoToast`
+  swallows a throwing callback; `useConfirm` ignores a second Confirm click
+  while running.
+- 6a2e814: Fix ponytail-5 shell findings: zone-less date-times read as UTC in
+  every formatter (one shared `instantOf`), a typed collection search survives a
+  page change inside its debounce, cursor collections keep a cleared sort and
+  the URL cursor on back/forward, the command palette only assigns http(s)
+  targets, `NeStatePanel` only links http(s) `unblocksHref`, prose links carry
+  `noreferrer`, and CSV export neutralises formulas after leading whitespace.
+- Updated dependencies [82f5b78]
+  - @narduk-enterprises/narduk-platform@2.4.1
+
+## 0.29.2
+
+### Patch Changes
+
+- fe63fd8: Widen the `@nuxt/ui` peer dependency from exactly `4.11.1` to
+  `>=4.11.1 <5`, matching narduk-core and narduk-auth, so apps on Nuxt UI 4.12
+  can install these packages (narduk-libs#1981).
+
 ## 0.29.1
 
 ### Patch Changes

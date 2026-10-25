@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-testkit",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "private": false,
   "type": "module",
   "description": "Dev-only Vitest, Playwright, and UI-quality test helpers for Narduk apps.",
@@ -22,6 +22,10 @@
     "./d1": {
       "types": "./dist/d1.d.ts",
       "import": "./dist/d1.js"
+    },
+    "./d1-migration-lint": {
+      "types": "./dist/d1-migration-lint.d.ts",
+      "import": "./dist/d1-migration-lint.js"
     },
     "./e2e/fixtures": {
       "types": "./dist/e2e/fixtures.d.ts",
@@ -64,6 +68,10 @@
       "types": "./dist/playwright/accessibility.d.ts",
       "import": "./dist/playwright/accessibility.js"
     },
+    "./playwright/console-guard": {
+      "types": "./dist/playwright/console-guard.d.ts",
+      "import": "./dist/playwright/console-guard.js"
+    },
     "./playwright/config": {
       "types": "./dist/playwright/config.d.ts",
       "import": "./dist/playwright/config.js",
@@ -73,6 +81,10 @@
       "types": "./dist/playwright/dev-port.d.ts",
       "import": "./dist/playwright/dev-port.js",
       "require": "./dist/playwright/dev-port.js"
+    },
+    "./playwright/layout": {
+      "types": "./dist/playwright/layout.d.ts",
+      "import": "./dist/playwright/layout.js"
     },
     "./playwright/deterministic-capture": {
       "types": "./dist/playwright/deterministic-capture.d.ts",
@@ -141,6 +153,10 @@
     "./vue-strict-setup": {
       "types": "./dist/vue-strict-setup.d.ts",
       "import": "./dist/vue-strict-setup.js"
+    },
+    "./http-contracts": {
+      "types": "./dist/http-contracts.d.ts",
+      "import": "./dist/http-contracts.js"
     }
   },
   "files": [
@@ -212,7 +228,7 @@
     "@vue/test-utils": "2.4.11",
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
-    "happy-dom": "20.10.6",
+    "happy-dom": "21.0.4",
     "miniflare": "5.20260921.0-alpha",
     "prettier": "^3.8.3",
     "typescript": "~6.0.3",

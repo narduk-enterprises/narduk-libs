@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-core",
-  "version": "2.35.0",
+  "version": "2.37.5",
   "private": false,
   "type": "module",
   "description": "Core Nuxt module, Worker runtime helpers, UI primitives, and database utilities for Narduk Cloudflare apps.",
@@ -126,9 +126,8 @@
     "@nuxt/eslint": "^1.15.2",
     "@nuxt/fonts": "^0.14.0",
     "@nuxt/icon": "2.5.1",
-    "@nuxt/image": "^2.1.0",
+    "@nuxt/image": "2.1.0",
     "@nuxt/kit": "^4.0.0",
-    "@nuxt/ui": "4.11.1",
     "@nuxtjs/color-mode": "^3.5.2",
     "@pinia/nuxt": "^1.0.2",
     "@vue/devtools-api": "^8.1.5",
@@ -144,8 +143,8 @@
     "postgres": "^3.4.9",
     "posthog-js": "^1.373.4",
     "tailwindcss": "^4.2.1",
-    "undici": "^8.9.0",
-    "zod": "^4.4.3"
+    "undici": "^8.12.2",
+    "zod": "^4.6.6"
   },
   "//devDependencies": "@vitejs/plugin-vue is pinned to the exact version already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package (narduk-libs#124). Widen it in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
@@ -154,6 +153,7 @@
     "@narduk-enterprises/narduk-testkit": "workspace:*",
     "@nuxt/schema": "^4.5.2",
     "@nuxt/test-utils": "^4.0.3",
+    "@nuxt/ui": "4.11.1",
     "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^22.19.19",
@@ -163,7 +163,7 @@
     "drizzle-kit": "^0.31.10",
     "embedded-postgres": "17.10.0-beta.17",
     "eslint": "^10.8.0",
-    "happy-dom": "^20.9.0",
+    "happy-dom": "^21.0.4",
     "hookable": "5.5.3",
     "miniflare": "4.20260701.0",
     "nitropack": "2.13.4",
@@ -180,6 +180,7 @@
   "peerDependencies": {
     "@narduk-enterprises/eslint-config": ">=1.2.17 <4",
     "@nuxt/schema": ">=4.0.0",
+    "@nuxt/ui": ">=4.7.1 <5",
     "nuxt": ">=4.0.0",
     "nuxt-security": "^2.6.0",
     "vue": ">=3.5.0",

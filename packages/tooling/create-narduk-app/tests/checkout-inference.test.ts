@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { readCheckoutFacts, readDevServerPort } from '../src/checkout-facts.js'
+import { declaredDatabase, readCheckoutFacts, readDevServerPort } from '../src/checkout-facts.js'
 import { inferUpgradeProfile, upgradeNardukApp } from '../src/index.js'
 
 const tempDirectories: string[] = []
@@ -409,5 +409,16 @@ describe('upgrade app-config sources', () => {
     const root = await checkout()
     await write(root, 'Config/project-lifecycle.json', body)
     await expect(readCheckoutFacts(root)).rejects.toThrow(/not a JSON object/)
+  })
+})
+
+describe('declaredDatabase', () => {
+  it.each([
+    ["// was databaseBackend: 'd1'\nexport default { databaseBackend: 'none' }", 'none'],
+    ['export default { databaseBackend: "none" }', 'none'],
+    ["/* databaseBackend: 'none' */ export default { databaseBackend: 'd1' }", 'd1'],
+    ['export default { x: "databaseBackend: \'d1\'" }', null],
+  ])('reads %j as %s', (source, expected) => {
+    expect(declaredDatabase(source)).toBe(expected)
   })
 })

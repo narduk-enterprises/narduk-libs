@@ -35,6 +35,7 @@ import {
 } from './compute-affected-packages.mjs'
 import { packageGates } from './ci-package-plan.mjs'
 import { runPackageGates } from './ci-packages.mjs'
+import { fetchTargetForBase, refreshComparisonBase } from './git-base-refresh.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -134,22 +135,7 @@ function parsePreflightArgs(argv) {
 
 export { parsePreflightArgs }
 
-/**
- * `--base` names the ref this run compares against, so it is the ref worth
- * refreshing -- fetching `origin/main` while comparing against something else
- * is the stale-base failure (#492) with an extra network call in front of it.
- * `origin/main` splits into remote `origin` and ref `main`; a bare branch
- * name, a SHA, or `HEAD~3` names no remote and is left alone rather than
- * guessed at, since a wrong guess fetches the wrong thing silently.
- */
-export function fetchTargetForBase(base, remotes) {
-  const separator = base.indexOf('/')
-  if (separator <= 0) return undefined
-  const remote = base.slice(0, separator)
-  const ref = base.slice(separator + 1)
-  if (!ref || !remotes.includes(remote)) return undefined
-  return { remote, ref }
-}
+export { fetchTargetForBase } from './git-base-refresh.mjs'
 
 /** The branch Changesets opens the `chore: release packages` PR from. */
 export const releasePrBranch = 'changeset-release/main'
@@ -212,6 +198,15 @@ function gitOutput(repositoryRoot, args, execute = spawnSync) {
   return result.status === 0 ? result.stdout.trim() : ''
 }
 
+// Keep planning and the release guard on one immutable base, even if another
+// fetch updates the tracking ref while package checks run. --no-fetch remains local.
+export function plannedComparisonBase(repositoryRoot, base, execute = spawnSync) {
+  const oid = gitOutput(repositoryRoot, ['rev-parse', '--verify', `${base}^{commit}`], execute)
+  if (!/^[a-f0-9]{40}$/u.test(oid))
+    throw new Error(`Cannot resolve planned comparison base '${base}'.`)
+  return oid
+}
+
 function gitRemotes(repositoryRoot, execute = spawnSync) {
   const result = execute('git', ['remote'], { cwd: repositoryRoot, encoding: 'utf8' })
   if (result.status !== 0 || typeof result.stdout !== 'string') return []
@@ -234,29 +229,35 @@ async function main() {
   // it, and against a stale one it reports packages the branch never touched.
   // The contracts job materializes the base branch for the same reason.
   if (options.fetch) {
-    const target = fetchTargetForBase(options.base, gitRemotes(root))
-    if (!target) {
-      console.log(`preflight: ${options.base} names no remote, so nothing was fetched.`)
-    } else {
-      const fetched = run('git', ['fetch', '--quiet', target.remote, target.ref])
-      if (fetched.status !== 0) {
-        console.warn(
-          `preflight: could not fetch ${target.remote}/${target.ref}; ${options.base} may be stale.`,
-        )
-      }
-    }
+    const refreshed = refreshComparisonBase(root, options.base)
+    console.log(`preflight: ${refreshed ?? `${options.base} names no remote branch to refresh.`}`)
   }
 
   const baseline = trackedTreeSnapshot(root)
   const failures = []
 
-  const guard = (label) => {
+  // `narduk-mapkit` and `narduk-realtime` commit their `dist/`; a rebuild that
+  // changes it is a stale commit to fix by committing, not by discarding.
+  const committedDist = /^packages\/modules\/narduk-(?:mapkit|realtime)\/dist\//u
+  const guard = (label, phaseOk = true) => {
     const dirtied = newlyDirtyPaths(baseline, trackedTreeSnapshot(root))
     if (dirtied.length === 0) return
+    const dist = dirtied.filter((path) => committedDist.test(path))
+    const rest = dirtied.filter((path) => !committedDist.test(path))
+    if (dist.length > 0) {
+      // The package build gate already fails for stale committed dist.
+      if (phaseOk) failures.push(`${label} modified the working tree`)
+      console.error(
+        `\npreflight: ${label} rebuilt committed dist/ output, which CI requires you to commit:\n` +
+          dist.map((path) => `  ${path}`).join('\n') +
+          '\nCommit those paths; do not discard them.',
+      )
+    }
+    if (rest.length === 0) return
     failures.push(`${label} modified the working tree`)
     console.error(
       `\npreflight: the working tree changed during ${label}, which a check must never do:\n` +
-        dirtied.map((path) => `  ${path}`).join('\n') +
+        rest.map((path) => `  ${path}`).join('\n') +
         '\nDiscard those paths before committing (narduk-libs#623).\n' +
         'If you were editing while this ran, those are your own edits, not the phase: ' +
         'the guard can only see that the tree changed, not who changed it. Re-run on a ' +
@@ -268,19 +269,16 @@ async function main() {
     console.log(`\n=== ${label} ===`)
     const result = run(file, args)
     if (result.status !== 0) failures.push(`${label} failed (exit ${result.status})`)
-    guard(label)
+    guard(label, result.status === 0)
     return result.status === 0
   }
 
   // --- Plan ---------------------------------------------------------------
-  const changedFiles = preflightChangedFiles(root, options.base)
+  const plannedBase = plannedComparisonBase(root, options.base)
+  const changedFiles = preflightChangedFiles(root, plannedBase)
   const workspace = loadWorkspace(root)
   const plan = computeAffectedSet({ changedFiles, consumerScopeMode: 'scoped' })
-  const baseSha = spawnSync('git', ['rev-parse', '--short', options.base], {
-    cwd: root,
-    encoding: 'utf8',
-  }).stdout?.trim()
-  console.log(`=== plan (against ${options.base}${baseSha ? ` ${baseSha}` : ''}) ===`)
+  console.log(`=== plan (against ${options.base} ${plannedBase.slice(0, 12)}) ===`)
   console.log(`Changed files: ${changedFiles.length}`)
   console.log(
     `Affected packages (${plan.affectedNames.length}): ${plan.affectedNames.join(', ') || 'none'}`,
@@ -339,6 +337,7 @@ async function main() {
   // --- Contracts, in the contracts job's own order ------------------------
   phase('versions:check', 'pnpm', ['run', 'versions:check'])
   phase('scripts:test', 'pnpm', ['run', 'scripts:test'])
+  phase('npm-mirror-allowlist', 'node', ['scripts/check-npm-mirror-allowlist.mjs'])
   if (releaseIdentity?.proven) {
     // ci.yml's IS_CHANGESET_RELEASE skip, on the same commit CI checks.
     console.log(
@@ -350,14 +349,13 @@ async function main() {
         `release PR identity not proven, so release-plan:check ran: ${releaseIdentity.problems.join('; ')}`,
       )
     }
-    // Pass the ref the author asked for, which the fetch above just refreshed.
-    // The script's own default is `origin/<baseBranch>` (#619), which is only as
-    // fresh as the last fetch of that remote; `--base` keeps this phase on the
-    // exact ref preflight planned against.
+    // Pass the immutable base used by the planner. The direct command refreshes
+    // named remote branches; pinning here preserves --no-fetch and prevents a
+    // second fetch from moving the comparison after the plan was computed.
     phase('release-plan:check', 'node', [
       'scripts/check-generator-release-plan.mjs',
       '--base',
-      options.base,
+      plannedBase,
     ])
   }
   phase('format:check', 'pnpm', ['run', 'format:check'])

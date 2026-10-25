@@ -44,7 +44,17 @@ import type {
   SeriesDescriptor,
   SeriesListQuery,
   SeriesListResult,
+  StateAtQuery,
+  StateAtResult,
+  StatePoint,
+  StateTransitionsQuery,
+  StateTransitionsResult,
   TelemetryHistoryStore,
+  TelemetryStateStore,
+  TimeWeightedRefreshInput,
+  TimeWeightedRefreshResult,
+  TimeWeightedRollupResult,
+  TimeWeightedRollupStore,
   TrackPoint,
   TrackQuery,
   TrackResult,
@@ -75,6 +85,22 @@ import {
   type SeriesRow,
 } from './series.js'
 import {
+  DEFAULT_MAX_STATE_ROWS,
+  buildStateWriteStatements,
+  encodeStateValue,
+  planStateAtQuery,
+  planStateTransitionsQuery,
+  toStateRow,
+  type ResolvedStatePoint,
+  type StateSqlRow,
+} from './state.js'
+import {
+  buildTimeWeightedRollupQuery,
+  planTimeWeightedRefresh,
+  toTimeWeightedRow,
+  type TimeWeightedSqlRow,
+} from './time-weighted.js'
+import {
   buildNumericWriteStatements,
   buildTrackWriteStatements,
   type ResolvedNumericPoint,
@@ -85,7 +111,9 @@ export * from './query.js'
 export * from './retention.js'
 export * from './roles.js'
 export * from './series.js'
+export * from './state.js'
 export * from './tables.js'
+export * from './time-weighted.js'
 export * from './write.js'
 
 /**
@@ -147,6 +175,12 @@ export interface TimescaleStoreOptions {
    * construction.
    */
   maxSeriesRows?: number
+  /**
+   * Hard ceiling for `StateTransitionsQuery.maxRows`. Defaults to
+   * `DEFAULT_MAX_STATE_ROWS` (10_000). Raise only from server-side
+   * construction.
+   */
+  maxStateRows?: number
 }
 
 interface RollupSqlRow {
@@ -181,7 +215,9 @@ function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value)
 }
 
-export class TimescaleHistoryStore implements TelemetryHistoryStore {
+export class TimescaleHistoryStore
+  implements TelemetryHistoryStore, TelemetryStateStore, TimeWeightedRollupStore
+{
   readonly cache: SeriesCache
 
   #executor: SqlExecutor
@@ -193,6 +229,8 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
   #maxTrackPoints: number
 
   #maxSeriesRows: number
+
+  #maxStateRows: number
 
   #retention: RetentionExecutorOptions | undefined
 
@@ -209,6 +247,7 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     this.#maxRollupRows = options.maxRollupRows ?? DEFAULT_MAX_ROLLUP_ROWS
     this.#maxTrackPoints = options.maxTrackPoints ?? DEFAULT_MAX_TRACK_POINTS
     this.#maxSeriesRows = options.maxSeriesRows ?? DEFAULT_MAX_SERIES_ROWS
+    this.#maxStateRows = options.maxStateRows ?? DEFAULT_MAX_STATE_ROWS
     this.#retention = options.retention
     if (options.retention !== undefined && options.retention.maxConnections !== 1) {
       throw new NardukTimeseriesError(
@@ -257,8 +296,10 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     const missing: SeriesDescriptor[] = []
     for (const descriptor of distinct) {
       const cached = this.cache.get(descriptor.vesselId, descriptor.path)
-      if (cached) resolved.push(cached)
-      else missing.push(descriptor)
+      // A differing non-null unit must reach the database to update the row.
+      if (cached && (descriptor.unit == null || descriptor.unit === cached.unit)) {
+        resolved.push(cached)
+      } else missing.push(descriptor)
     }
     if (missing.length === 0) return resolved
 
@@ -267,10 +308,12 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     // Sorted: the same descriptor set arriving in two orders is one resolve,
     // not two. Unsorted, a batch of the same paths in a different order missed
     // the in-flight entry and issued a second identical statement.
-    const key = missing
-      .map((d) => seriesCacheKey(d.vesselId, d.path))
-      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
-      .join('|')
+    // JSON, not a joined string: a path may contain any separator.
+    const key = JSON.stringify(
+      missing
+        .map((d) => seriesCacheKey(d.vesselId, d.path))
+        .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
+    )
     const existing = this.#inFlightResolves.get(key)
     const inFlight =
       existing ??
@@ -368,6 +411,115 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     }
   }
 
+  /**
+   * Write a batch of state CHANGES to `telemetry_state`. One series resolve
+   * for the batch (zero once cached), then budget-sized multi-row INSERTs,
+   * atomic together when there is more than one. Every value is encoded
+   * before anything is sent, so a number in the batch fails it whole.
+   */
+  async writeState(batch: readonly StatePoint[]): Promise<WriteResult> {
+    if (batch.length === 0) {
+      return { parameters: 0, rows: 0, seriesFromCache: 0, seriesResolved: 0, statements: 0 }
+    }
+    const descriptors = batch.map((point, index) => ({
+      path: point.path,
+      unit: point.unit ?? null,
+      valueKind: encodeStateValue(point.value, index).kind,
+      vesselId: point.vesselId,
+    }))
+    const distinct = distinctDescriptors(descriptors)
+    const cachedBefore = distinct.filter(
+      (d) => this.cache.get(d.vesselId, d.path) !== undefined,
+    ).length
+    const resolveStatements = cachedBefore === distinct.length ? 0 : 1
+    const series = await this.resolveSeries(distinct)
+    const byKey = new Map(series.map((row) => [seriesCacheKey(row.vesselId, row.path), row]))
+    const resolvedBatch: ResolvedStatePoint[] = batch.map((point) => {
+      const row = byKey.get(seriesCacheKey(point.vesselId, point.path))
+      if (!row) {
+        throw new NardukTimeseriesError(
+          'SERIES_UNRESOLVED',
+          'A point in the batch has no resolved series.',
+          { path: point.path, vesselId: point.vesselId },
+        )
+      }
+      return { ...point, seriesId: row.seriesId }
+    })
+    const statements = buildStateWriteStatements(resolvedBatch, this.#parameterBudget)
+    const parameters = await this.#runWrite(statements)
+    return {
+      parameters,
+      rows: batch.length,
+      seriesFromCache: cachedBefore,
+      seriesResolved: distinct.length,
+      statements: statements.length + resolveStatements,
+    }
+  }
+
+  /** The last state at or before `at`, per series, never below the tier floor. */
+  async queryStateAt(query: StateAtQuery): Promise<StateAtResult> {
+    const plan = planStateAtQuery(query)
+    if (plan.empty || plan.query === null) {
+      return { at: query.at, clipped: true, rows: [] }
+    }
+    const result = await this.#executor.query<StateSqlRow>(plan.query.text, plan.query.params)
+    return { at: query.at, clipped: plan.clipped, rows: result.rows.map((row) => toStateRow(row)) }
+  }
+
+  /** Every state change in a range, oldest first, with a row ceiling. */
+  async queryStateTransitions(query: StateTransitionsQuery): Promise<StateTransitionsResult> {
+    const plan = planStateTransitionsQuery(query, { maxRowsCeiling: this.#maxStateRows })
+    if (plan.empty || plan.query === null) {
+      return { clipped: true, range: plan.range, rows: [], truncated: false }
+    }
+    const result = await this.#executor.query<StateSqlRow>(plan.query.text, plan.query.params)
+    return {
+      clipped: plan.clipped,
+      range: plan.range,
+      rows: result.rows.slice(0, plan.maxRows).map((row) => toStateRow(row)),
+      truncated: result.rows.length > plan.maxRows,
+    }
+  }
+
+  /**
+   * The time-weighted ladder at one level. Same tier clip, series set and row
+   * ceiling as `queryRollup`; empty until a consumer has run
+   * `refreshTimeWeighted` over the range.
+   */
+  async queryTimeWeightedRollup(query: RollupQuery): Promise<TimeWeightedRollupResult> {
+    const plan = clipRollupRange(query)
+    if (plan.empty) {
+      return { bucket: query.bucket, clipped: true, range: plan.range, rows: [], truncated: false }
+    }
+    const built = buildTimeWeightedRollupQuery(query, { maxRowsCeiling: this.#maxRollupRows })
+    const result = await this.#executor.query<TimeWeightedSqlRow>(built.text, built.params)
+    const limit = Number(built.params.at(-1)) - 1
+    return {
+      bucket: query.bucket,
+      clipped: built.clipped,
+      range: built.range,
+      rows: result.rows.slice(0, limit).map((row) => toTimeWeightedRow(row)),
+      truncated: result.rows.length > limit,
+    }
+  }
+
+  /**
+   * Recompute the time-weighted ladder for a range whose raw changed. The
+   * statements run one at a time, in plan order (each minute window before
+   * its day's coarse sum), not in one transaction: each is an idempotent
+   * upsert, so a failure part way leaves correct rows and a re-run finishes
+   * the rest. Needs a role that can read raw and write the table (`ops`).
+   */
+  async refreshTimeWeighted(input: TimeWeightedRefreshInput): Promise<TimeWeightedRefreshResult> {
+    const plan = planTimeWeightedRefresh(input)
+    let rows = 0
+    for (const statement of plan.statements) {
+      const result = await this.#executor.query(statement.text, statement.params)
+      rows += result.rowCount || 0
+    }
+    return { range: plan.range, rows, statements: plan.statements.length }
+  }
+
   async queryRollup(query: RollupQuery): Promise<RollupResult> {
     // A range entirely older than the tier's window is an empty answer, not an
     // error and not a statement: the database has the rows (they are retained
@@ -463,6 +615,9 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
       (bucket) =>
         `rollup level ${bucket} has no globalRollupWindowMs and is never swept (retained indefinitely)`,
     )
+    if (validated.rawNeverSwept) {
+      skipped.unshift("raw is never swept (globalRawWindowMs: 'never')")
+    }
 
     const lock = retentionLockStatement()
     const locked = await executor.query<{ locked: boolean; pid: number }>(lock.text, lock.params)
@@ -564,4 +719,9 @@ export const TIMESCALE_MIGRATION_NAMES: readonly string[] = [
   '0001_history_core.sql',
   '0002_history_rollups.sql',
   '0003_history_roles.sql',
+  '0004_history_state.sql',
+  '0005_history_time_weighted.sql',
+  '0006_history_ais.sql',
+  '0007_history_roles_additions.sql',
+  '0008_rollups_exclude_import_overlay.sql',
 ]

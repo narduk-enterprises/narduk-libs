@@ -238,8 +238,15 @@ export default {
       if (!callee) return false
       if (primaryKeyCallees.has(callee)) return targetsPrimaryKey(target.arguments?.[0])
       // `and(eq(users.id, x), …)` still narrows by the primary key.
-      if (callee === 'and' || callee === 'or') {
+      // `or(eq(users.id, x), eq(users.orgId, y))` is NOT one row: every arm must be.
+      if (callee === 'and') {
         return (target.arguments ?? []).some((argument: any) => isPrimaryKeyCondition(argument))
+      }
+      if (callee === 'or') {
+        return (
+          (target.arguments?.length ?? 0) > 0 &&
+          target.arguments.every((argument: any) => isPrimaryKeyCondition(argument))
+        )
       }
       return false
     }
@@ -355,8 +362,35 @@ export default {
     /** Terminals that are single-row or side-effecting — not list queries. */
     const NON_LIST_TERMINALS = new Set(['get', 'run', 'limit', 'returning'])
 
-    function analyzeThenable(node: any): void {
+    /** The initializer of a `const rows = <call>` that this identifier reads. */
+    function storedQuery(identifier: any): any | null {
+      let scope: any = sourceCode.getScope(identifier)
+      while (scope) {
+        const variable = scope.variables.find(
+          (candidate: any) => candidate.name === identifier.name,
+        )
+        if (variable) {
+          const [def] = variable.defs ?? []
+          const declarator = def?.node
+          if (variable.defs.length !== 1 || declarator?.type !== 'VariableDeclarator') return null
+          if (declarator.parent?.kind !== 'const' || declarator.id?.type !== 'Identifier')
+            return null
+          const init = unwrapTsWrappers(declarator.init)
+          return init?.type === 'CallExpression' ? init : null
+        }
+        scope = scope.upper
+      }
+      return null
+    }
+
+    function analyzeThenable(node: any, reportAt?: any): void {
       const target = unwrapTsWrappers(node)
+      // `const rows = db.select().from(t); return rows` — Nitro awaits the thenable.
+      if (target?.type === 'Identifier' && !reportAt) {
+        const init = storedQuery(target)
+        if (init) analyzeThenable(init, target)
+        return
+      }
       if (target?.type !== 'CallExpression') return
       const callee = unwrapTsWrappers(target.callee)
       if (callee?.type !== 'MemberExpression') return
@@ -366,7 +400,7 @@ export default {
         return
       }
       if (method && (TERMINALS.has(method) || NON_LIST_TERMINALS.has(method))) return
-      analyzeSelectChain(target, target)
+      analyzeSelectChain(target, reportAt ?? target)
     }
 
     return {

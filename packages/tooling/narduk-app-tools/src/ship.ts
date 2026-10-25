@@ -341,9 +341,12 @@ export async function runShip(flags: ShipFlags, context: ShipContext = {}): Prom
   const now = context.now ?? Date.now
   const started = now()
   const elapsed = () => `${((now() - started) / 1000).toFixed(1)}s`
+  // Set while any error must undo the -m commit (until the push publishes it).
+  const undo: { run?: () => void } = {}
   try {
-    return await ship(flags, context, env, log, elapsed)
+    return await ship(flags, context, env, log, elapsed, undo)
   } catch (error) {
+    undo.run?.()
     if (error instanceof ShipRefusal) {
       log(`[ship] refused: ${error.message} (production unchanged)`)
       return SHIP_EXIT.refused
@@ -358,6 +361,7 @@ async function ship(
   env: NodeJS.ProcessEnv,
   log: (message: string) => void,
   elapsed: () => string,
+  undo: { run?: () => void },
 ): Promise<number> {
   const refuse = (message: string): never => {
     throw new ShipRefusal(message)
@@ -427,17 +431,30 @@ async function ship(
     )
     return SHIP_EXIT.ok
   }
-  if (dirty) {
-    git(['add', '--all'])
-    git(['-c', 'commit.gpgsign=false', 'commit', '--quiet', '--message', flags.message!])
-  }
-  const sha = git(['rev-parse', 'HEAD'])
-  log(`[ship] ${target.workerName} ${branch}@${sha.slice(0, 12)} -> ${baseUrl}`)
   // A standard worker-deploy persona stores its token as <APP>_WORKER_DEPLOY_CF_TOKEN
   // (agent-infrastructure mint-standard-persona); --token-env names it.
   const tokenEnv = flags.tokenEnv ?? 'CLOUDFLARE_API_TOKEN'
   const token = env[tokenEnv]?.trim()
   if (!token) refuse(`Inject the app deploy credential as ${tokenEnv} (nvault run -- pnpm ship)`)
+  try {
+    resolveAccessHeaders(
+      {
+        accessClientIdEnv: flags.accessClientIdEnv ?? null,
+        accessClientSecretEnv: flags.accessClientSecretEnv ?? null,
+      },
+      env,
+    )
+  } catch (error) {
+    refuse((error as Error).message)
+  }
+  if (dirty) {
+    const head = git(['rev-parse', 'HEAD'])
+    git(['add', '--all'])
+    undo.run = () => git(['reset', '--quiet', '--soft', head])
+    git(['-c', 'commit.gpgsign=false', 'commit', '--quiet', '--message', flags.message!])
+  }
+  const sha = git(['rev-parse', 'HEAD'])
+  log(`[ship] ${target.workerName} ${branch}@${sha.slice(0, 12)} -> ${baseUrl}`)
 
   const verifyFlags = parseVerifyArgs([
     '--live',
@@ -558,7 +575,13 @@ async function ship(
     }).catch((error: unknown) => refuse(String(error)))
   const secrets = Object.fromEntries(
     Object.entries(env)
-      .filter(([key, value]) => /TOKEN|SECRET|PASSWORD|GH_PACKAGES_READ/u.test(key) && value)
+      .filter(
+        ([key, value]) =>
+          (/TOKEN|SECRET|PASSWORD|GH_PACKAGES_READ/u.test(key) ||
+            // NUXT_PUBLIC_*_API_KEY values are public by design.
+            (/API_KEY/u.test(key) && !key.startsWith('NUXT_PUBLIC_'))) &&
+          value,
+      )
       .map(([key, value]) => [key, value!]),
   )
   if (scanPublicAssetsForSecretLeaks(appDir, secrets).length)
@@ -574,6 +597,7 @@ async function ship(
   } catch (error) {
     refuse(`Push failed: ${(error as Error).message}`)
   }
+  undo.run = undefined
   const id = randomUUID().slice(0, 8)
   const message = `${SHIP_MESSAGE_PREFIX} ${branch} ${id}`
   log(`[ship] upload (${elapsed()})`)
@@ -618,6 +642,10 @@ async function ship(
   if (failure) {
     log(`[ship] ${failure}; rolling back to ${previousVersionId}`)
     try {
+      // Another writer may have deployed during the proof: never roll back over it.
+      const live = soleDeployedVersionId(await readDeployment(client))
+      if (live !== uploaded[0].id && live !== previousVersionId)
+        throw new Error(`production now serves ${String(live)}, not this ship; not rolling back`)
       // The rollback prefix keeps a later `deploy rollback` from resolving
       // "previous" to the version that just failed.
       await client.deployVersion(

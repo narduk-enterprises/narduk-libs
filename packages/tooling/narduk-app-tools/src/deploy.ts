@@ -203,6 +203,14 @@ export function resolveVersionTagArgs(
   passthroughArgs: readonly string[],
   env: DeployEnv = process.env,
 ): string[] {
+  // Promote reads the branch from this message, so inside a Workers Build only
+  // the build environment may name it.
+  if (env.WORKERS_CI_BRANCH?.trim() && hasFlag(passthroughArgs, '--message')) {
+    throw new Error(
+      'Refusing a caller --message inside a Workers Build: the version message records the ' +
+        'branch from WORKERS_CI_BRANCH, and versions-promote trusts it.',
+    )
+  }
   if (hasFlag(passthroughArgs, '--tag')) return []
   const sha = env.WORKERS_CI_COMMIT_SHA?.trim() ?? ''
   if (!/^[a-f\d]{7,64}$/iu.test(sha)) return []

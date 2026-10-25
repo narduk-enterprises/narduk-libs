@@ -421,9 +421,10 @@ describe('generated CI boundaries', () => {
     }
   })
 
-  it('the emitted public install is a plain frozen lockfile install', () => {
+  it('the emitted public install is a frozen lockfile install from a job-owned store', () => {
     const workflow = createCiWorkflow('public')
-    expect(workflow).toContain('run: pnpm install --frozen-lockfile')
+    expect(workflow).toContain('pnpm install --frozen-lockfile')
+    expect(workflow).toContain('NPM_CONFIG_STORE_DIR=%s')
     expect(workflow).not.toContain('_authToken')
     expect(workflow).not.toContain('npm.pkg.github.com')
     expect(workflow).not.toContain('GH_PACKAGES_READ')

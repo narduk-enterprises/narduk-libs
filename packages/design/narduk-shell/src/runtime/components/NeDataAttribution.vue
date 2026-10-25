@@ -18,7 +18,7 @@
  */
 import { computed } from 'vue'
 
-import { formatDate, formatDateTime, formatRelative } from '../../format'
+import { formatDate, formatDateTime, formatRelative, instantOf } from '../../format'
 
 import { safeAttributionHref } from './ne-data-attribution-types'
 
@@ -41,13 +41,6 @@ interface Stamp {
 }
 
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/
-
-function instantOf(value: NeDateInput): number | undefined {
-  if (value === null || value === undefined) return undefined
-  const instant =
-    value instanceof Date ? value.getTime() : typeof value === 'number' ? value : Date.parse(value)
-  return Number.isFinite(instant) ? instant : undefined
-}
 
 function stamp(value: NeDateInput): Stamp | null {
   if (typeof value === 'string' && CALENDAR_DATE.test(value)) {

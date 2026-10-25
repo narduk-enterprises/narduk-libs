@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import {
   applyMigrationDirectory,
+  applyMigrationDirectoryInSchema,
   diffSchemaAgainstDatabase,
 } from '../../narduk-core/tests/helpers/pg-schema-parity'
 import {
@@ -37,6 +38,13 @@ import type { H3Event } from 'h3'
 const runtime = vi.hoisted(() => ({
   config: {} as Record<string, unknown>,
 }))
+// `public` runs the suite as it always did. `postgres-runtime.custom-schema`
+// sets this to `narduk` and runs the same suite with the tables in that schema
+// beside an app that owns same-named tables in `public` (narduk-libs#1953).
+const TEST_SCHEMA = vi.hoisted(() => process.env.NARDUK_TEST_PG_SCHEMA ?? 'public')
+const IN_SCHEMA = TEST_SCHEMA !== 'public'
+
+vi.mock('#narduk-core/postgres-schema', () => ({ postgresSchema: TEST_SCHEMA }))
 
 vi.mock('nitropack/runtime', () => ({
   defineNitroPlugin: <T>(plugin: T) => plugin,
@@ -154,12 +162,34 @@ beforeAll(async () => {
   process.env.AUTH_EMAIL_APP_URL = APP_URL
   process.env.AUTH_EMAIL_ALLOWLIST = OWNER_EMAIL
   server = await startPostgres17()
-  database = await server.createDatabase()
-  await applyMigrationDirectory(
-    database.sql,
-    join(PACKAGE_ROOT, '../narduk-core/runtime/drizzle-pg'),
-  )
-  await applyMigrationDirectory(database.sql, join(PACKAGE_ROOT, 'drizzle-pg'))
+  const coreDirectory = join(PACKAGE_ROOT, '../narduk-core/runtime/drizzle-pg')
+  if (IN_SCHEMA) {
+    // The test's own SQL resolves bare names in the schema. The runtime under
+    // test connects with `database.url`, which has no such search_path, so any
+    // unqualified query it issued would hit the app's `public` tables below.
+    database = await server.createDatabase({ searchPath: TEST_SCHEMA })
+    await database.sql.unsafe(`
+      CREATE TABLE public.users (uid uuid PRIMARY KEY, handle text NOT NULL);
+      INSERT INTO public.users VALUES (gen_random_uuid(), 'app-owned');
+      CREATE TABLE public.api_keys (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL,
+        scopes text[] NOT NULL DEFAULT '{}', is_active boolean NOT NULL DEFAULT true,
+        created_by uuid);
+      INSERT INTO public.api_keys (user_id) VALUES (gen_random_uuid());
+      CREATE TABLE public.sessions (token text PRIMARY KEY, who text NOT NULL)`)
+    await applyMigrationDirectoryInSchema(database.sql, coreDirectory, {
+      schema: TEST_SCHEMA,
+      table: 'core_migrations',
+    })
+    await applyMigrationDirectoryInSchema(database.sql, join(PACKAGE_ROOT, 'drizzle-pg'), {
+      schema: TEST_SCHEMA,
+      table: 'auth_migrations',
+    })
+  } else {
+    database = await server.createDatabase()
+    await applyMigrationDirectory(database.sql, coreDirectory)
+    await applyMigrationDirectory(database.sql, join(PACKAGE_ROOT, 'drizzle-pg'))
+  }
   runtime.config = baseConfig(database.url)
   m = await loadModules()
 }, 180_000)
@@ -198,7 +228,9 @@ describe('the migrations are what this suite runs on', () => {
     expect(
       await diffSchemaAgainstDatabase(database.sql, tables as never, {
         collations: { 'auth_oauth_kv.key': 'C' },
-        ignoreTables: coreTables,
+        ignoreTables: IN_SCHEMA
+          ? [...coreTables, 'core_migrations', 'auth_migrations']
+          : coreTables,
       }),
     ).toEqual([])
   })
@@ -928,5 +960,35 @@ describe('core tables the auth module leans on, on PostgreSQL', () => {
     await database.sql.unsafe('DROP TABLE app_notes')
     await m.deletion.deleteCurrentUserAccountBridge(visit(), user, {}, hooks)
     expect(await rows('SELECT 1 FROM users')).toHaveLength(0)
+  })
+})
+
+describe.runIf(IN_SCHEMA)('the app-owned public tables (narduk-libs#1953)', () => {
+  it('are exactly as the app created them after the whole suite ran', async () => {
+    const count = async (table: string) =>
+      (await rows<{ n: number }>(`SELECT count(*)::int AS n FROM public.${table}`))[0]?.n
+    expect(await count('users')).toBe(1)
+    expect(await count('api_keys')).toBe(1)
+    expect(await count('sessions')).toBe(0)
+    const columns = await rows<{ column_name: string; table_name: string }>(
+      `SELECT table_name, column_name FROM information_schema.columns
+       WHERE table_schema = 'public' ORDER BY table_name, ordinal_position`,
+    )
+    expect(columns.map((row) => `${row.table_name}.${row.column_name}`)).toEqual([
+      'api_keys.id',
+      'api_keys.user_id',
+      'api_keys.scopes',
+      'api_keys.is_active',
+      'api_keys.created_by',
+      'sessions.token',
+      'sessions.who',
+      'users.uid',
+      'users.handle',
+    ])
+    // Everything the suite created is in the named schema.
+    const [{ n }] = await rows<{ n: number }>(
+      `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = '${TEST_SCHEMA}'`,
+    )
+    expect(n).toBeGreaterThanOrEqual(16)
   })
 })

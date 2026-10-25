@@ -30,9 +30,7 @@ describe('getClientIp', () => {
   })
 
   it('ignores x-forwarded-for by default', async () => {
-    expect(await resolve({ 'x-forwarded-for': `${SPOOFED_ADDRESS}, 198.51.100.4` })).not.toBe(
-      SPOOFED_ADDRESS,
-    )
+    expect(await resolve({ 'x-forwarded-for': `${SPOOFED_ADDRESS}, 198.51.100.4` })).toBeUndefined()
   })
 
   it('takes the first x-forwarded-for entry only when asked to', async () => {
@@ -49,6 +47,30 @@ describe('getClientIp', () => {
       await resolve(
         { 'cf-connecting-ip': '   ', 'x-forwarded-for': SPOOFED_ADDRESS },
         { trustForwardedFor: true },
+      ),
+    ).toBe(SPOOFED_ADDRESS)
+  })
+
+  it('reads fly-client-ip instead of cf-connecting-ip only when asked to', async () => {
+    const fly = { 'fly-client-ip': '198.51.100.9', 'x-forwarded-for': SPOOFED_ADDRESS }
+    expect(await resolve(fly)).not.toBe('198.51.100.9')
+    expect(await resolve(fly, { trustFlyClientIp: true })).toBe('198.51.100.9')
+    expect(
+      await resolve({ ...fly, 'cf-connecting-ip': CLOUDFLARE_ADDRESS }, { trustFlyClientIp: true }),
+    ).toBe('198.51.100.9')
+    expect(await resolve({ ...fly, 'cf-connecting-ip': CLOUDFLARE_ADDRESS })).toBe(
+      CLOUDFLARE_ADDRESS,
+    )
+  })
+
+  it('does not fall back to a client-writable header when fly-client-ip is absent', async () => {
+    const headers = { 'cf-connecting-ip': CLOUDFLARE_ADDRESS, 'x-forwarded-for': SPOOFED_ADDRESS }
+    expect(await resolve(headers, { trustFlyClientIp: true })).not.toBe(CLOUDFLARE_ADDRESS)
+    expect(await resolve(headers, { trustFlyClientIp: true })).not.toBe(SPOOFED_ADDRESS)
+    expect(
+      await resolve(
+        { ...headers, 'fly-client-ip': ' ' },
+        { trustFlyClientIp: true, trustForwardedFor: true },
       ),
     ).toBe(SPOOFED_ADDRESS)
   })

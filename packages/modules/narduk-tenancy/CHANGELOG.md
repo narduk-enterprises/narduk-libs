@@ -1,5 +1,26 @@
 # @narduk-enterprises/narduk-tenancy
 
+## 0.8.2
+
+### Patch Changes
+
+- d0b3de0: Prevent resource-scoped invitations from creating or promoting
+  organization-wide membership. Scoped acceptance now requires an existing
+  member at or above the invited role, rechecked atomically with the claim, and
+  only writes the resource override. Nonmembers and lower-ranked members are
+  refused without consuming the token. Organization-wide invitations retain
+  their existing behavior. Consumers should review organization roles granted by
+  earlier scoped acceptances; no historical memberships are automatically
+  changed.
+
+## 0.8.1
+
+### Patch Changes
+
+- 0f8f69d: `removeMember` and `setMemberRole` now write the membership change,
+  its overrides and its audit row in one batch, so a failed second statement no
+  longer leaves a half-applied change.
+
 ## 0.8.0
 
 ### Minor Changes

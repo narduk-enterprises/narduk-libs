@@ -36,7 +36,8 @@ const readout = computed(() =>
     ? formatValue(props.value, { decimals: props.decimals, grouping: props.grouping })
     : MISSING,
 );
-const direction = computed(() => deltaDirection(props.delta));
+// A missing tile's line is its reason, not a change: never color it as one.
+const direction = computed(() => (present.value ? deltaDirection(props.delta) : null));
 const deltaText = computed(() => {
   if (!present.value) return props.missingReason || "Not published";
   if (props.delta == null) return "";

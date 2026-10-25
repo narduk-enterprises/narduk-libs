@@ -112,8 +112,8 @@ Build an app-specific capability table before changing package pins:
 | Shared test fixtures                | Consume `@narduk-enterprises/narduk-testkit`; retain app-owned config and wrappers.                       |
 | App-local operations                | Use `@narduk-enterprises/narduk-app-tools`; keep direct package scripts.                                  |
 | AI                                  | Consume `@narduk-enterprises/narduk-ai`; keep `system_prompts` migration ownership in core.               |
-| MapKit                              | Consume canonical packages from `narduk-geo/narduk-mapkit`, not `narduk-libs`.                            |
-| Operator UI                         | Recreate only actually used primitives locally with Nuxt UI.                                              |
+| MapKit                              | Consume `@narduk-enterprises/narduk-mapkit` (Nuxt adapter at `./nuxt`) from `narduk-libs`.                |
+| Operator UI                         | Consume `@narduk-enterprises/narduk-shell`; do not recreate it locally.                                   |
 | PWA                                 | Remove through a service-worker cleanup release followed by a removal release.                            |
 | Ingestion                           | Freeze in place until `narduk-data` passes its acceptance gate. Do not copy or invent an interim package. |
 
@@ -351,9 +351,13 @@ implicitly migrates target production D1.
 
 ## Phase 11: prepare and execute the final account cutover
 
-This phase remains pending for BSF. Before it can start, the target Workers
-Build, build variables, zone configuration, credentials, billing/verification,
-Registrar acceptance, and target production go/no-go packet must be complete.
+BSF's final traffic cutover is done (BSF PR #70; status
+`traffic-cutover-complete` above). What remains open for BSF is the
+product-proof and 30-day retention work, not a cutover; do not start another
+freeze or account move. For any other app, this phase starts only after the
+target Workers Build, build variables, zone configuration, credentials,
+billing/verification, Registrar acceptance, and target production go/no-go
+packet are complete.
 
 Follow [`../cloudflare-account-cutover.md`](../cloudflare-account-cutover.md)
 for the freeze, final D1 export/import, R2 delta, DNS/Registrar/Custom Domain

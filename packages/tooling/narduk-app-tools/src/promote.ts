@@ -72,6 +72,7 @@ import { spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { AppConfigError } from './app-config/resolve.js'
 import { fetchCloudflareEnvelope, listWorkerDeploymentsViaApi } from './cloudflare.js'
 import {
   resolveAncestry,
@@ -83,6 +84,8 @@ import { readCloudflareAppConfigDocument, readJsonc, resolveWranglerConfigPath }
 import { readDeploymentBlock } from './deployment-config.js'
 import {
   currentDeployment,
+  describeActiveWorkerResolution,
+  resolveActiveWorkerVersion,
   soleDeployedVersionId,
   type WorkerDeployment,
 } from './worker-deployment.js'
@@ -1522,13 +1525,17 @@ export async function checkStagingServesSha(
       `commit was not proven on staging. Run \`narduk-app deploy staging --sha ${sha}\` first.`
     )
   }
-  const { versions } = await client.listVersions(20)
+  const { versions } = await client.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)
   const version: WorkerVersion | undefined = versions.find((entry) => entry.id === live)
   const tag = version?.annotations?.[VERSION_TAG_ANNOTATION]
   if (shaMatchesTag(sha, tag)) return null
   return (
     `staging is enabled, but ${stagingWorker} serves version ${live}` +
-    (tag ? ` tagged ${tag}` : ' with no commit tag') +
+    (!version
+      ? ` (not among the ${String(versions.length)} listed versions, so its commit is unknown)`
+      : tag
+        ? ` tagged ${tag}`
+        : ' with no commit tag') +
     `, not ${sha}. Production follows a green staging proof of the same commit: run ` +
     `\`narduk-app deploy staging --sha ${sha}\` first.`
   )
@@ -1537,8 +1544,9 @@ export async function checkStagingServesSha(
 /**
  * The staging stage as `versions-promote` sees it from the app checkout, or
  * null when there is none to enforce (no readable declaration, not narduk-v1,
- * staging disabled). Never throws: a promote of an app without a declaration
- * behaves as it always has.
+ * staging disabled). A promote of an app without a declaration behaves as it
+ * always has; a declaration that exists but does not parse throws, because it
+ * may enable staging.
  */
 export function readEnabledStaging(
   appDir: string,
@@ -1549,8 +1557,9 @@ export function readEnabledStaging(
     if (outcome.kind !== 'valid' || !outcome.block.staging.enabled) return null
     const workerName = outcome.block.staging.workerName
     return workerName ? { workerName, accountId: outcome.block.accountId ?? null } : null
-  } catch {
-    return null
+  } catch (error) {
+    if (error instanceof AppConfigError) return null
+    throw error
   }
 }
 
@@ -1626,8 +1635,11 @@ async function promoteVersion(
   )
   if (!deploymentsRead.ok) return deploymentsRead.result
   const deployments = deploymentsRead.value
-  const live = currentDeployment(deployments)
-  const previousVersionId = soleDeployedVersionId(live)
+  // The strict reader: a tie on the newest created_on, or undated rows, is no
+  // live version, so the live-version guard below refuses rather than trusting
+  // list position.
+  const active = resolveActiveWorkerVersion(deployments)
+  const previousVersionId = active.kind === 'resolved' ? active.versionId : null
 
   // One listing serves both the SHA lookup and the ordering guard, so the guard
   // costs no extra call and sees exactly the window the lookup saw.
@@ -1812,6 +1824,20 @@ async function promoteVersion(
   }
 
   let forced: true | undefined
+  // Every guard below reads the live version. A split deployment, or a live
+  // version outside the listed window, would otherwise skip them all and let a
+  // stale promote through as `promoted`. No deployment at all stays allowed.
+  if (deployments.length > 0 && !liveVersion) {
+    const detail =
+      (previousVersionId
+        ? `The live version ${previousVersionId} is not in the ${versions.length} listed versions`
+        : 'Production does not serve a single version at 100% (split, tied or undated deployments)') +
+      ', so the ship, ancestry and ordering guards cannot run. Refusing rather than risking a ' +
+      'silent roll-back of production. Raise --max-versions, or pass --force to deploy it anyway.'
+    if (!flags.force) return refuse('stale-promote', PROMOTE_EXIT.stalePromote, detail)
+    forced = true
+    console.warn(`[promote] !! FORCED PAST THE LIVE-VERSION GUARD -- ${detail}`)
+  }
   // A `narduk-app ship` version serves a commit that may not be on main yet.
   // Promoting a main commit that lacks it would silently undo shipped work, so
   // promotion waits until main contains it (the ship's PR merges).
@@ -1955,12 +1981,33 @@ async function promoteVersion(
     }
   }
 
+  const refuseStaging = (detail: string): PromoteResult => ({
+    action: 'versions-promote',
+    outcome: 'staging-not-proven',
+    worker: workerName,
+    sha,
+    versionId,
+    previousVersionId,
+    percentage: null,
+    searchedVersions,
+    versionSearch,
+    detail,
+    exitCode: PROMOTE_EXIT.stagingNotProven,
+  })
   // §5.2: with staging enabled, production follows a green staging proof of
   // the same commit. Skipped under the manual override (deliberate recovery)
   // and for a promote of the staging Worker itself.
-  const staging = isManualPromoteAllowed(env)
-    ? null
-    : (context.staging ?? readEnabledStaging)(appDir, env)
+  let staging: ReturnType<typeof readEnabledStaging>
+  try {
+    staging = isManualPromoteAllowed(env)
+      ? null
+      : (context.staging ?? readEnabledStaging)(appDir, env)
+  } catch (error) {
+    return refuseStaging(
+      `the app declaration could not be read, so the staging gate cannot be checked: ` +
+        (error instanceof Error ? error.message : String(error)),
+    )
+  }
   if (staging && staging.workerName !== workerName) {
     const stagingRead = await withWranglerFailure(
       'versions-promote',
@@ -1984,21 +2031,7 @@ async function promoteVersion(
             'the staging Worker; pass --sha.',
     )
     if (!stagingRead.ok) return { ...stagingRead.result, sha, versionId, previousVersionId }
-    if (stagingRead.value) {
-      return {
-        action: 'versions-promote',
-        outcome: 'staging-not-proven',
-        worker: workerName,
-        sha,
-        versionId,
-        previousVersionId,
-        percentage: null,
-        searchedVersions,
-        versionSearch,
-        detail: stagingRead.value,
-        exitCode: PROMOTE_EXIT.stagingNotProven,
-      }
-    }
+    if (stagingRead.value) return refuseStaging(stagingRead.value)
   }
 
   const deployed = await withWranglerFailure(
@@ -2068,6 +2101,12 @@ export async function runRollback(
   }
 
   const { workerName, accountId, appDir } = resolveWorker(flags, context)
+  // The same event half of the guard promote applies: a pull_request run must
+  // not move production traffic either.
+  if (!isManualPromoteAllowed(env)) {
+    const refusal = checkPromoteContext(env, null)
+    if (refusal) return guardRefusal('rollback', workerName, refusal.reason)
+  }
   const client =
     context.client ??
     createWranglerCli({ workerName, accountId: accountId ?? undefined, appDir, env })
@@ -2098,6 +2137,14 @@ export async function runRollback(
 
   let target = flags.to
   if (!target) {
+    const active = resolveActiveWorkerVersion(deployments)
+    if (active.kind === 'ambiguous' || active.kind === 'undated') {
+      return refuse(
+        `${describeActiveWorkerResolution(workerName, active)}, so the previous version cannot ` +
+          'be told apart. Pass --to <version-id> explicitly.',
+        null,
+      )
+    }
     const resolved = resolvePreviousVersion(deployments)
     if (resolved.kind === 'no-previous') {
       return refuse(

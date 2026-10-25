@@ -1,9 +1,10 @@
-import { pgTable, text, unique } from 'drizzle-orm/pg-core'
+import { text, unique } from 'drizzle-orm/pg-core'
 
 import { users } from '#layer/server/database/pg-schema'
+import { nardukPgTable } from '#layer/server/database/pg-table'
 
 /** PostgreSQL mirror of `identity-schema.ts`. */
-export const authIdentities = pgTable(
+export const authIdentities = nardukPgTable(
   'auth_identities',
   {
     id: text('id').primaryKey(),

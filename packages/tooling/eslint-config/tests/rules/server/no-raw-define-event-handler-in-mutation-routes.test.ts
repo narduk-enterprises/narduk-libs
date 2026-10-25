@@ -90,8 +90,8 @@ ruleTester.run('no-raw-define-event-handler-in-mutation-routes', rule, {
       filename: 'server/api/things.ts',
       code: `const READ = 'GET'
         export default defineEventHandler(async (event) => {
-          if (getMethod(event) === READ) return list(event)
-          return null
+          if (getMethod(event) !== READ) throw createError({ statusCode: 405 })
+          return list(event)
         })`,
     },
     {

@@ -251,12 +251,12 @@ describe('opportunistic prune throttle', () => {
       }
     }
     for (const { deletes, elapsedMs } of results) {
-      // Three DELETEs per prune, at most one prune per interval started.
-      expect(deletes).toBeLessThanOrEqual(3 * Math.ceil(elapsedMs / INTERVAL_MS))
+      // Four DELETEs per prune, at most one prune per interval started.
+      expect(deletes).toBeLessThanOrEqual(4 * Math.ceil(elapsedMs / INTERVAL_MS))
     }
     // 180 polls is 15 minutes: three prunes, not 180.
-    expect(results.filter((r) => r.polls === 180).map((r) => r.deletes)).toEqual([9, 9])
-    expect(results.filter((r) => r.polls === 12).map((r) => r.deletes)).toEqual([3, 3])
+    expect(results.filter((r) => r.polls === 180).map((r) => r.deletes)).toEqual([12, 12])
+    expect(results.filter((r) => r.polls === 12).map((r) => r.deletes)).toEqual([4, 4])
   })
 
   it('uses the shorter of the challenge TTL and the shortest lockout window', async () => {
@@ -274,7 +274,7 @@ describe('opportunistic prune throttle', () => {
     expect(deletes()).toBe(afterClaim)
     clock.advance(30_000)
     await devices.openSession((await signedOpen(harness, claimed, 'command')).input)
-    expect(deletes()).toBe(afterClaim + 3)
+    expect(deletes()).toBe(afterClaim + 4)
     prepare.mockRestore()
   })
 
@@ -291,7 +291,7 @@ describe('opportunistic prune throttle', () => {
       await expect(perRequest.openSession({} as never)).rejects.toThrow()
     }
     // Five explicit prunes always run; the five opportunistic ones share one.
-    expect(deletes()).toBe(5 * 3 + 3)
+    expect(deletes()).toBe(5 * 4 + 4)
     prepare.mockRestore()
   })
 })

@@ -25,6 +25,7 @@ every package still releases independently through Changesets.
 - [`@narduk-enterprises/narduk-logging`](packages/modules/narduk-logging/README.md)
 - [`@narduk-enterprises/narduk-mapkit`](packages/modules/narduk-mapkit/README.md)
 - [`@narduk-enterprises/narduk-mapkit-nuxt`](packages/modules/narduk-mapkit-nuxt/README.md)
+- [`@narduk-enterprises/narduk-notify`](packages/modules/narduk-notify/README.md)
 - [`@narduk-enterprises/narduk-postgres`](packages/modules/narduk-postgres/README.md)
 - [`@narduk-enterprises/narduk-realtime`](packages/modules/narduk-realtime/README.md)
 - [`@narduk-enterprises/narduk-seo`](packages/modules/narduk-seo/README.md)

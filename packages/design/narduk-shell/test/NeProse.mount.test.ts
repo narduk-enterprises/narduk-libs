@@ -201,7 +201,7 @@ describe('NeProse', () => {
       undefined,
     ])
     expect(anchors.map((a) => a.attributes('rel'))).toEqual([
-      'noopener',
+      'noopener noreferrer',
       undefined,
       undefined,
       undefined,

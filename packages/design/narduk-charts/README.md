@@ -105,6 +105,53 @@ override `:root` after importing `narduk-charts/style.css`.
 > **Note:** Older releases used `--nc-*` variables; those are replaced by
 > `--color-chart-*`.
 
+## SSR, ticks and consumer tooltips
+
+Line and Bar accept `width` and `height` during server rendering. For a finished
+first paint with unchanged geometry after hydration, set `:width="640"`,
+`:height="240"` and `:animate="false"`. Without `width`, SSR uses 600px and the
+browser measures the container after mount. See the
+[Nuxt recipe](docs/recipes/nuxt.md). Light-only apps should always set
+`:dark="false"` (`dark={false}` in JSX), so system dark mode cannot change the
+chart after hydration.
+
+Both charts accept these additive props:
+
+| Prop            | Type                                       | Default  | Behavior                                                                                                                    |
+| --------------- | ------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `formatYTick`   | `(value: number) => string`                | built-in | Formats numeric value ticks, including both Line Y axes; overrides `formatTickValue`.                                       |
+| `formatXTick`   | `(label: string, index: number) => string` | built-in | Formats category labels; overrides `formatXLabel` and Line's `formatTime`. Receives the raw label and original input index. |
+| `drawOnVisible` | `boolean`                                  | `false`  | With `animate: true`, delays entry animation until the first intersection.                                                  |
+
+For horizontal Bar charts, `formatYTick` still formats values (now along X) and
+`formatXTick` still formats categories (now along Y), matching the legacy
+`formatTickValue` / `formatXLabel` behavior. Those legacy props remain
+supported. For example, `:format-y-tick="value => '$' + value.toFixed(2)"`
+prints `$12.50`; `:format-y-tick="value => value + '%'"` prints `20%`.
+
+Animation defaults are unchanged: `animate` defaults to `true`, drawing on
+mount. Opt into `drawOnVisible` for charts below the fold. It reveals once,
+respects reduced motion, falls back to mount animation without
+`IntersectionObserver`, and disconnects its observer on reveal or unmount.
+`animate: false` takes precedence and renders the finished chart even with
+`drawOnVisible: true`.
+
+Line emits `activeIndex` and `pointHover` with the same `number | null` payload
+when the active sample changes. Indices refer to the original input arrays,
+including with `maxRenderPoints`. Pointer move (mouse, touch or pen) selects the
+nearest sample; leaving the plot or cancelling clears it to `null`. Keyboard
+focus and navigation also emit, with `null` on blur/Escape. Events work with
+`:show-tooltip="false"` for a consumer tooltip; the built-in crosshair still
+tracks the active sample. The SVG uses `touch-action: pan-y` for vertical page
+scrolling. Listen with `@active-index="index => active = index"` or
+`@point-hover`.
+
+Point annotations already accept fractional `xIndex`:
+`{ type: 'point', xIndex: 1.5, y: 12.5 }` places a marker halfway between
+samples 1 and 2, without rounding. Indices use the plotted category space (after
+decimation, if enabled); `y` is an explicit data value, not an automatically
+interpolated sample.
+
 ## Components
 
 ### NardukLineChart
@@ -185,10 +232,11 @@ labels, or `formatTime` to own the string.
 
 #### Events
 
-| Event        | Payload                                                                                          |
-| ------------ | ------------------------------------------------------------------------------------------------ |
-| `pointClick` | `{ index, label, values: { seriesName, value \| null }[] }` — click near an x index              |
-| `zoom`       | `LineZoomRange` — `{ start, end }` fractional indices along `labels` (`0` … `labels.length - 1`) |
+| Event                        | Payload                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| `activeIndex` / `pointHover` | `number \| null` — original input index on pointer/keyboard selection; `null` when cleared       |
+| `pointClick`                 | `{ index, label, values: { seriesName, value \| null }[] }` — click near an x index              |
+| `zoom`                       | `LineZoomRange` — `{ start, end }` fractional indices along `labels` (`0` … `labels.length - 1`) |
 
 #### Slots
 
@@ -859,26 +907,17 @@ interface PieDataItem {
 
 ## Local development
 
-```bash
-npm install
-npm run dev
-```
-
-Runs **Histoire** with library stories (same as `npm run story:dev`). For
-full-page examples, AAPL stream demos, and showcase routes, use the companion
-**marketing site** repository.
+From the monorepo root (`pnpm`; the standalone repo is retired):
 
 ```bash
-npm test
+pnpm install
+pnpm --filter @narduk-enterprises/narduk-charts run dev      # Histoire
+pnpm --filter @narduk-enterprises/narduk-charts run test     # Vitest
+pnpm --filter @narduk-enterprises/narduk-charts run story:build
 ```
 
-Runs Vitest (math, y-scale helpers, streaming composable).
-
-```bash
-npm run story:build
-```
-
-Produces a static Histoire build (optional).
+Full-page examples and showcase routes live at charts.nard.uk. See
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full gate.
 
 ## License
 

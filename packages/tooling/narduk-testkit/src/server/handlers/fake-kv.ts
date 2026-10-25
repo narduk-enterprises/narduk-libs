@@ -32,6 +32,14 @@ const MAX_KEY_BYTES = 512
 /** KV's own floor: an `expirationTtl` below this is a 400 from the real API. */
 const MIN_EXPIRATION_TTL_SECONDS = 60
 
+/** KV stores metadata as JSON: copy it so the caller's object is never shared. */
+function cloneMetadata(metadata: unknown): unknown {
+  if (metadata === undefined) return undefined
+  const json = JSON.stringify(metadata)
+  if (json === undefined) throw new Error('KV PUT failed: 400 metadata must be JSON-serializable.')
+  return JSON.parse(json)
+}
+
 function assertValidKey(key: string): void {
   if (key === '') throw new TypeError('Key name cannot be empty.')
   if (key === '.' || key === '..') throw new TypeError(`"${key}" is not allowed as a key name.`)
@@ -124,7 +132,7 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
       if (!entry) return { cacheStatus: null, metadata: null, value: null }
       return {
         cacheStatus: null,
-        metadata: entry.metadata ?? null,
+        metadata: cloneMetadata(entry.metadata) ?? null,
         value: decodeValue(entry.value, resolveType(typeOrOptions)),
       }
     },
@@ -134,9 +142,9 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
     ): Promise<KVNamespaceListResult<unknown, string>> {
       const prefix = listOptions.prefix ?? ''
       const limit = listOptions.limit ?? 1000
-      if (limit > 1000) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
         throw new Error(
-          `KV GET failed: 400 Invalid key_count_limit of ${limit}. Please specify an integer less than 1000.`,
+          `KV GET failed: 400 Invalid key_count_limit of ${limit}. Please specify an integer from 1 to 1000.`,
         )
       }
       const nowMs = now()
@@ -149,7 +157,7 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
           ...(entry.expiresAtMs !== undefined
             ? { expiration: Math.round(entry.expiresAtMs / 1000) }
             : {}),
-          ...(entry.metadata !== undefined ? { metadata: entry.metadata } : {}),
+          ...(entry.metadata !== undefined ? { metadata: cloneMetadata(entry.metadata) } : {}),
         }))
 
       const startIndex = listOptions.cursor ? Number.parseInt(listOptions.cursor, 10) : 0
@@ -215,7 +223,7 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
         expiresAtMs = expiration * 1000
       }
 
-      store.set(key, { expiresAtMs, metadata: putOptions?.metadata, value: bytes })
+      store.set(key, { expiresAtMs, metadata: cloneMetadata(putOptions?.metadata), value: bytes })
     },
   }
 

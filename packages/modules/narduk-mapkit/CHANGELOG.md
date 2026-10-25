@@ -1,5 +1,41 @@
 # Changelog
 
+## 3.0.2
+
+### Patch Changes
+
+- 512d454: Make a local MapKit map easy to get running.
+
+  - `narduk-app dev --mapkit -- <command>` runs the child under the shared
+    MapKit signing persona (`nvault run -p apple -e prd -c mapkit-signing`), so
+    a map app's dev script names no selector. The retired-Doppler migration
+    message now names it.
+  - The Nuxt token route prints a one-time fix to the server console when it
+    answers `503` (names the missing `APPLE_*` variables), `500` (key not
+    PKCS#8, or a stale value in wrangler vars or `.dev.vars`), or `403` for a
+    loopback host that `nardukMapKit.allowedHosts` leaves out. Names only, never
+    values.
+  - New runbook: `packages/modules/narduk-mapkit/docs/local-development.md`.
+
+## 3.0.1
+
+### Patch Changes
+
+- 6dcd14f: Replace the stale tag-publish releasing doc with a pointer to the
+  repository release flow.
+- d16e0cc: Fix the ponytail-5 map findings: geogrid overview buckets no longer
+  drop pixels inside a real cell and the tile renderer rebuilds its GL objects
+  after a context restore; candle charts keep a controlled domain when a bar is
+  appended, aggregate candles into non-overlapping buckets, scale volume bars to
+  the drawn buckets, and the histogram ignores non-finite samples; narduk-maps
+  drops `javascript:` and other unsafe point hrefs; narduk-mapkit no longer
+  paints a vector tile read that began before `clearCache`, and its Nuxt token
+  example derives the claim origin with `mapKitRoutedOrigin`.
+- 6e2c941: Fix date-line handling in declutter, roving, polygon and line hit
+  tests and vector-tile areas; end the previous follow when the follow target
+  switches; draw thin selection highlights with the hairline floor; keep
+  MapkitMenu keyboard focus on live items; correct stale docs.
+
 ## 3.0.0
 
 ### Major Changes

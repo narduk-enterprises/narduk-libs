@@ -1,0 +1,290 @@
+{
+  "units": [
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-auth%2Fserver%2Fapi%2Fauth%2Fapi-keys.post.ts::packages%2Fmodules%2Fnarduk-auth%2Fshared%2Futils%2Fapi-key-scope-ceiling.ts%23api%20key%20scope%20ceiling::packages%2Fmodules%2Fnarduk-auth::ATTACK-CLASSES.md%23Access%20control::api-key",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-auth/server/api/auth/api-keys.post.ts",
+        "packages/modules/narduk-auth/server/api/auth/api-keys.get.ts",
+        "packages/modules/narduk-auth/server/api/auth/api-keys/[id].delete.ts",
+        "packages/modules/narduk-auth/shared/utils/api-key-scope-ceiling.ts",
+        "packages/modules/narduk-auth/shared/utils/api-key-lifetime.ts",
+        "packages/modules/narduk-core/runtime/server/utils/auth.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/server/api/auth/api-keys.post.ts",
+            "packages/modules/narduk-auth/shared/utils/api-key-scope-ceiling.ts",
+            "packages/modules/narduk-auth/shared/utils/api-key-lifetime.ts"
+          ],
+          "invariant": "An API-key principal minting POST /api/auth/api-keys may receive only scopes it already holds, cannot mint * unless it holds *, and cannot mint a child that outlives it. A * key must expire within 90 days. The stored scopes are the same normalized list the ceiling sees.",
+          "method": "source",
+          "result": "api-keys.post.ts normalizes scopes, then for authMethod api-key calls findScopesBeyondCaller before insert and returns 403 on any refused scope. A caller holding * is unbounded; a caller with any other scope that requests none is refused as an unscoped mint; each requested scope absent from the held set, including *, is refused. An empty held set can mint only another empty set, which is the same unscoped credential and still cannot mint named scopes or *. resolveApiKeyMintExpiry then refuses a * key with null expiry or more than 90 days. boundChildApiKeyExpiry refuses an explicit child expiry past a parent that expires and clamps an omitted expiry to the parent. Session callers skip the ceiling because the session is the user credential; * minted that way is still lifetime-capped. The insert stores serializeApiKeyScopes of that same normalized list and the raw key is returned once.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/server/api/auth/api-keys.get.ts",
+            "packages/modules/narduk-auth/server/api/auth/api-keys/[id].delete.ts",
+            "packages/modules/narduk-core/runtime/server/utils/auth.ts"
+          ],
+          "invariant": "A caller can list and revoke only that caller's own live API keys.",
+          "method": "source",
+          "result": "The list query filters apiKeys.userId to the authenticated user and revokedAt null. Delete passes the route id and user.id into revokeApiKey, which adds eq(apiKeys.userId, options.userId) whenever userId is present and updates only a row that is not already revoked. A miss is 404. requireAuth short-circuits an nk_ bearer to API-key authentication and does not continue into the sealed session.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-auth%2Fserver%2Fapi%2Fauth%2Flogin.post.ts::packages%2Fmodules%2Fnarduk-auth%2Fserver%2Flib%2Fapp-auth%2Flocal-email-core.ts%23local%20email%20account%20transition::packages%2Fmodules%2Fnarduk-auth::ATTACK-CLASSES.md%23Business%20logic::account-transition",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-auth/server/lib/app-auth/local-email-core.ts",
+        "packages/modules/narduk-auth/server/lib/app-auth/local-email-flow.ts",
+        "packages/modules/narduk-auth/server/lib/app-auth/apple-identity.ts",
+        "packages/modules/narduk-auth/server/lib/app-auth/apple-local.ts",
+        "packages/modules/narduk-auth/server/lib/app-auth/linking.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/server/lib/app-auth/local-email-core.ts",
+            "packages/modules/narduk-auth/server/lib/app-auth/local-email-flow.ts"
+          ],
+          "invariant": "A local email setup or reset link is a single-use SHA-256 of a 32-byte token, bound to purpose and address. Setup is issued only for an allowlisted address with no user. Completion writes the password only after a conditional consume, then revokes other sessions. The returned redirect is a same-origin path. A self-serve action URL is issued only when the app URL and the request URL are the same loopback origin.",
+          "method": "source",
+          "result": "generateLocalEmailToken draws 32 random bytes. hashLocalEmailValue stores SHA-256. selectLocalEmailLinkPurpose returns reset when the user exists and setup only when the address is on the allowlist. completeLocalEmailPassword consumes with UPDATE ... WHERE tokenHash matches, consumedAt is null, and expiresAt is in the future, RETURNING the row. A missing row, a purpose other than setup or reset, a setup address no longer allowlisted, or a reset with no user is rejected after the consume, so the link cannot be retried. The password hash is written, recordLocalEmailVerification runs, native tokens and auth sessions for that user are revoked, and only then is a local session established. sanitizeLocalEmailRedirect delegates to sanitizeSameOriginPath. isLocalEmailSelfServeOrigin requires both origins to match and the app host to be localhost, 127.0.0.1, or [::1].",
+          "artifact": null
+        },
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/server/lib/app-auth/apple-identity.ts",
+            "packages/modules/narduk-auth/server/lib/app-auth/apple-local.ts",
+            "packages/modules/narduk-auth/server/lib/app-auth/linking.ts"
+          ],
+          "invariant": "An Apple identity token is accepted only after RS256 verification against Apple's JWKS, issuer, audience, time, and the server-bound nonce. The callback binding is single-use. Linking that Apple identity onto an existing local email account requires a proven-email row and no existing appleId.",
+          "method": "source",
+          "result": "verifyAppleIdentityToken refuses an alg other than RS256 or a non-string kid before key use, verifies the signature before iss, aud, exp, iat, and nonce, and sets emailVerified only for boolean true or the string true. completeLocalAppleWebSignIn deletes the binding cookie before comparing state in constant time and before verifyAppleIdentityToken. linkAppleToExistingUser throws 409 unless getLocalEmailVerification returns proof and the user has no appleId. ensureLinkedLocalUser, the Supabase path, refuses a second auth user already linked to the same local user and refuses an email change onto a different local user; it does not consult email_confirmed_at, which is recorded as hardening because the caller passes a Supabase user rather than an unverified assertion.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-auth%2Fserver%2Fapi%2Fauth%2Fpasskeys::packages%2Fmodules%2Fnarduk-auth%2Fserver%2Flib%2Fapp-auth%2Fwebauthn-verification.ts%23webauthn%20verification::packages%2Fmodules%2Fnarduk-auth::ATTACK-CLASSES.md%23Cryptography%20and%20secrets::ceremony",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-auth/server/lib/app-auth/webauthn-verification.ts",
+        "packages/modules/narduk-auth/server/lib/app-auth/webauthn-challenges.ts",
+        "packages/modules/narduk-auth/server/lib/app-auth/webauthn-core.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/server/lib/app-auth/webauthn-verification.ts",
+            "packages/modules/narduk-auth/server/lib/app-auth/webauthn-challenges.ts",
+            "packages/modules/narduk-auth/server/lib/app-auth/webauthn-core.ts"
+          ],
+          "invariant": "A passkey assertion is accepted only after its server-issued challenge is consumed once, the credential's RP ID matches configuration, the signature verifies against the configured origins and RP ID with user verification, a presented user handle matches the credential's user, and the signature counter strictly increases except the documented 0/0 case. The counter write is conditional on the value just verified. Passkey management refuses an API-key principal.",
+          "method": "source",
+          "result": "finishPasskeyAuthentication reads the challenge only to look it up, then consumeWebauthnChallenge deletes by hash before isClaimedChallengeUsable checks purpose and expiry, so a wrong-purpose or expired presentation still burns the row. The stored credential is loaded by response id. A different rpId, a userHandle that decodes to a different user id, or a failed verifyAuthenticationResponse is a generic 401. expectedOrigin and expectedRPID come from requireWebauthnConfig, and requireUserVerification is true. evaluateSignatureCounter rejects non-integers, negatives, and newCounter <= storedCounter, and allows only stored 0 with new 0. The following update matches both credential id and the counter that was verified, so a racing assertion cannot both commit. assertPasskeyManagementPrincipal throws 403 when authMethod is api-key.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-auth%2Fserver%2Fapi%2Fauth::packages%2Fmodules%2Fnarduk-auth%2Fserver%2Futils%2Frequest-principal.ts%23request%20principal::packages%2Fmodules%2Fnarduk-auth::ATTACK-CLASSES.md%23Access%20control::session",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-auth/server/utils/request-principal.ts",
+        "packages/modules/narduk-auth/server/utils/session-privilege.ts",
+        "packages/modules/narduk-auth/server/utils/session-grant-validator.ts",
+        "packages/modules/narduk-auth/server/plugins/00-session-grant-validator.ts",
+        "packages/modules/narduk-core/runtime/server/utils/auth.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/server/utils/request-principal.ts",
+            "packages/modules/narduk-auth/server/utils/session-privilege.ts",
+            "packages/modules/narduk-auth/server/utils/session-grant-validator.ts",
+            "packages/modules/narduk-auth/server/plugins/00-session-grant-validator.ts"
+          ],
+          "invariant": "A recovery-mode session and a Supabase session that still needs MFA step-up are limited to exact method and path allowlists. An nk_ bearer is not silently replaced by the session cookie. The session-grant validator is attached on every request, and a runtime grant-required flag other than true is refused at startup.",
+          "method": "source",
+          "result": "resolveRequestPrincipal returns null when an API-key authorization is present and allowApiKey is not set, and only then considers a native bearer or the session. The session branch returns null when sessionPrivilegeRefusal is set. Recovery allows only GET /api/auth/me, POST /api/auth/change-password, and POST /api/auth/logout. MFA step-up, which is ignored on the local backend, allows only me, logout, mfa/enroll, and mfa/verify. Matching is exact method plus normalizePrivilegePath, which strips the query and trailing slashes. validateRegisteredAuthSessionGrant re-reads the refreshed user, returns invalid on failure or absence, and calls assertSessionPrivilegeAllowsRequest so recovery_mode and mfa_required throw 403. The Nitro plugin throws at startup unless nardukSessionGrantRequired is true, and still attaches the validator on the request hook because a thrown request hook would not fail closed.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": ["packages/modules/narduk-core/runtime/server/utils/auth.ts"],
+          "invariant": "requireAuth does not treat a sealed cookie as the grant when the registered validator rejects it, and an API-key bearer is not mixed with that cookie.",
+          "method": "source",
+          "result": "When an API-key authorization header is present, requireAuth returns only the API-key principal or 401. Otherwise a sealed user is passed through validateSealedSessionGrant; status invalid is 401. A valid grant user replaces the cookie user. authMethod and scopes are assigned after that spread, so cookie fields cannot keep a different method or scopes. This is the consumer of the validator registered above.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-auth%2Fserver%2Fmcp-oauth::packages%2Fmodules%2Fnarduk-auth%2Fserver%2Fmcp-oauth%2Fresource-guard.ts%23oauth%20resource%20guard::packages%2Fmodules%2Fnarduk-auth::ATTACK-CLASSES.md%23Access%20control::oauth-grant",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-auth/server/mcp-oauth/resource-guard.ts",
+        "packages/modules/narduk-auth/server/mcp-oauth/protocol.ts",
+        "packages/modules/narduk-auth/server/mcp-oauth/consent.post.ts",
+        "packages/modules/narduk-auth/server/mcp-oauth/grant.delete.ts",
+        "packages/modules/narduk-auth/server/lib/mcp-oauth/redirect-uri.ts",
+        "packages/modules/narduk-auth/server/lib/mcp-oauth/d1-kv.ts",
+        "packages/modules/narduk-auth/server/utils/mcp-oauth.ts",
+        "packages/modules/narduk-auth/src/module.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/server/mcp-oauth/resource-guard.ts",
+            "packages/modules/narduk-auth/server/mcp-oauth/protocol.ts",
+            "packages/modules/narduk-auth/server/lib/mcp-oauth/redirect-uri.ts",
+            "packages/modules/narduk-auth/server/lib/mcp-oauth/d1-kv.ts",
+            "packages/modules/narduk-auth/server/utils/mcp-oauth.ts",
+            "packages/modules/narduk-auth/src/module.ts"
+          ],
+          "invariant": "A mutating request to the configured MCP resource path must present a Bearer and cannot authenticate with the session cookie alone. Registration redirect URIs that are supplied as an array must be https, or http on a loopback host, with no userinfo or fragment. An authorization code is claimed once, by hash, before the provider redeems it.",
+          "method": "source",
+          "result": "resource-guard returns immediately unless the pathname equals the configured resource path, 404s when that path is not the configured issuer plus resource path, and for methods other than GET, HEAD, and OPTIONS requires an Authorization header matching bearer plus a non-space token. protocol.ts, on POST register, rejects the body when redirect_uris is an array and any entry fails isAllowedMcpOAuthRedirectUri. On POST token with grant_type authorization_code, claimMcpOAuthCode runs before mcp.fetch and a failed claim returns invalid_grant. claimOnce is INSERT ... ON CONFLICT DO NOTHING RETURNING, so only the first caller gets a row. The module CSRF-exempts the exact token, register, and resourcePath strings after narduk-core sets nardukCsrf.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/server/mcp-oauth/consent.post.ts",
+            "packages/modules/narduk-auth/server/mcp-oauth/grant.delete.ts",
+            "packages/modules/narduk-auth/server/utils/mcp-oauth.ts"
+          ],
+          "invariant": "Consent completion is limited to the signed-in user who opened that handle, from the issuer origin and host, and the completed request is the stored request. A grant id can be revoked only when it appears in the caller's own grant list.",
+          "method": "source",
+          "result": "consent.post.ts requires Origin equal to the issuer and Host equal to the issuer host, resolves a session principal that refuses password setup, and compares mcpOAuthConsentOwner of the hashed handle to that user id. The form schema accepts only handle and decision. authorizeMcpOAuthRequest runs on the request returned by approveConsent, and a refusal throws before completeAuthorization. grant.delete.ts rejects an id outside ^[\\w-]{1,128}$, lists grants for principal.userId, and returns 404 unless that list contains the id before revokeGrant.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-auth%2Fswift%2FSources%2FNardukAuthKit%2FCredentialStore.swift::packages%2Fmodules%2Fnarduk-auth%2Fswift%2FSources%2FNardukAuthKit%2FCredentialStore.swift%23device%20credential%20store::packages%2Fmodules%2Fnarduk-auth::ATTACK-CLASSES.md%23Cryptography%20and%20secrets::device-credential",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-auth/swift/Sources/NardukAuthKit/CredentialStore.swift",
+        "packages/modules/narduk-auth/swift/Sources/NardukAuthKit/NardukAuthClient.swift",
+        "packages/modules/narduk-auth/swift/Sources/NardukAuthKit/AuthConfiguration.swift"
+      ],
+      "checks": [
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/swift/Sources/NardukAuthKit/CredentialStore.swift",
+            "packages/modules/narduk-auth/swift/Sources/NardukAuthKit/AuthConfiguration.swift"
+          ],
+          "invariant": "Device refresh credentials are stored as a non-synchronizable generic password, and a newly created item is ThisDeviceOnly after first unlock. The client configuration refuses an http, file, javascript, or data redirect URI and a server URL with userinfo, query, or fragment.",
+          "method": "source",
+          "result": "KeychainCredentialStore queries kSecClassGenericPassword with kSecAttrSynchronizable false. write updates only kSecValueData when the item exists. When the item is absent it adds kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly. The comment records that the data-protection keychain is omitted because a Developer ID app lacks the entitlement, and iOS has only that keychain so the omission is the portable choice. AuthConfiguration accepts http only for an explicit loopback server URL and rejects redirect schemes http, file, javascript, and data, plus userinfo, query, and fragment.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-auth/swift/Sources/NardukAuthKit/NardukAuthClient.swift"
+          ],
+          "invariant": "The Swift client completes a sign-in only for the pending request's redirect URI, a single matching state, and a single code, inside 600 seconds, and it revokes the new refresh token if the keychain write fails or the client generation changed during the exchange.",
+          "method": "source",
+          "result": "completeSignIn clears pending before finishSignIn, so the callback cannot be replayed in-process. finishSignIn rejects a request older than 600 seconds, requires the callback URL with its query removed to equal configuration.redirectURI, requires exactly one state equal to the pending state and exactly one code that passes isToken, then exchanges that code with the pending verifier. If generation changed, or store.write throws, it revokes the returned refresh token and does not keep the credentials.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-tenancy::packages%2Fmodules%2Fnarduk-tenancy%23tenant%20scope%20binding::packages%2Fmodules%2Fnarduk-tenancy::ATTACK-CLASSES.md%23Access%20control",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-tenancy/server/utils/tenancy.ts",
+        "packages/modules/narduk-tenancy/server/utils/tenancy-atomic.ts",
+        "packages/modules/narduk-tenancy/server/utils/guards.ts",
+        "packages/modules/narduk-tenancy/shared/utils/roles.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-tenancy/server/utils/tenancy.ts",
+            "packages/modules/narduk-tenancy/server/utils/tenancy-atomic.ts",
+            "packages/modules/narduk-tenancy/shared/utils/roles.ts"
+          ],
+          "invariant": "Tenant membership changes stay inside the caller's org and at or below the actor's rank. The last owner cannot be removed or demoted. An override cannot widen a membership role. An invite token is stored only as a hash, is single-use, and is accepted only while the inviter still holds the invited rank. Org listing and audit reads are filtered by the caller's org or membership.",
+          "method": "source",
+          "result": "listOrgsForUser joins memberships to orgs on the supplied userId. setMemberRole calls requireRank on both the member's current role and the requested role before any no-op return. removeMember calls requireRank, then deletes the membership only when stillInRank and preservesAnOwner both hold; preservesAnOwner is true when the row is not an owner or another owner remains. The member's overrides are deleted for that same orgId and userId. resolveRole returns narrowerRole of membership and override. createInvite requireRank's the inviter and asserts actorStillInRank inside the insert; only the token hash is stored. acceptInvite optionally compares verifiedEmail, refuses a second user after acceptance, refuses revoked and expired invites, and refuses when the inviter no longer holds the invite role. claimInviteMembership performs the claim. listAuditEvents and listActiveSupportGrants filter by orgId; active grants also require revokedAt null and expiresAt in the future. Role order is owner, admin, operator, crew, viewer, and support is not a role.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h1-identity",
+          "reviewed_paths": [
+            "packages/modules/narduk-tenancy/server/utils/guards.ts",
+            "packages/modules/narduk-tenancy/shared/utils/roles.ts"
+          ],
+          "invariant": "requireOrgRole authorizes only an org member whose effective role meets the minimum and does not treat a support grant as a role. requireSupportGrantOrRole with a requested scope accepts a grant only when that scope is present on the grant the resolver returned.",
+          "method": "source",
+          "result": "requireOrgRole resolves the caller, then resolveRole, and denies when the role is missing or below the minimum. Its comment states support grants are ignored. requireSupportGrantOrRole returns on a sufficient membership role. Otherwise it denies unless a support grant is present and either no scope was requested or supportGrantScopes includes the requested scope. A missing user id is unauthenticated rather than a denied member.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [],
+  "hardening": [
+    "api-key-scope-ceiling.ts lines 10-13 say only a * key may mint an unscoped key. findScopesBeyondCaller and its tests allow a caller with an empty scope set to mint another empty set. That child still cannot mint * or any named scope, and empty scopes fail named requireAuthScopes, so it is the same privilege rather than an escalation. Only * is lifetime-capped; an unscoped key may omit expiry, including a child of an unscoped parent.",
+    "ensureLinkedLocalUser adopts an existing local user by normalized email without reading email_confirmed_at. Closed signup passes requireExistingLink, an existing auth link is used first, and an email that belongs to a different local user is 409. Apple linking refuses the same shape unless getLocalEmailVerification returns proof. Whether a Supabase session can exist for an unconfirmed address is IdP configuration, not a second control this package can see.",
+    "Local email attempt throttling prefers cf-connecting-ip and otherwise the first X-Forwarded-For value. A spoofed or shared address changes which bucket increments. The password comparison and the single-use link consume still bind the account transition. Public registration answering 409 for an existing email is account enumeration, and public signup signs the new user in as part of the same product path.",
+    "normalizePrivilegePath strips the query and trailing slashes and does not decode percent-encoding. This package does not show the privilege check and the router observing different paths for the same request. Session refresh loads the auth session by the sealed authSessionId and the user by the sealed user id without comparing auth_sessions.localUserId; forging a divergent seal is outside the source.",
+    "MCP registration applies isAllowedMcpOAuthRedirectUri only when redirect_uris is an array. consent.post.ts calls approveConsent before authorizeMcpOAuthRequest and calls completeAuthorization only after a refusal returns. Whether approveConsent itself issues a grant, and whether the provider accepts a non-array redirect_uris field, is the unread workers-oauth-provider body. The resource guard and the CSRF exemption both use the configured path string; a trailing-slash variant that misses the guard stays outside the exemption string this module appends.",
+    "KeychainCredentialStore SecItemUpdate replaces kSecValueData only, so a pre-existing item keeps whatever accessibility it already had. New items set AfterFirstUnlockThisDeviceOnly and synchronizable false. No source in NardukAuthKit shows a lower-trust reader of that item.",
+    "createSupportGrant checks org existence, TTL, and non-empty scope entries, and does not call requireRank. revokeSupportGrant and revokeInvite allow any current org member, which removes access rather than granting a higher role. requireSupportGrantOrRole with options.scope omitted treats any active grant as sufficient; the function documents that a scope must be passed when a covering grant is required. acceptInvite compares verifiedEmail only when the caller supplies it; the stored credential is the token hash."
+  ],
+  "uncovered": [
+    {
+      "surface": "packages/modules/narduk-auth/server/mcp-oauth/protocol.ts",
+      "boundary": "@cloudflare/workers-oauth-provider registration body, approveConsent, and completeAuthorization",
+      "subsystem": "packages/modules/narduk-auth",
+      "attack_class": "ATTACK-CLASSES.md#Access control",
+      "starting_paths": [
+        "packages/modules/narduk-auth/server/mcp-oauth/protocol.ts",
+        "packages/modules/narduk-auth/server/mcp-oauth/consent.post.ts"
+      ],
+      "reason": "This package rejects array redirect_uris that fail the loopback rule and claims an authorization code before mcp.fetch. It also runs the app policy hook after approveConsent and before completeAuthorization. The provider package that parses a non-array redirect_uris field and decides whether approveConsent already issues a code is not source in this repository and was not read."
+    },
+    {
+      "surface": "packages/modules/narduk-auth/src/module.ts",
+      "boundary": "narduk-core CSRF exempt-path matcher",
+      "subsystem": "packages/modules/narduk-core",
+      "attack_class": "ATTACK-CLASSES.md#Access control",
+      "starting_paths": ["packages/modules/narduk-auth/src/module.ts"],
+      "reason": "narduk-auth appends the exact MCP token, register, and resourcePath strings to runtimeConfig.nardukCsrf.exemptPaths. Whether the narduk-core matcher treats a trailing slash, encoded slash, or nested path as the same exemption is that package's control and was not reviewed."
+    }
+  ]
+}

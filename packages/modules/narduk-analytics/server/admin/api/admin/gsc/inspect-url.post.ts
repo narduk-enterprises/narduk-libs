@@ -61,8 +61,9 @@ export default defineAdminMutation(
       }
     } catch (error: unknown) {
       const err = error as { message?: string; statusCode?: number; statusMessage?: string }
+      const status = error instanceof GoogleApiError ? error.status : err.statusCode
 
-      if (err.statusCode === 403) {
+      if (status === 403) {
         throw createError({
           statusCode: 403,
           statusMessage:
@@ -71,7 +72,7 @@ export default defineAdminMutation(
       }
 
       throw createError({
-        statusCode: err.statusCode ?? 500,
+        statusCode: status ?? 500,
         statusMessage: `URL Inspection error: ${err.statusMessage ?? err.message}`,
       })
     }

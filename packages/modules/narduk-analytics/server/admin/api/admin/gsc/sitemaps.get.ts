@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
   } catch (error: unknown) {
     const err = error as { message?: string; statusCode?: number; statusMessage?: string }
     throw createError({
-      statusCode: err.statusCode ?? 500,
+      statusCode: (error instanceof GoogleApiError ? error.status : err.statusCode) ?? 500,
       statusMessage: `GSC Sitemaps Error: ${err.statusMessage ?? err.message}`,
     })
   }

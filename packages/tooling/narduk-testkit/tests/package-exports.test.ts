@@ -122,6 +122,41 @@ describe('narduk-testkit runner boundaries', () => {
     }
   })
 
+  it('publishes the web-app audit helpers as subpaths, outside the root barrel', () => {
+    const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, Record<string, string>>
+    }
+
+    /*
+     * The root barrel loads `e2e/fixtures`, whose module-scope `test.extend` needs the Playwright
+     * runner. A deploy smoke importing `http-contracts` runs under plain Node, and a Vitest file
+     * importing `d1-migration-lint` has no browser either, so neither may reach the barrel.
+     */
+    for (const name of [
+      'http-contracts',
+      'd1-migration-lint',
+      'playwright/console-guard',
+      'playwright/layout',
+    ]) {
+      expect(rootSource).not.toContain(`./${name}`)
+      const entry = packageJson.exports[`./${name}`]
+      expect(entry?.import).toBe(`./dist/${name}.js`)
+      expect(entry?.types).toBe(`./dist/${name}.d.ts`)
+    }
+  })
+
+  it('keeps http-contracts and d1-migration-lint free of Playwright and the e2e fixtures', () => {
+    for (const file of ['http-contracts.ts', 'd1-migration-lint.ts']) {
+      const source = readFileSync(join(packageRoot, 'src', file), 'utf8')
+      expect(source, file).not.toMatch(/from ['"]@playwright\/test['"]/)
+      expect(source, file).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
+    }
+    // d1.ts is imported for splitSqlStatements only; it must not load miniflare at import time.
+    const d1 = readFileSync(join(packageRoot, 'src/d1.ts'), 'utf8')
+    expect(d1).not.toMatch(/^import (?!type )[^\n]*from ['"]miniflare['"]/m)
+  })
+
   it('publishes every Vitest helper only through an explicit server-kit subpath', () => {
     const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
       exports: Record<string, unknown>

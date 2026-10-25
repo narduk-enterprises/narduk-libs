@@ -93,7 +93,7 @@ def main() -> None:
         binary_directory = fleet
         print(f"Verified fleet Swift {version}")
     else:
-        root = Path(os.environ["RUNNER_TEMP"]) / "narduk-logging-swift"
+        root = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()) / "narduk-logging-swift"
         root.mkdir(exist_ok=False)
         archive = root / "swift.tar.gz"
         signature = root / "swift.tar.gz.sig"
@@ -119,8 +119,12 @@ def main() -> None:
                 "The signed Swift toolchain failed its compile/link smoke check"
             )
         print(f"Verified signed Swift {version}")
-    with Path(os.environ["GITHUB_PATH"]).open("a") as output:
-        output.write(str(binary_directory) + "\n")
+    github_path = os.environ.get("GITHUB_PATH")
+    if github_path:
+        with Path(github_path).open("a") as output:
+            output.write(str(binary_directory) + "\n")
+    else:
+        print(f'Not on GitHub Actions; run: export PATH="{binary_directory}:$PATH"')
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import {
   CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
   CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
 } from './ci-test-env.js'
+import { installPolicySteps } from './install-policy.js'
 import { PERFORMANCE_BUDGET_ARGS } from './manifest.js'
 import { NODE_SOURCE_FILE, REPOSITORY_GATE_SCRIPTS } from './ownership.js'
 import { NUXT_CLOUDFLARE_WORKFLOW_SHA } from './workflow-pin.js'
@@ -95,8 +96,10 @@ function setupSteps(): string[] {
     // Node bump is one edit to `.node-version` and nothing here.
     `          node-version-file: ${NODE_SOURCE_FILE}`,
     '          package-manager-cache: false',
-    '      - name: Install workspace',
-    '        run: pnpm install --frozen-lockfile',
+    // One fresh pnpm store for the whole job, so the nested install inside
+    // `build:ci`/`cf:build` cannot fall back to the runner's shared store
+    // (install-policy.ts, agent-infrastructure#3549).
+    ...installPolicySteps({ installName: 'Install workspace' }),
   ]
 }
 

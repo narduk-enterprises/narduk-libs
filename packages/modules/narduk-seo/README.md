@@ -11,12 +11,12 @@ instead.
 This layer also owns the optional OG preview/admin utilities so public-web SEO
 tooling stays out of `core` and auth-only app shells.
 
-## Peer: `@nuxt/ui` at `4.11.1`
+## Peer: `@nuxt/ui` `>=4.11.1 <5`
 
 The admin components this package ships (`AdminOgImagesTab` and its siblings)
-render Nuxt UI, so `@nuxt/ui` is a peer at exactly `4.11.1`, the version
-narduk-core and narduk-shell pin (narduk-libs#1033). An app on narduk-core
-already installs it.
+render Nuxt UI, so `@nuxt/ui` is a peer at `>=4.11.1 <5`, the range narduk-core
+and narduk-shell accept (narduk-libs#1033, #1981). An app on narduk-core already
+installs it.
 
 ## Unhead 3
 
@@ -297,6 +297,31 @@ A canonical hostname that does not normalize fails open and returns the
 canonical directive, as the module guard does, so a misconfigured canonical host
 cannot noindex production.
 
+## Page titles
+
+`usePageSeo` takes exactly the options `useSeo` does and also sets the browser
+`<title>` to `<page> · <site name>` through a `titleTemplate`:
+
+```ts
+usePageSeo({ title: 'Trades', description: 'Every fill in this game.' })
+// <title>Trades · Stonx</title>   og:title "Trades"
+```
+
+- The site name is `useSiteConfig().name`, then `runtimeConfig.public.appName`.
+- Only the browser title carries the suffix. `og:title`, the generated share
+  card and the description stay the page's own words.
+- A title that already names the site (`Stonx rules`) is not suffixed again, an
+  empty title is the site name alone, and with no site name the title is
+  untouched. The rule is the pure
+  `buildPageTitle(title, { siteName, separator })`.
+- `titleSeparator: '|'` changes the separator; `titleSuffix: false` leaves the
+  bare title (a home page whose title already is the whole line).
+- Precedence: Unhead keeps one `titleTemplate`, and the page's call is the more
+  specific one, so it replaces an app-wide template (a `titleTemplate` in
+  `nuxt.config`, or one from another SEO module) rather than stacking on it.
+  Pages that call `usePageSeo` get this title only; set the separator there, not
+  in a second template.
+
 ## Sitemap `<lastmod>`
 
 Production builds give every page a real `<lastmod>`, from the first of these
@@ -446,11 +471,13 @@ configured".
 Separately, `runtimeConfig.public.publicCatalogBaseUrl` (env
 `PUBLIC_CATALOG_BASE_URL`) supplies the catalog-hub link that
 `LayerNetworkFooter` renders and the `isPartOf` JSON-LD wiring. It is a link
-target only — it never triggers a fetch — and the footer omits the hub link when
-it is unset. The SEO layer adds `/narduk-network` to the sitemap only when its
-directory endpoint is configured. Otherwise it explicitly excludes the page from
-automatic sitemap discovery and serves `noindex, follow` in both robots meta and
-the HTTP policy. It does not render an all-to-all list of sites in every footer.
+target only — it never triggers a fetch. When it is unset, this module and
+narduk-core's runtime overlay both default it to `https://catalog.nard.uk`; the
+footer omits the hub link only when the value resolves empty. The SEO layer adds
+`/narduk-network` to the sitemap only when its directory endpoint is configured.
+Otherwise it explicitly excludes the page from automatic sitemap discovery and
+serves `noindex, follow` in both robots meta and the HTTP policy. It does not
+render an all-to-all list of sites in every footer.
 
 The catalog application owns curation, publication, and the public/indexable
 classification. The feed shape is:
@@ -487,6 +514,8 @@ literal) when building fleet-app JSON-LD so `isPartOf` points at the hub.
 Available as auto-imported helpers in app `<script setup>`:
 
 - `useSeo(...)` — title, description, OG image, robots.
+- `usePageSeo(...)` — `useSeo` plus the house browser title, `Trades · Stonx`
+  (see [Page titles](#page-titles)).
 - `useWebPageSchema(...)` — WebPage JSON-LD.
 - `useArticleSchema(...)` — Article JSON-LD for blog posts.
 - `useBreadcrumbSchema(...)` — BreadcrumbList JSON-LD.

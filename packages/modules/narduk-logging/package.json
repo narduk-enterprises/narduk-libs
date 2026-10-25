@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-logging",
-  "version": "0.4.5",
+  "version": "0.6.0",
   "type": "module",
   "description": "Structured, private-by-default logging for Narduk applications, services, and jobs.",
   "license": "MIT",
@@ -56,6 +56,10 @@
       "types": "./dist/worker.d.ts",
       "import": "./dist/worker.js"
     },
+    "./server-health": {
+      "types": "./dist/server-health.d.ts",
+      "import": "./dist/server-health.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
@@ -82,7 +86,7 @@
   },
   "dependencies": {
     "consola": "3.4.2",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "peerDependencies": {
     "@nuxt/kit": "^4.0.0",

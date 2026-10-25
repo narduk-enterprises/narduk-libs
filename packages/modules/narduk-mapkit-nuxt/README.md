@@ -312,7 +312,10 @@ Runtime names accepted by the token route:
 Cloudflare bindings are read from the request-scoped Nitro context. Nuxt
 runtime-config equivalents (`applePrivateKey`, `appleSecretKey`, `appleTeamId`,
 `appleKeyId`, `mapkitAllowedOrigins`, and `public.mapkitToken`) are supported as
-fallbacks. Missing credentials return `503` with `{ configured: false }`. The
+fallbacks. `MAPKIT_ALLOWED_ORIGINS` is a comma-separated list of origins (or
+bare hosts); when set, a request whose routed host is not on it gets `403`, so a
+forged `Host` on a Node listener cannot get a token signed for it. Unset allows
+every host. Missing credentials return `503` with `{ configured: false }`. The
 generated endpoint accepts GET only; other methods return `405` with
 `Allow: GET`.
 

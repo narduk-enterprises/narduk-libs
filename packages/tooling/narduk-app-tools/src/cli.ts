@@ -51,6 +51,7 @@ import {
 import { formatD1CreateResult, parseD1CreateArgs, runD1Create } from './d1-create.js'
 import {
   parseDeploymentMigrationArgs,
+  checkDeploymentMigrationContext,
   runDeploymentMigrations,
   writeDeploymentMigrationBundle,
 } from './deployment-migrations.js'
@@ -101,10 +102,11 @@ function usage(): string {
     '                                   command. Child-command help is left for the child.',
     '',
     'Commands:',
-    '  dev [--credentials <none|nvault>] [--project <name>] [--environment <name>]',
-    '      [--config <name>] [--dry-run] -- <command...>',
+    '  dev [--mapkit | --credentials <none|nvault>] [--project <name>]',
+    '      [--environment <name>] [--config <name>] [--dry-run] -- <command...>',
     '                                       Run local development directly, or under the',
-    '                                       registered nvault credential route',
+    '                                       registered nvault credential route; --mapkit',
+    '                                       is that route with apple/prd/mapkit-signing',
     '  auth agent-key create --database <name> --local|--remote --name <label>',
     '      --scopes <a,b> --expires-days <n> [--admin] [--email <address>]',
     '      (--app-url <origin> | --no-proof) -- <secret sink command...>',
@@ -135,6 +137,16 @@ function usage(): string {
     '                                       or 600s-old holder fails at once, as before.',
     '  db status --config <file> --database <name> --local|--remote [--wrangler-config <file>]',
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
+    '                                       [--gate-verified "<check>@<sha>"] [--gate-workflow <file>] [--check-context]',
+    '                                       A write runs under a successful same-repository workflow_run,',
+    '                                       or under a push / workflow_dispatch on the production branch',
+    '                                       whose GITHUB_SHA is --sha. That needs --gate-verified naming',
+    '                                       deployment.promotion.gateCheck and --gate-workflow naming the',
+    '                                       CI workflow file; the tool reads GitHub (GITHUB_TOKEN with',
+    '                                       actions, checks and pull-requests read) and refuses unless that',
+    "                                       workflow's newest run on the commit succeeded, or on the merged",
+    '                                       pull request that landed as it with an identical tree.',
+    '                                       --check-context runs that proof only: no credential, no write.',
     '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
     '  db bundle --output <file>          Package SQL/data for the trusted preview migration job',
     '  db create [--checkout <dir>] [--binding <NAME>] [--dry-run] [--json]',
@@ -414,6 +426,13 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       }
       if (subcommand === 'migrate-deployment') {
         const options = parseDeploymentMigrationArgs(migrateArgs)
+        if (options.checkContext) {
+          const verified = checkDeploymentMigrationContext(options)
+          console.log(
+            JSON.stringify({ target: options.target, context: 'verified', verified }, null, 2),
+          )
+          return 0
+        }
         const plans = runDeploymentMigrations(options)
         console.log(
           JSON.stringify(

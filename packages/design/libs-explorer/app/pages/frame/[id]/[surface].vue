@@ -87,10 +87,11 @@ function onEvent(name: string, detail: unknown) {
  * demo that is still loading when the page's first query arrives.
  */
 let owesSync = false
+let querySeq = 0
 function onCanonical(next: Record<string, string>) {
   if (!owesSync) return
   owesSync = false
-  post({ type: 'explorer:state', surface: shown, cause: 'sync', query: next })
+  post({ type: 'explorer:state', surface: shown, cause: 'sync', seq: querySeq, query: next })
 }
 
 function onMessage(event: MessageEvent) {
@@ -102,6 +103,7 @@ function onMessage(event: MessageEvent) {
     if (shown !== 'demo') ready.value = true
   } else if (shown === 'demo') {
     owesSync = true
+    querySeq = message.seq
     // A fresh object even for an equal query, so the demo always answers.
     query.value = { ...message.query }
     ready.value = true

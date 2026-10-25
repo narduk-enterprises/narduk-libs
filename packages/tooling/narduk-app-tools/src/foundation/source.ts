@@ -232,8 +232,28 @@ export function mergedDeps(packages: FoundPackage[]): Record<string, string> {
   return merged
 }
 
-/** Locate the first wrangler config that exists at a known candidate path. */
+/**
+ * Locate this app's own wrangler config.
+ *
+ * The app is the Nuxt app: the directory holding the first `nuxt.config.*` at a
+ * known path (the same resolution `detectNuxt` uses). Its wrangler config wins
+ * when it has one. A hybrid repo keeps a data-plane Worker's `wrangler.jsonc`
+ * at the repo root and the Nuxt web app under `web/` or `apps/web/`; reading the
+ * root file there judges the web app's `Config/cloudflare-app.json` against
+ * another Worker's bindings (narduk-libs#1967). With no Nuxt app, or a Nuxt app
+ * without a wrangler config of its own, the first config at a known candidate
+ * path decides, as before.
+ */
 export function findWranglerConfig(repo: AppRepo): string | null {
+  const nuxtConfig = NUXT_CONFIG_CANDIDATES.find((rel) => repo.exists(rel))
+  if (nuxtConfig) {
+    const slash = nuxtConfig.lastIndexOf('/')
+    const appDir = slash === -1 ? '' : nuxtConfig.slice(0, slash + 1)
+    const own = WRANGLER_FILENAMES.map((name) => `${appDir}${name}`).find(
+      (rel) => repo.read(rel) !== null,
+    )
+    if (own) return own
+  }
   return WRANGLER_CANDIDATES.find((rel) => repo.read(rel) !== null) ?? null
 }
 

@@ -23,9 +23,10 @@ async function normalizeBody(
 ): Promise<Buffer> {
   if (value === null) return Buffer.alloc(0)
   if (typeof value === 'string') return Buffer.from(value)
-  if (Buffer.isBuffer(value)) return value
+  // Copy: R2 owns its bytes, so a caller refilling or zeroing its buffer after
+  // `put` must not change what the object holds.
   if (ArrayBuffer.isView(value)) {
-    return Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+    return Buffer.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))
   }
   if (value instanceof ArrayBuffer) return Buffer.from(value)
   if (typeof (value as Blob).arrayBuffer === 'function') {

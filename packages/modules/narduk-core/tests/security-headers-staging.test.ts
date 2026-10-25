@@ -50,12 +50,34 @@ afterEach(() => {
 describe('preset off -- the default', () => {
   it('serves exactly the header set deployed apps have today', async () => {
     const headers = await respond()
-    expect(headers.get('content-security-policy')).toContain("default-src 'self'")
+    const csp = Object.fromEntries(
+      (headers.get('content-security-policy') ?? '').split('; ').map((directive) => {
+        const [name, ...sources] = directive.split(' ')
+        return [name, sources]
+      }),
+    )
+    expect(csp['default-src']).toEqual(["'self'"])
+    expect(csp['object-src']).toEqual(["'none'"])
+    expect(csp['frame-ancestors']).toEqual(["'none'"])
+    expect(csp['frame-src']).toEqual(["'self'"])
+    expect(csp['base-uri']).toEqual(["'self'"])
+    // No directive may open to every origin or scheme.
+    for (const sources of Object.values(csp)) {
+      expect(sources).not.toContain('*')
+      expect(sources).not.toContain('http:')
+    }
+    // The legacy policy still allows inline and eval script; it is pinned so adding either
+    // to another directive, or dropping the strict-preset escape hatch, is a visible change.
+    expect(csp['script-src']).toEqual(
+      expect.arrayContaining(["'self'", "'unsafe-inline'", "'unsafe-eval'"]),
+    )
+    expect(csp['style-src']).toContain("'unsafe-inline'")
+    expect(csp['connect-src']).not.toContain("'unsafe-inline'")
     expect(headers.get('x-content-type-options')).toBe('nosniff')
     expect(headers.get('x-frame-options')).toBe('DENY')
     expect(headers.get('x-xss-protection')).toBe('0')
     expect(headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin')
-    expect(headers.get('permissions-policy')).toContain('camera=()')
+    expect(headers.get('permissions-policy')).toBe('camera=(), microphone=(), geolocation=()')
     expect(headers.get('x-app-version')).toBe('1.2.3')
   })
 

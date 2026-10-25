@@ -158,6 +158,22 @@ describe('useConfirm()', () => {
     await expect(result).resolves.toBe(true)
   })
 
+  it('runs onConfirm once for two clicks before the pending state paints', async () => {
+    const work = deferred<void>()
+    const onConfirm = vi.fn(() => work.promise)
+    const { confirm } = harness()
+    const result = confirm({ title: 'End game?', message: 'No undo.', onConfirm })
+    await settle()
+
+    confirmButton().click()
+    confirmButton().click()
+    await settle()
+
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    work.resolve()
+    await expect(result).resolves.toBe(true)
+  })
+
   it('keeps the dialog open and surfaces the failure when onConfirm rejects', async () => {
     const work = deferred<void>()
     const { confirm } = harness()

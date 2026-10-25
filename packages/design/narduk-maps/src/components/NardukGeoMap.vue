@@ -4,6 +4,7 @@ import { computed, ref, toRaw, useId } from 'vue'
 import { drawPoints, drawShapes, layoutLabels, type DrawnPoint, type DrawnShape } from '../layout'
 import { createFrameView, createMapView, resolveBounds, type ViewPoint } from '../projection'
 import { metricsFor } from '../tokens'
+import { safeHref } from '../href'
 import MapTable from './MapTable.vue'
 
 import type { Bounds, CutoutLayer, GeoMapProps, MapMetrics, MapPoint, ShapeFeature } from '../types'
@@ -452,14 +453,14 @@ const tableRows = computed(() =>
 
       <g class="narduk-geomap__points">
         <component
-          :is="point.point.href && !plain ? 'a' : 'g'"
+          :is="safeHref(point.point.href) && !plain ? 'a' : 'g'"
           v-for="point in pointViews"
           :key="point.point.id"
           class="narduk-geomap__point"
           :data-point-id="point.point.id"
-          :href="point.point.href && !plain ? point.point.href : undefined"
-          :role="point.point.href && !plain ? undefined : 'img'"
-          :tabindex="plain ? undefined : point.point.href ? undefined : 0"
+          :href="safeHref(point.point.href) && !plain ? safeHref(point.point.href) : undefined"
+          :role="safeHref(point.point.href) && !plain ? undefined : 'img'"
+          :tabindex="plain ? undefined : safeHref(point.point.href) ? undefined : 0"
           :aria-label="point.point.label"
           @pointerenter="enterPoint(point)"
           @pointerleave="leavePoint"

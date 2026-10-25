@@ -142,6 +142,13 @@ export const SHARED_CAPABILITY_CATALOG: readonly SharedCapability[] = [
       'NardukMaps — one picture, two engines: an SSR-safe SVG map and a MapLibre map that share a projection, tokens and marks. Package: @narduk-enterprises/narduk-maps.',
   },
   {
+    id: 'notify',
+    package: '@narduk-enterprises/narduk-notify',
+    family: 'modules',
+    description:
+      'Notification delivery for Narduk products: APNs token auth (alert and Live Activity pushes), email through Resend, per-user preferences and a delivery audit log on D1.',
+  },
+  {
     id: 'platform',
     package: '@narduk-enterprises/narduk-platform',
     family: 'contracts',

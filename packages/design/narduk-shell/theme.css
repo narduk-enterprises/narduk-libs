@@ -158,6 +158,8 @@
    */
   --ne-feel-fast: 120ms;
   --ne-feel-base: 150ms;
+  --ne-settle-duration: 180ms;
+  --ne-ease-settle: cubic-bezier(0.2, 0.6, 0.2, 1);
   --ne-ease-out: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- the bridge -------------------------------------------------------
@@ -516,6 +518,40 @@
 }
 
 /*
+ * The focus ring — one rule for every focusable thing (README § Focus ring).
+ * Keyboard focus (`:focus-visible`: never a mouse click on a button) draws a 2px
+ * accent outline 2px off the element, so a control that never thought about
+ * focus still shows where it is. It is `:where()`-wrapped, so it has zero
+ * specificity: any component or app rule that draws its own ring (Nuxt UI's
+ * `focus-visible:ring-*` utilities, `NeTruncate`'s own outline) wins without a
+ * fight. A rule that removes the outline must supply a replacement; `outline:
+ * none` on its own is the one thing this sheet never does.
+ *
+ * An outline, not a box-shadow: it survives Windows high-contrast
+ * (`forced-colors`), which recolours outlines and drops shadows.
+ */
+:where(:focus-visible) {
+  outline: 2px solid var(--ne-accent);
+  outline-offset: 2px;
+}
+
+/*
+ * Safe-area utilities (README § Safe areas). `.ne-safe-top` pads an element
+ * below the notch or status bar; `.ne-safe-bottom` pads it above the home
+ * indicator. Both are 0 where the device has no inset (desktop, a phone not in
+ * `viewport-fit=cover`). `--ne-safe-extra-top` / `--ne-safe-extra-bottom` add
+ * your own padding to the inset, since a class that sets `padding-top` itself
+ * would replace it: `style="--ne-safe-extra-bottom: 0.75rem"`.
+ */
+:where(.ne-safe-top) {
+  padding-top: calc(var(--ne-safe-extra-top, 0px) + env(safe-area-inset-top, 0px));
+}
+
+:where(.ne-safe-bottom) {
+  padding-bottom: calc(var(--ne-safe-extra-bottom, 0px) + env(safe-area-inset-bottom, 0px));
+}
+
+/*
  * Reduced motion. Durations collapse to 0ms (the tokens above, so an app's own
  * `var(--ne-feel-fast)` transition collapses with them), the press loses its
  * scale and keeps only the opacity dip, the fade-in becomes an instant appear,
@@ -525,6 +561,7 @@
   :where(:root, .light) {
     --ne-feel-fast: 0ms;
     --ne-feel-base: 0ms;
+    --ne-settle-duration: 0ms;
   }
 
   :where(.ne-press:active:not(:disabled, [aria-disabled='true'])) {

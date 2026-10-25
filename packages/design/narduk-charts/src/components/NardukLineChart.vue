@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, useId, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 
 import { useChart } from '../composables/useChart'
+import { useChartAnimation } from '../composables/useChartAnimation'
 import { useTooltip } from '../composables/useTooltip'
 import { defaultLineChartLabel, linePointSummary, zoomKeyboardHint } from '../utils/chartA11y'
 import { chartThemeClass, STUDIO_LOOK_CLASS, studioFigureClasses } from '../utils/chartTheme'
@@ -79,6 +80,8 @@ const props = withDefaults(
     dark?: boolean
     /** Text direction for layout mirroring (e.g. RTL). */
     dir?: 'ltr' | 'rtl'
+    /** Wait for first visibility before drawing in; requires animate. */
+    drawOnVisible?: boolean
     /** Enable a second Y scale on the right; assign `series[].yAxis = 'secondary'`. */
     dualYAxis?: boolean
     /**
@@ -98,6 +101,10 @@ const props = withDefaults(
     formatTime?: (timestamp: number) => string
     /** Format category labels on the X axis. */
     formatXLabel?: (label: string, index: number) => string
+    /** Category formatter; takes precedence over formatXLabel and formatTime. */
+    formatXTick?: (label: string, index: number) => string
+    /** Value-axis formatter; takes precedence over formatTickValue. */
+    formatYTick?: (value: number) => string
     height?: number
     labels: string[]
     /** Fieldset legend label for the series toggles (screen readers). */
@@ -242,6 +249,7 @@ const props = withDefaults(
     showVolume: false,
     volumeFraction: 0.22,
     animate: true,
+    drawOnVisible: false,
     respectReducedMotion: true,
     dualYAxis: false,
     yScale: 'linear',
@@ -266,7 +274,9 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
+  activeIndex: [index: number | null]
   pointClick: [payload: LinePointClickPayload]
+  pointHover: [index: number | null]
   zoom: [range: LineZoomRange]
 }>()
 
@@ -291,10 +301,16 @@ const effLabels = computed(() => {
 
 const effSeries = computed(() => {
   const m = props.maxRenderPoints
-  if (m && props.labels.length > m) {
-    return decimateCategoryData(props.labels, props.series, m).series
-  }
-  return props.series
+  const series =
+    m && props.labels.length > m
+      ? decimateCategoryData(props.labels, props.series, m).series
+      : props.series
+  /* A log axis has no zero or negative: those values are gaps, not a floor-pinned mark. */
+  return series.map((s): ChartSeries => {
+    const mode =
+      props.dualYAxis === true && s.yAxis === 'secondary' ? props.yScaleSecondary : props.yScale
+    return mode === 'log' ? { ...s, data: s.data.map(v => (v != null && v <= 0 ? null : v)) } : s
+  })
 })
 
 /** Bands decimated with the same index map as the series. */
@@ -707,7 +723,7 @@ function onPlotPointerEnd(e: PointerEvent) {
 
   if (zoomBoxPhase.value === 'idle' || e.pointerId !== zoomBoxPointerId) return
 
-  if (zoomBoxPhase.value === 'dragging') {
+  if (zoomBoxPhase.value === 'dragging' && e.type !== 'pointercancel') {
     applyZoomFromBox()
     suppressNextSvgClick.value = true
   }
@@ -748,6 +764,11 @@ const rootChartClasses = computed(() => {
 const figureClasses = computed(() => studioFigureClasses(rootChartClasses.value))
 
 const runAnimation = computed(() => effectiveAnimate(props.animate))
+
+function formatYValue(value: number, fallback: string): string {
+  const format = props.formatYTick ?? props.formatTickValue
+  return format ? format(value) : fallback
+}
 
 const hiddenSeries = ref(new Set<string>())
 
@@ -890,14 +911,14 @@ const secondaryMap = computed(() => {
 const primaryTicksForDisplay = computed(() =>
   primaryMap.value.ticks.map(t => ({
     ...t,
-    label: props.formatTickValue ? props.formatTickValue(t.value) : t.label,
+    label: formatYValue(t.value, t.label),
   })),
 )
 
 const secondaryTicksForDisplay = computed(() =>
   secondaryMap.value.ticks.map(t => ({
     ...t,
-    label: props.formatTickValue ? props.formatTickValue(t.value) : t.label,
+    label: formatYValue(t.value, t.label),
   })),
 )
 
@@ -1077,7 +1098,7 @@ function lastPointOf(s: ChartSeries): { index: number; value: number } | null {
 
 function tagText(s: ChartSeries, value: number, index: number): string {
   if (s.formatValue) return s.formatValue(value, index)
-  return props.formatTickValue ? props.formatTickValue(value) : formatValue(value)
+  return formatYValue(value, formatValue(value))
 }
 
 /** The series that get a ringed last value and a tag; at most six. */
@@ -1150,7 +1171,7 @@ const studioLeftPad = computed(() => {
   const ticks = makePrimaryMap(1).ticks
   let w = 0
   for (const t of ticks) {
-    const label = props.formatTickValue ? props.formatTickValue(t.value) : t.label
+    const label = formatYValue(t.value, t.label)
     w = Math.max(w, estimateTextPx(label, 11))
   }
   return Math.max(24, w + 12)
@@ -1380,6 +1401,12 @@ const displayIndex = computed(() =>
   kbFocusIndex.value !== null ? kbFocusIndex.value : activeIndex.value,
 )
 
+watch(displayIndex, index => {
+  const sourceIndex = index === null ? null : (effIndexMap.value?.[index] ?? index)
+  emit('activeIndex', sourceIndex)
+  emit('pointHover', sourceIndex)
+})
+
 const liveSummary = computed(() => {
   const i = displayIndex.value
   if (i === null || isEmpty.value) return ''
@@ -1390,13 +1417,14 @@ const liveSummary = computed(() => {
 
 function formatXAxisLabel(i: number): string {
   const raw = effLabels.value[i] ?? ''
+  if (props.formatXTick) return props.formatXTick(raw, effIndexMap.value?.[i] ?? i)
   if (props.xAxisType === 'time') {
     const t = effTimes.value?.[i]
     if (typeof t === 'number' && Number.isFinite(t)) {
       return props.formatTime ? props.formatTime(t) : defaultTimeAxisLabel(t, props.timeZone)
     }
   }
-  return props.formatXLabel ? props.formatXLabel(raw, i) : raw
+  return props.formatXLabel ? props.formatXLabel(raw, effIndexMap.value?.[i] ?? i) : raw
 }
 
 /** One tooltip row per visible band: its `low – high` range at that index. */
@@ -1499,7 +1527,7 @@ function onPlotKeydown(e: KeyboardEvent) {
     const cur = kbFocusIndex.value
     if (cur === null) return
     emit('pointClick', {
-      index: cur,
+      index: effIndexMap.value?.[cur] ?? cur,
       label: effLabels.value[cur],
       values: visibleSeries.value.map(s => ({
         seriesName: s.name,
@@ -1517,7 +1545,7 @@ function onPlotKeydown(e: KeyboardEvent) {
 
 function pickNearestIndex(svgX: number): number | null {
   const n = effLabels.value.length
-  if (n === 0) return null
+  if (n === 0 || !Number.isFinite(svgX)) return null
   const pl = padding.value.left
   const pr = chartWidth.value - padding.value.right
   const pw = plotWidth.value
@@ -1529,6 +1557,18 @@ function pickNearestIndex(svgX: number): number | null {
   const frac = lo + Math.min(1, Math.max(0, u)) * span
   const nearest = Math.min(n - 1, Math.max(0, Math.round(frac)))
   return nearest
+}
+
+function onPointerMove(event: PointerEvent) {
+  onPlotPointerMove(event)
+  onMouseMove(event)
+}
+
+function onPointerCancel(event: PointerEvent) {
+  onPlotPointerEnd(event)
+  activeIndex.value = null
+  kbFocusIndex.value = null
+  hideTooltip()
 }
 
 function onMouseMove(event: MouseEvent) {
@@ -1581,7 +1621,7 @@ function onSvgClick(event: MouseEvent) {
   const idx = pickNearestIndex(svgX)
   if (idx === null) return
   emit('pointClick', {
-    index: idx,
+    index: effIndexMap.value?.[idx] ?? idx,
     label: effLabels.value[idx],
     values: visibleSeries.value.map(s => ({
       seriesName: s.name,
@@ -1590,18 +1630,7 @@ function onSvgClick(event: MouseEvent) {
   })
 }
 
-// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131: one-time paint seed; onMounted owns the flag after setup
-const animated = ref(!runAnimation.value)
-
-onMounted(() => {
-  if (runAnimation.value) {
-    requestAnimationFrame(() => {
-      animated.value = true
-    })
-  } else {
-    animated.value = true
-  }
-})
+const animated = useChartAnimation(containerRef, runAnimation, () => props.drawOnVisible)
 
 const legendItems = computed<LegendItem[]>(() => [
   ...props.series.map((s, i) => ({
@@ -1855,6 +1884,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         :width="chartWidth"
         :height="chartHeight"
         class="narduk-line-chart__svg"
+        style="touch-action: pan-y"
         role="img"
         :aria-labelledby="svgAriaLabelledby"
         :aria-hidden="focusable ? undefined : 'true'"
@@ -1866,9 +1896,10 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         @mouseleave="onMouseLeave"
         @click="onSvgClick"
         @pointerdown="onPlotPointerDown"
-        @pointermove="onPlotPointerMove"
+        @pointermove="onPointerMove"
+        @pointerleave="onMouseLeave"
         @pointerup="onPlotPointerEnd"
-        @pointercancel="onPlotPointerEnd"
+        @pointercancel="onPointerCancel"
         @dblclick="onPlotDblClick"
       >
         <defs>

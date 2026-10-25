@@ -1,5 +1,102 @@
 # @narduk-enterprises/narduk-core
 
+## 2.37.5
+
+### Patch Changes
+
+- Updated dependencies [a296973]
+  - @narduk-enterprises/narduk-logging@0.6.0
+
+## 2.37.4
+
+### Patch Changes
+
+- d18d969: Raise the `undici` dependency to `^8.12.2`, the first release without
+  the unhandled-error denial of service on excessive content-encodings
+  (GHSA-xjj6-f33q-929c).
+
+## 2.37.3
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies [6a0c7dd]
+  - @narduk-enterprises/narduk-platform@2.4.2
+  - @narduk-enterprises/narduk-logging@0.5.0
+
+## 2.37.2
+
+### Patch Changes
+
+- 873c869: Reject backslash and control characters in normalizeDemoRedirectPath,
+  match the hard-coded /api/owner-tag CSRF skip without its query string, return
+  404 when a local cdn-cgi image path dot-segments out of /_og/, and pin the
+  192.0.0.9/.10 SSRF exception with a comment and table test.
+- cbb7b84: Stop the unfurl fetcher retrying a 429 under other crawlers'
+  User-Agents, cap the in-isolate auth rate-limit map and the SSE connection
+  registry (registerSSE takes an optional abort signal), cancel an oversized
+  declared-length body, keep D1 cache rows inside their stale window
+  (cleanExpiredCache takes an optional staleWindowSeconds), stop guessing D1 for
+  a scheduled event without runtime config, refuse an API key whose expiry is 0,
+  make the rate-limit exemption ignore dot-segment paths, make a Set-Cookie
+  written after a cache profile no-store, and decide fetch-header same-origin by
+  resolving the URL so protocol-relative URLs are not marked and absolute
+  same-origin URLs are.
+- 82f5b78: Security fixes: the layer session cookie is `Secure` unless the Host
+  is `localhost` or `127.0.0.1` over plain HTTP (narduk-libs#2001); the CSRF
+  skip for API keys accepts every `Authorization` spelling the key parser
+  accepts; the `SESSION_PASSWORD` alias is seeded into
+  `runtimeConfig.session.password` like `NUXT_SESSION_PASSWORD`;
+  `enforceRateLimitPolicy` keys on `cf-connecting-ip` or the socket and no
+  longer trusts the first `X-Forwarded-For` entry, and a throwing Cloudflare
+  rate-limit binding falls back to the in-isolate limiter instead of a 500.
+- Updated dependencies [873c869]
+- Updated dependencies [c211173]
+- Updated dependencies [82f5b78]
+  - @narduk-enterprises/narduk-logging@0.4.6
+  - @narduk-enterprises/narduk-platform@2.4.1
+
+## 2.37.1
+
+### Patch Changes
+
+- fe63fd8: Pin `@nuxt/image` to 2.1.0 in narduk-core. 2.2.0 registers a server
+  auto-import whose `from` is an object, which nitropack 2.13.5 cannot resolve,
+  so `nuxt typecheck` crashed with `input.replace is not a function` in every
+  generated app. Also document the widened `@nuxt/ui` peer range in the
+  narduk-auth and narduk-core READMEs.
+
+## 2.37.0
+
+### Minor Changes
+
+- b67ae79: `getClientIp` accepts `trustFlyClientIp`, which declares the Fly.io
+  proxy the app's edge: it reads the proxy-set `fly-client-ip` header and
+  ignores `cf-connecting-ip` (client-writable without Cloudflare in front). Off
+  by default. It applies to direct `getClientIp` calls; the built-in `'ip'`
+  rate-limit scopes do not take it.
+
+## 2.36.0
+
+### Minor Changes
+
+- e3345c2: An existing app can adopt narduk-core and narduk-auth on Postgres.
+  `nardukCore.postgresSchema` (default `public`) puts every core and auth table
+  in a named schema, so an app-owned `public.users` or `public.api_keys` of
+  another shape is never touched (narduk-libs#1953). Three more opt-outs, each
+  defaulting to today's behaviour (narduk-libs#1940):
+  `nardukCore.csrf.enabled: false` turns the CSRF middleware off,
+  `nardukCore.health: false` leaves `/api/health` to the app's own route, and
+  `@nuxt/ui` is now a peer range (`>=4.7.1 <5`) instead of a pinned core
+  dependency. With default options behaviour is unchanged for D1 and Postgres
+  apps, with two things to know: an app that uses the UI modules (`coreModules`
+  on) must now list `@nuxt/ui` itself, since core no longer pulls it in
+  (generated apps already do), and `runtimeConfig.nardukCsrf.enabled` and
+  `runtimeConfig.postgresSchema` are new keys. A hand-written Vitest alias for
+  `#narduk-core/schema` that points at `pg-schema.ts` also needs
+  `#narduk-core/postgres-schema` (apps that read `.nuxt/tsconfig.json` through
+  `nuxtVitestAliases()` get it automatically).
+
 ## 2.35.0
 
 ### Minor Changes

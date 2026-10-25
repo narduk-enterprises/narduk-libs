@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { applyCallerGate, applyCallerPermissions, applyPublicGate } from './ci-gate.js'
 import type { CiGateContext, CiGateEdit } from './ci-gate.js'
 import { CANDIDATE_SECURITY_HEADERS_STEP_NAME, REPOSITORY_GATE_STEP_NAME } from './ci-workflow.js'
-import { adaptManagedPackageJson, readCheckoutFacts } from './checkout-facts.js'
+import { adaptManagedPackageJson, declaredDatabase, readCheckoutFacts } from './checkout-facts.js'
 import { applyCspPreset, applyDevDependency, proxyOriginProblem } from './csp-preset.js'
 import type { CheckoutFacts } from './checkout-facts.js'
 import { detectPackageRegistry, resolveDependabot } from './dependabot-registry.js'
@@ -179,12 +179,25 @@ export async function inferUpgradeProfile(
     )
   }
 
-  const appName =
+  const declaredName =
     (typeof rootManifest?.name === 'string' && rootManifest.name) ||
     resolve(targetDir).split('/').pop() ||
     'app'
+  // The scaffold only accepts a plain lowercase name; a scoped or oddly cased
+  // package name must not make every upgrade, even a one-file dry run, throw.
+  const appName =
+    declaredName
+      .replace(/^@[^/]+\//u, '')
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/gu, '-')
+      .replaceAll(/^-+|-+$/gu, '')
+      .replace(/^(?=\d)/u, 'app-') || 'app'
   if (typeof rootManifest?.name !== 'string') {
     notes.push('No root package.json name; used the directory name "' + appName + '".')
+  } else if (appName !== declaredName) {
+    notes.push(
+      'Package name "' + declaredName + '" is not a plain app name; used "' + appName + '".',
+    )
   }
   inferred.push('appName')
 
@@ -203,7 +216,7 @@ export async function inferUpgradeProfile(
       typeof overrides.capabilities === 'string'
         ? overrides.capabilities.split(',')
         : [...overrides.capabilities]
-    const normalized = requested.map((entry) => entry.trim()).filter(Boolean)
+    const normalized = requested.map((entry) => entry.trim().toLowerCase()).filter(Boolean)
     for (const entry of normalized) {
       if (!(SUPPORTED_CAPABILITIES as readonly string[]).includes(entry)) {
         throw new CreateNardukAppError('Unsupported capability "' + entry + '".')
@@ -216,7 +229,7 @@ export async function inferUpgradeProfile(
   if (overrides.databaseBackend === undefined) {
     databaseBackend = checkout.databaseBackend
     inferred.push('databaseBackend')
-    if (databaseBackend === 'none' && !/databaseBackend:\s*'none'/u.test(nuxtConfig)) {
+    if (databaseBackend === 'none' && declaredDatabase(nuxtConfig) !== 'none') {
       notes.push(
         'No D1 binding in Config/cloudflare-app.json or the wrangler config; database backend is none.',
       )
@@ -255,7 +268,12 @@ export async function inferUpgradeProfile(
       nardukBlock(webManifest).localDevNuxtPort ?? nardukBlock(rootManifest).localDevNuxtPort
     localPort =
       checkout.devServerPort ??
-      (typeof declared === 'number' && Number.isInteger(declared) ? declared : 3000)
+      (typeof declared === 'number' &&
+      Number.isInteger(declared) &&
+      declared >= 1024 &&
+      declared <= 65535
+        ? declared
+        : 3000)
     inferred.push('localPort')
   } else {
     if (!Number.isInteger(overrides.localPort)) {
@@ -526,16 +544,18 @@ function resolveCiCaller(
   if (pin.status === 'unresolved') return pin
   // A re-pin must never land the app on a workflow its caller cannot start.
   const permissions = applyCallerPermissions(pin.next ?? current)
+  // A grant that cannot be widened leaves the old pin: the new one would not start.
+  if (permissions.problems.length) {
+    return {
+      detail: 'Gate incomplete: ' + permissions.problems.join('; ') + '.',
+      status: 'unresolved',
+    }
+  }
   const edit = applyCallerGate(permissions.contents, gate)
   const base = permissions.added.length
     ? { ...pin, detail: pin.detail + ' Grants the caller ' + permissions.added.join(', ') + '.' }
     : pin
-  return withGateEdit(
-    current,
-    base,
-    { ...edit, problems: [...permissions.problems, ...edit.problems] },
-    'Repository gate inputs present.',
-  )
+  return withGateEdit(current, base, edit, 'Repository gate inputs present.')
 }
 
 function resolveRegion(
@@ -918,6 +938,12 @@ function resolveKeys(current: string | null, desired: string): Resolution {
       status: 'absent',
     }
   }
+  if (isDisowned(current)) {
+    return {
+      detail: 'Disowned by a ' + UNMANAGED_MARKER + ' header comment; left untouched.',
+      status: 'unmanaged',
+    }
+  }
   const currentManifest = parseJsonOrNull(current)
   const desiredManifest = parseJsonOrNull(desired)
   if (!currentManifest || !desiredManifest) {
@@ -1039,6 +1065,12 @@ function resolveDevDependency(current: string | null, target: ManagedTarget): Re
   const version = PACKAGE_VERSIONS[name as keyof typeof PACKAGE_VERSIONS]
   if (current === null || !version) {
     return { detail: 'No web manifest to edit.', status: 'absent' }
+  }
+  if (isDisowned(current)) {
+    return {
+      detail: 'Disowned by a ' + UNMANAGED_MARKER + ' header comment; left untouched.',
+      status: 'unmanaged',
+    }
   }
   const edit = applyDevDependency(current, name, version)
   return { detail: edit.detail, next: edit.contents, status: edit.status }

@@ -66,6 +66,16 @@ const SENSITIVE_SEGMENTS = new Set([
   'jwts',
   'privatekeys',
   'clientsecrets',
+  // Personal or freeform text under a compound name (`userEmail`, `systemPrompt`).
+  'email',
+  'phone',
+  'address',
+  'latitude',
+  'longitude',
+  'prompt',
+  'completion',
+  'body',
+  'payload',
 ])
 /** Adjacent segments that together name a secret (`x-api-key` → api+key). */
 const COMPOUND_SEGMENTS = new Set([

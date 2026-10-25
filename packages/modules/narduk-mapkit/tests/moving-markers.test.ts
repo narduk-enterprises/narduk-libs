@@ -369,6 +369,17 @@ describe('follow camera', () => {
     expect(centre.mock.calls.length).toBe(after)
   })
 
+  it('ends the previous follow when the target switches (ponytail-5 s5 #9)', () => {
+    const onFollowEnd = vi.fn()
+    const l = layer({ onFollowEnd })
+    l.set([bus('1', 30), bus('2', 31)])
+    l.follow('1')
+    l.follow('2')
+    expect(onFollowEnd).toHaveBeenCalledTimes(1)
+    expect(onFollowEnd).toHaveBeenCalledWith('1')
+    expect(l.followedId).toBe('2')
+  })
+
   it('refuses an unknown id and ends when the followed marker goes away', () => {
     const onFollowEnd = vi.fn()
     const l = layer({ onFollowEnd })

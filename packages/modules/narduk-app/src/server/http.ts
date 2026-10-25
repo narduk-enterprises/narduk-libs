@@ -172,7 +172,7 @@ export function appendAppResponseHeader(
 }
 
 function parseCookieHeader(cookieHeader: string | undefined): Record<string, string> {
-  const cookies: Record<string, string> = {}
+  const cookies: Record<string, string> = Object.create(null)
   if (!cookieHeader) return cookies
 
   for (const part of cookieHeader.split(';')) {
@@ -181,7 +181,11 @@ function parseCookieHeader(cookieHeader: string | undefined): Record<string, str
     const eq = trimmed.indexOf('=')
     if (eq <= 0) continue
     const name = trimmed.slice(0, eq).trim()
-    const rawValue = trimmed.slice(eq + 1)
+    if (name in cookies) continue // first wins (browsers send the most specific path first)
+    let rawValue = trimmed.slice(eq + 1)
+    if (rawValue.length > 1 && rawValue.startsWith('"') && rawValue.endsWith('"')) {
+      rawValue = rawValue.slice(1, -1)
+    }
     try {
       cookies[name] = decodeURIComponent(rawValue)
     } catch {
