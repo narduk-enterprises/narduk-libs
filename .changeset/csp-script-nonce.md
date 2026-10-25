@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-app': minor
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 Nonce-based `script-src` without `'unsafe-inline'`. New
