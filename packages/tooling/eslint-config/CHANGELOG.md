@@ -1,5 +1,13 @@
 # @narduk-enterprises/eslint-config
 
+## 3.4.1
+
+### Patch Changes
+
+- 8faf6b3: Add narduk-auth's AuthProviderButtons to the shared component list so
+  the shadow rule and foundation:check:no-local-copy know it, and the drift test
+  matches narduk-auth's real components again.
+
 ## 3.4.0
 
 ### Minor Changes

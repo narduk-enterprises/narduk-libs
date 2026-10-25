@@ -1,5 +1,30 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.38.0
+
+### Minor Changes
+
+- 0babbd0: narduk-auth: Google sign-in (OIDC code flow with PKCE, state and
+  nonce, ID token verified against Google's JWKS) and passwordless email-link
+  sign-in on the local backend, on D1 and Postgres. Both are off until
+  configured (`AUTH_LOCAL_PROVIDERS=google` with
+  `AUTH_GOOGLE_CLIENT_ID`/`AUTH_GOOGLE_CLIENT_SECRET`;
+  `AUTH_EMAIL_LINK_SIGNIN`). Apply migration
+  `0006_identities_and_signin_links.sql` (D1 rebuilds `auth_email_links`).
+- 6d1ac12: narduk-auth: every successful sign-in (password, passkey, register,
+  email link, reset-password recovery, callback exchange) now ends in a full
+  page load (`navigateTo(path, { external: true, replace: true })`) instead of a
+  client-side navigation, with the target re-validated as a same-origin path. A
+  script from an edge-cached public page (narduk-core `htmlCache`,
+  D-HTML-CACHE-PUBLIC-1) therefore cannot survive into a signed-in session.
+
+### Patch Changes
+
+- Updated dependencies [6d1ac12]
+- Updated dependencies [f4ace72]
+  - @narduk-enterprises/narduk-core@2.38.0
+  - @narduk-enterprises/narduk-app@1.23.0
+
 ## 1.37.8
 
 ### Patch Changes

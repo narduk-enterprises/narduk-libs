@@ -1,5 +1,23 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.23
+
+### Patch Changes
+
+- 0babbd0: narduk-auth: Google sign-in (OIDC code flow with PKCE, state and
+  nonce, ID token verified against Google's JWKS) and passwordless email-link
+  sign-in on the local backend, on D1 and Postgres. Both are off until
+  configured (`AUTH_LOCAL_PROVIDERS=google` with
+  `AUTH_GOOGLE_CLIENT_ID`/`AUTH_GOOGLE_CLIENT_SECRET`;
+  `AUTH_EMAIL_LINK_SIGNIN`). Apply migration
+  `0006_identities_and_signin_links.sql` (D1 rebuilds `auth_email_links`).
+- 4887002: Type both exception-reporting injections against their common
+  structural client contract. This keeps consumer Nuxt typechecks working when
+  dynamically provided analytics injections are inferred as unknown, without
+  changing transport priority or delayed-client behavior.
+- Updated dependencies [8faf6b3]
+  - @narduk-enterprises/narduk-app-tools@0.47.1
+
 ## 0.23.22
 
 ### Patch Changes
