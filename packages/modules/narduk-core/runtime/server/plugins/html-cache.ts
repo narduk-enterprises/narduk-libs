@@ -142,7 +142,7 @@ function settings() {
     matches: options ? createHtmlCacheMatcher(options.routes) : () => false,
     options,
     source,
-    ttlFor: options ? createHtmlCacheTtlResolver(options) : () => undefined,
+    ttlFor: options ? createHtmlCacheTtlResolver(options) : () => {},
   }
   return configured
 }

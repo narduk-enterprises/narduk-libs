@@ -355,8 +355,23 @@ describe('narduk-core databaseBackend declaration', () => {
         queryKeys: [],
         requireIndexable: true,
         routes: ['/food'],
+        routeTtls: [],
         ttlSeconds: 600,
       })
+    })
+
+    it('carries per-route TTLs to runtimeConfig and fails the build on a bad one', async () => {
+      const { nuxt, setup } = await loadCoreModule()
+      await setup({
+        htmlCache: { routes: ['/map', { path: '/stations', ttlSeconds: 120 }] },
+      })
+      expect(nuxt.options.runtimeConfig.nardukHtmlCache).toMatchObject({
+        routes: ['/map', '/stations'],
+        routeTtls: [{ path: '/stations', ttlSeconds: 120 }],
+      })
+      await expect(
+        setup({ htmlCache: { routes: [{ path: '/stations', ttlSeconds: 0 }] } }),
+      ).rejects.toThrow('ttlSeconds must be a positive integer')
     })
 
     it.each([

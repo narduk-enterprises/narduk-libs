@@ -211,7 +211,7 @@ export function createHtmlCacheTtlResolver(
   const patterns = options.routes.map((route) => ({ route, pattern: toRegExp(route) }))
   return (path) => {
     const first = patterns.find(({ pattern }) => pattern.test(path))
-    if (!first) return undefined
+    if (!first) return
     return (
       options.routeTtls.find((entry) => entry.path === first.route)?.ttlSeconds ??
       options.ttlSeconds
