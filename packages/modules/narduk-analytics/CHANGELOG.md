@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.31.5
+
+### Patch Changes
+
+- 4887002: Type both exception-reporting injections against their common
+  structural client contract. This keeps consumer Nuxt typechecks working when
+  dynamically provided analytics injections are inferred as unknown, without
+  changing transport priority or delayed-client behavior.
+
 ## 1.31.4
 
 ### Patch Changes
