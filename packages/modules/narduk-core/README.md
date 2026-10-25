@@ -789,7 +789,7 @@ default, does no I/O, and runs ahead of `00-canonical-host`. The list is
 `DEFAULT_BLOCKED_BOTS` in `@narduk-enterprises/narduk-core/shared/bot-block`:
 SemrushBot, AhrefsBot, MJ12bot, DotBot, SERankingBacklinksBot, DataForSeoBot,
 BLEXBot, Barkrowler, serpstatbot, PetalBot, Bytespider, MochiImageCrawler,
-SeekportBot, MegaIndex, Linkdex, AwarioBot, ImagesiftBot, Timpibot. A
+SeekportBot, MegaIndex, Linkdex, AwarioBot, ImagesiftBot, Timpibot, AionBot. A
 case-insensitive substring of the `User-Agent` matches. Search engines
 (Googlebot, bingbot, Applebot, DuckDuckBot), social preview fetchers, uptime
 monitors, `curl` and a missing User-Agent are never blocked, and `/robots.txt`
@@ -815,6 +815,59 @@ the same names, so compliant crawlers stop asking. A deployed app can switch it
 off without a rebuild with `NUXT_NARDUK_BOT_BLOCK_ENABLED=false`. Bytespider is
 in both this list and `AI_CRAWLERS`: an `aiCrawlers.allow` entry keeps it out of
 the robots.txt group, and `botBlock.allow` keeps it past the 403.
+
+## Edge cache for anonymous HTML (`htmlCache`)
+
+Crawlers sweep server-rendered pages that are never cached, and each hit pays a
+full SSR render (austin-texas-net, measured 2026-10-25: about 128 ms of Worker
+CPU a render, and about 80% of that app's Workers CPU was crawlers). `htmlCache`
+is an opt-in `render:before` plugin that serves anonymous GETs from
+`caches.default` and stores 200 renders:
+
+```ts
+export default defineNuxtConfig({
+  nardukCore: {
+    htmlCache: {
+      routes: ['/places/*', '/food', '/neighborhoods/**'], // path patterns
+      ttlSeconds: 600, // default
+    },
+  },
+})
+```
+
+- **Patterns:** an exact path, `*` for one segment, and a trailing `/**` for the
+  path and everything under it. A request with a query string always renders.
+- **Served and stored:** only GETs with no `Cookie` and no `Authorization`
+  header. Only a `200` string render with no `Set-Cookie` and no `noindex`
+  robots meta is stored; a request the robots module marks non-indexable
+  (`event.context.robots.indexable !== true`) neither reads nor writes.
+- **Key:** `app.buildId` and the host, so a deploy never serves HTML that points
+  at the previous build's chunks. Responses carry `x-html-cache: hit | miss`.
+- **Absent** in Node (dev, tests) and wherever `caches.default` does not exist.
+
+**Nonce-CSP apps may opt in too** (D-HTML-CACHE-PUBLIC-1, Logan 2026-10-25,
+amending the 2026-09-18 "Refuse HTML caching on nonce apps", narduk-libs#435).
+The rules that make it safe:
+
+- Only anonymous requests (no `Cookie`, no `Authorization`) are ever served from
+  or stored in the cache, and a response with `Set-Cookie` is never stored. A
+  request carrying a cookie always gets a fresh render with its own nonce.
+- On a nonce app the page is stored with the nonce it was rendered with, and a
+  hit puts that nonce back on the request, so the cached HTML and the CSP header
+  nuxt-security builds from it still match. The nonce is never rewritten per
+  hit: that would stamp it onto an injected script.
+- `nonce-csp-cache` keeps forcing `Cache-Control: private, no-store` on every
+  HTML response, covered route or not, so no browser or intermediary stores a
+  nonce page; the Worker's own `caches.default` entry is the only copy.
+- **Sign-in must end in a full page load.** Every narduk-auth sign-in path
+  (password, register, email link, reset, exchange) finishes with
+  `navigateTo(path, { external: true })`, never a client-side navigation, so no
+  script from a cached public page survives into a signed-in session. An app
+  that signs users in with its own code must do the same before it opts in.
+
+Reading a narduk-data product on a warm isolate already costs only the manifest
+when the release is unchanged (`createNardukDataClient` keeps the parsed
+artifact by identity), so no separate "release unchanged" helper is needed.
 
 ## Canonical host redirect
 

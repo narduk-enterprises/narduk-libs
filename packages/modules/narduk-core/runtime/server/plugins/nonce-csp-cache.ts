@@ -30,6 +30,11 @@ const warnedPaths = new Set<string>()
  * (askme 2026-09-18 12:20 CT): "1: Refuse HTML caching on nonce apps
  * (Recommended)". JSON API routes carry no nonce and stay edge-cacheable.
  *
+ * Amended 2026-10-25 (D-HTML-CACHE-PUBLIC-1): the opt-in `nardukCore.htmlCache`
+ * plugin may keep an anonymous page and its nonce in the Worker's own
+ * `caches.default`. This plugin is unchanged: every HTML response is still
+ * `private, no-store`, so nothing downstream stores a nonce page.
+ *
  * ## Which requests count as nonce-CSP HTML
  *
  * Two conditions, and both are needed:

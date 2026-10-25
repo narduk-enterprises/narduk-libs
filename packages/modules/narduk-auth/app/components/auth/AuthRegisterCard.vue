@@ -2,6 +2,7 @@
 import { z } from 'zod'
 
 import { cardOAuthOffers } from '../../internal/auth-card-actions'
+import { FULL_PAGE_LOAD, signInLandingPath } from '../../utils/fullPageLoad'
 import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
 
@@ -68,7 +69,10 @@ async function onSubmit() {
 
     if (result.user) {
       emit('success', result.user)
-      await navigateTo(result.redirectTo ?? resolvedRedirectPath.value, { replace: true })
+      await navigateTo(
+        signInLandingPath(result.redirectTo, resolvedRedirectPath.value),
+        FULL_PAGE_LOAD,
+      )
       return
     }
 

@@ -24,6 +24,7 @@ import {
   resolveDatabaseBackendSelection,
   usesNardukAuth,
 } from '../runtime/shared/database-backend'
+import { type HtmlCacheOptions, resolveHtmlCacheOptions } from '../runtime/shared/html-cache'
 import { DEFAULT_POSTGRES_SCHEMA, resolvePostgresSchema } from '../runtime/shared/postgres-schema'
 import {
   buildNuxtSecurityConfig,
@@ -181,6 +182,14 @@ export interface NardukCoreModuleOptions {
    * have no route to report through.
    */
   health?: boolean
+  /**
+   * Opt-in edge cache for anonymous public HTML: `{ routes, ttlSeconds }`. A hit
+   * is served from `caches.default` before Nuxt renders; see
+   * `../runtime/server/plugins/html-cache.ts`. Works under a nonce CSP too
+   * (D-HTML-CACHE-PUBLIC-1): the nonce is stored with the page. Omitted or
+   * `false`: off.
+   */
+  htmlCache?: HtmlCacheOptions | false
   image?: boolean
   /**
    * First-paint defaults (narduk-libs#1369): Nuxt UI component detection, no
@@ -312,6 +321,18 @@ function addSignedOutUserSession(
       imports.push({ from: stubPath, name: USER_SESSION_IMPORT_NAME })
     }
   })
+}
+
+/**
+ * Opt-in HTML cache, resolved here so a bad shape fails the build. Allowed under a
+ * nonce CSP (D-HTML-CACHE-PUBLIC-1): the plugin keeps the nonce with the page.
+ */
+function seedHtmlCache(
+  nuxtOptions: MutableNuxtOptionsRecord,
+  option: HtmlCacheOptions | false | undefined,
+): void {
+  const htmlCache = resolveHtmlCacheOptions(option)
+  if (htmlCache) nuxtOptions.runtimeConfig.nardukHtmlCache = htmlCache
 }
 
 /** narduk-auth relies on core installing `nuxt-auth-utils` (narduk-libs#169). */
@@ -927,6 +948,8 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
 
       // Assigned, never defu-merged, for the same array-concatenation reason.
       nuxtOptions.runtimeConfig.nardukBotBlock = resolveBotBlockOptions(options.botBlock)
+
+      seedHtmlCache(nuxtOptions, options.htmlCache)
 
       // The resolved selection overwrites any earlier value so the schema alias,
       // the server runtime and /api/health all agree on one backend.

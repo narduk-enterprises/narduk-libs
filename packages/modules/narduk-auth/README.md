@@ -832,6 +832,23 @@ in the zone**, including any future or compromised subdomain. Do not do it
 `/settings/passkeys` lists a user's credentials (name, created, last used) and
 revokes them. Up to 20 credentials per user.
 
+## Sign-in ends in a full page load
+
+Every successful sign-in in this package (`AuthLoginCard` password and passkey,
+`AuthRegisterCard`, `AuthExchangePanel`, `pages/auth/email-link.vue`, and the
+recovery branch of `pages/reset-password.vue`) lands with
+`navigateTo(path, { external: true, replace: true })`, never a client-side
+navigation. The path is the server's `redirectTo` or the sanitized `next`,
+validated again as a same-origin path (`signInLandingPath`); anything else lands
+on the configured `authRedirectPath`.
+
+Why: an app may edge-cache anonymous HTML with narduk-core's
+`nardukCore.htmlCache` (D-HTML-CACHE-PUBLIC-1), including under a nonce CSP. A
+client-side navigation would carry the JavaScript of a cached public page into
+the signed-in session; a full page load discards it, so a script from a cached
+page cannot survive into a session. An app that signs users in with its own code
+must end in a full page load too before it turns `htmlCache` on.
+
 ## Auth card components
 
 The module registers everything under `app/components` with `addComponentsDir`

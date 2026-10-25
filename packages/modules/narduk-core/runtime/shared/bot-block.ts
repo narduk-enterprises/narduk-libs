@@ -16,6 +16,10 @@
  * SSR render (roughly 300-600 ms of Worker CPU), which on riverstat.us over
  * 2026-10-17..18 was 54% of 61.6k requests: SemrushBot 22.5k, AhrefsBot 3.8k,
  * MJ12bot 3.4k, DotBot 1.7k, SERankingBacklinksBot 0.7k, MochiImageCrawler 0.3k.
+ * AionBot was about 43k requests a day on austin-texas-net from 2026-10-22
+ * (measured 2026-10-25), crawling uncached server-rendered HTML at about 128 ms
+ * of Worker CPU a render; it is part of the 80% of that app's Workers CPU that
+ * crawlers spent.
  *
  * Matching is a case-insensitive substring of the User-Agent header.
  *
@@ -46,6 +50,7 @@ export const DEFAULT_BLOCKED_BOTS = [
   'AwarioBot',
   'ImagesiftBot',
   'Timpibot',
+  'AionBot',
 ] as const
 
 /** `nardukCore.botBlock`. */

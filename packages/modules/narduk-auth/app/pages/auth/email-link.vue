@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FULL_PAGE_LOAD, signInLandingPath } from '../../utils/fullPageLoad'
 import { sanitizeLocalRedirectPath } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
 
@@ -31,7 +32,7 @@ async function onSignIn() {
 
   try {
     const result = await signInWithEmailLink({ token: token.value })
-    await navigateTo(result.redirectTo ?? nextPath.value, { replace: true })
+    await navigateTo(signInLandingPath(result.redirectTo, nextPath.value), FULL_PAGE_LOAD)
   } catch (error) {
     errorMsg.value = toUserFacingError(error, 'This sign-in link could not be used.')
   } finally {

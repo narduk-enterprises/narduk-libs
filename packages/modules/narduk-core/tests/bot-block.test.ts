@@ -74,6 +74,7 @@ const BLOCKED_USER_AGENTS = [
   'Mozilla/5.0 (compatible; Barkrowler/0.9; +https://babbar.tech/crawler)',
   'Mozilla/5.0 (Linux; Android 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36 (compatible; Bytespider; spider-feedback@bytedance.com)',
   'MochiImageCrawler/1.0',
+  'Mozilla/5.0 (compatible; AionBot/1.0; +https://aion.example/bot)',
   'semrushbot',
 ]
 
@@ -200,6 +201,7 @@ describe('bot-block list and options', () => {
       'AwarioBot',
       'ImagesiftBot',
       'Timpibot',
+      'AionBot',
     ])
   })
 

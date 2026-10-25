@@ -3,6 +3,7 @@ import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { z } from 'zod'
 
 import { cardOAuthOffers, useCardEmailLink } from '../../internal/auth-card-actions'
+import { FULL_PAGE_LOAD, signInLandingPath } from '../../utils/fullPageLoad'
 import { resolveLoginSubtitle } from '../../utils/loginCopy'
 import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
@@ -116,7 +117,10 @@ async function onSubmit() {
 
     if (result.user) {
       emit('success', result.user)
-      await navigateTo(result.redirectTo ?? resolvedRedirectPath.value, { replace: true })
+      await navigateTo(
+        signInLandingPath(result.redirectTo, resolvedRedirectPath.value),
+        FULL_PAGE_LOAD,
+      )
       return
     }
 
@@ -134,7 +138,10 @@ async function onPasskeySignIn() {
 
   try {
     await signInWithPasskey()
-    await navigateTo(resolvedRedirectPath.value, { replace: true })
+    await navigateTo(
+      signInLandingPath(resolvedRedirectPath.value, resolvedRedirectPath.value),
+      FULL_PAGE_LOAD,
+    )
   } catch (error) {
     // A user who dismisses the platform sheet gets no error banner: cancelling
     // is a choice, not a failure.

@@ -344,6 +344,29 @@ describe('narduk-core databaseBackend declaration', () => {
       else process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = previousPosthogAlias
     }
   })
+
+  describe('htmlCache', () => {
+    it('writes the resolved option to runtimeConfig, off by default', async () => {
+      const { nuxt, setup } = await loadCoreModule()
+      await setup()
+      expect(nuxt.options.runtimeConfig.nardukHtmlCache).toBeUndefined()
+      await setup({ htmlCache: { routes: ['/food'] } })
+      expect(nuxt.options.runtimeConfig.nardukHtmlCache).toEqual({
+        routes: ['/food'],
+        ttlSeconds: 600,
+      })
+    })
+
+    it.each(['enforce', 'report-only'])(
+      'is allowed on a nonce-CSP app (security.headers mode %s, D-HTML-CACHE-PUBLIC-1)',
+      async (mode) => {
+        const { nuxt, setup, modulesDone } = await loadCoreModule()
+        await setup({ htmlCache: { routes: ['/food'] }, security: { headers: { mode } } })
+        expect(nuxt.options.runtimeConfig.nardukHtmlCache).toMatchObject({ routes: ['/food'] })
+        expect(modulesDone).not.toThrow()
+      },
+    )
+  })
 })
 
 describe('narduk-core colorMode defaults', () => {
