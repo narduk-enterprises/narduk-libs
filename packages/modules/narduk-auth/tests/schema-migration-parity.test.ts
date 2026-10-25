@@ -24,14 +24,35 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const AUTH_MIGRATIONS_DIR = join(packageRoot, 'drizzle-pg')
 
 describe('auth bridge schema migration parity', () => {
-  it('narrows auth_email_links.purpose to the values the migration CHECK enforces', () => {
-    const migration = readFileSync(join(packageRoot, 'drizzle/0002_local_email_auth.sql'), 'utf8')
-    const check = /CHECK \(purpose IN \(([^)]+)\)\)/u.exec(migration)
+  it('narrows auth_email_links.purpose to the values the latest migration CHECK enforces', () => {
+    // 0002 created the table; 0006 rebuilt it with 'signin' (narduk-libs#1952).
+    const original = readFileSync(join(packageRoot, 'drizzle/0002_local_email_auth.sql'), 'utf8')
+    const rebuilt = readFileSync(
+      join(packageRoot, 'drizzle/0006_identities_and_signin_links.sql'),
+      'utf8',
+    )
+    const values = (sql: string) => {
+      const check = /CHECK \(purpose IN \(([^)]+)\)\)/u.exec(sql)
+      expect(check).not.toBeNull()
+      return [...(check?.[1] ?? '').matchAll(/'([^']+)'/gu)].map((match) => match[1])
+    }
+
+    expect(values(original)).toEqual(['setup', 'reset'])
+    expect(values(rebuilt)).toEqual(['setup', 'reset', 'signin'])
+    expect(sqliteSchema.authEmailLinks.purpose.enumValues).toEqual(values(rebuilt))
+  })
+
+  it('narrows auth_identities.provider to the values the migration CHECK enforces', () => {
+    const migration = readFileSync(
+      join(packageRoot, 'drizzle/0006_identities_and_signin_links.sql'),
+      'utf8',
+    )
+    const check = /CHECK \(provider IN \(([^)]+)\)\)/u.exec(migration)
     expect(check).not.toBeNull()
     const migrationValues = [...(check?.[1] ?? '').matchAll(/'([^']+)'/gu)].map((match) => match[1])
 
-    expect(migrationValues).toEqual(['setup', 'reset'])
-    expect(sqliteSchema.authEmailLinks.purpose.enumValues).toEqual(migrationValues)
+    expect(migrationValues).toEqual(['google'])
+    expect(sqliteAppSchema.authIdentities.provider.enumValues).toEqual(migrationValues)
   })
 
   it('narrows auth_webauthn_challenges.purpose to the values the migration CHECK enforces', () => {
@@ -105,7 +126,7 @@ describe('auth Postgres migrations match the Drizzle pg schema on a real Postgre
     expect(server.version.startsWith('17.')).toBe(true)
     await applyMigrationDirectory(database.sql, coreMigrations)
     const applied = await applyMigrationDirectory(database.sql, AUTH_MIGRATIONS_DIR)
-    expect(applied).toHaveLength(5)
+    expect(applied).toHaveLength(6)
     const coreTables = [
       'api_keys',
       'kv_cache',
@@ -167,6 +188,9 @@ describe('auth Postgres migrations match the Drizzle pg schema on a real Postgre
     )
     expect(pgSchema.authWebauthnChallenges.purpose.enumValues).toEqual(
       sqliteSchema.authWebauthnChallenges.purpose.enumValues,
+    )
+    expect(pgSchema.authIdentities.provider.enumValues).toEqual(
+      sqliteAppSchema.authIdentities.provider.enumValues,
     )
     expect(pgSchema.authWebauthnCredentials.deviceType.enumValues).toEqual(
       sqliteSchema.authWebauthnCredentials.deviceType.enumValues,
@@ -236,7 +260,7 @@ describe('auth Postgres migrations in a named schema', () => {
       schema: SCHEMA,
       table: 'auth_migrations',
     })
-    expect(applied).toHaveLength(5)
+    expect(applied).toHaveLength(6)
     expect(
       await diffSchemaAgainstDatabase(database.sql, schemaTables, {
         collations: { 'auth_oauth_kv.key': 'C' },

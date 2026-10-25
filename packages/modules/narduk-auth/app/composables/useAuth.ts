@@ -47,7 +47,7 @@ export function useAuth() {
     await fetchSession()
   }
 
-  async function startOAuth(payload: { next?: string; provider: 'apple' }) {
+  async function startOAuth(payload: { next?: string; provider: 'apple' | 'google' }) {
     return api.startOAuth(payload)
   }
 
@@ -92,6 +92,23 @@ export function useAuth() {
 
   async function completeLocalEmailPassword(payload: { newPassword: string; token: string }) {
     const result = await api.completeLocalEmailPassword(payload)
+    if (result.user) {
+      await fetchSession()
+    }
+    return result
+  }
+
+  /**
+   * Passwordless sign-in (narduk-libs#1952): mails a single-use sign-in link.
+   * The answer is the same whether or not the address has an account.
+   */
+  async function requestEmailLink(payload: { email: string; next?: string }) {
+    return api.requestEmailLink(payload)
+  }
+
+  /** Spends a sign-in link's token (from the link's `#token=` fragment) and opens a session. */
+  async function signInWithEmailLink(payload: { token: string }) {
+    const result = await api.redeemEmailLink(payload)
     if (result.user) {
       await fetchSession()
     }
@@ -147,6 +164,8 @@ export function useAuth() {
     deleteAccount,
     requestPasswordReset,
     completeLocalEmailPassword,
+    requestEmailLink,
+    signInWithEmailLink,
     enrollMfa,
     verifyMfa,
     signInWithPasskey,

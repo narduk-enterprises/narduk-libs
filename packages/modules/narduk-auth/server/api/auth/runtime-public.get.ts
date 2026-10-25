@@ -1,4 +1,5 @@
 import { setAppResponseHeader } from '@narduk-enterprises/narduk-app/server/http'
+import { readRuntimeBoolean } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 import { defineEventHandler } from 'h3'
 
 import {
@@ -7,6 +8,7 @@ import {
 } from '#narduk-auth-server/utils/auth-runtime-env'
 
 import { resolveAppleSignInConfig } from '../../../shared/utils/apple-sign-in-config'
+import { resolveGoogleSignInConfig } from '../../../shared/utils/google-sign-in-config'
 import { resolveWebauthnConfig } from '../../../shared/utils/webauthn-config'
 
 /**
@@ -34,11 +36,19 @@ export default defineEventHandler((event) => {
     authProviders: resolved.authProviders,
     env,
   })
+  const google = resolveGoogleSignInConfig({
+    authBackend: resolved.authBackend,
+    authProviders: resolved.authProviders,
+    env,
+  })
   setAppResponseHeader(event, 'Cache-Control', 'private, no-store')
   return {
     authBackend: resolved.authBackend,
     authProviders: resolved.authProviders,
     appleEnabled: apple.webEnabled,
+    googleEnabled: google.webEnabled,
+    emailLinkEnabled:
+      resolved.authBackend === 'local' && readRuntimeBoolean(event, 'AUTH_EMAIL_LINK_SIGNIN'),
     passkeysEnabled: webauthn.enabled,
   }
 })

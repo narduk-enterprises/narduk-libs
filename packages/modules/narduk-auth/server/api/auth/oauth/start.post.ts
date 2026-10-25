@@ -9,7 +9,7 @@ import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 import { startOAuthFlow } from '#narduk-auth-server/utils/app-auth'
 
 const bodySchema = z.object({
-  provider: z.enum(['apple']),
+  provider: z.enum(['apple', 'google']),
   next: z.string().optional(),
 })
 

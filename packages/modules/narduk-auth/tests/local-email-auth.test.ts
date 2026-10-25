@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildLocalEmailActionUrl,
   buildLocalEmailMessage,
+  buildLocalEmailSignInUrl,
   escapeEmailHtml,
   generateLocalEmailToken,
   hashLocalEmailValue,
@@ -14,6 +15,7 @@ import {
   isLocalEmailSelfServeOrigin,
   isMissingLocalEmailAttemptsTableError,
   localEmailLockSeconds,
+  mayCreateUserByEmailLink,
   normalizeEmailAddress,
   sanitizeLocalEmailRedirect,
   selectLocalEmailLinkPurpose,
@@ -133,6 +135,57 @@ describe('local email authentication primitives', () => {
       expect(message.html).toContain('single-use link expires in 15 minutes')
     },
   )
+
+  it('builds a sign-in link with the token in the fragment, never the query (#1952)', () => {
+    const url = new URL(
+      buildLocalEmailSignInUrl({
+        appUrl: 'https://stonx.example',
+        next: '/portfolio?x=1',
+        signInPath: '/auth/email-link',
+        token: 'opaque-token',
+      }),
+    )
+    expect(url.origin + url.pathname).toBe('https://stonx.example/auth/email-link')
+    expect(url.searchParams.get('next')).toBe('/portfolio?x=1')
+    expect(url.searchParams.has('token')).toBe(false)
+    expect(url.hash).toBe('#token=opaque-token')
+  })
+
+  it('builds an escaped sign-in email with a matching link (#1952)', () => {
+    const message = buildLocalEmailMessage({
+      actionUrl: 'https://app.example/auth/email-link?next=<bad>#token=a',
+      appName: '<Kids & Family>',
+      purpose: 'signin',
+      ttlMinutes: 15,
+    })
+    expect(message.subject).toBe('<Kids & Family>: your sign-in link')
+    expect(message.text).toContain('Use this link to sign in to <Kids & Family>')
+    expect(message.html).toContain('&lt;Kids &amp; Family&gt;')
+    expect(message.html).toContain(
+      '<a href="https://app.example/auth/email-link?next=&lt;bad&gt;#token=a">Sign in</a>',
+    )
+    expect(message.text).not.toContain('password')
+    expect(message.html).toContain('single-use link expires in 15 minutes')
+  })
+
+  it('lets a link create an account only when the app opts in with open sign-up, or the address is preauthorized', () => {
+    const base = { allowlist: ['vip@example.com'], email: 'new@example.com' }
+    expect(mayCreateUserByEmailLink({ ...base, createUsers: true, publicSignup: true })).toBe(true)
+    expect(mayCreateUserByEmailLink({ ...base, createUsers: true, publicSignup: false })).toBe(
+      false,
+    )
+    expect(mayCreateUserByEmailLink({ ...base, createUsers: false, publicSignup: true })).toBe(
+      false,
+    )
+    expect(
+      mayCreateUserByEmailLink({
+        ...base,
+        email: 'VIP@example.com',
+        createUsers: false,
+        publicSignup: false,
+      }),
+    ).toBe(true)
+  })
 
   it('applies bounded exponential lockout after five failures', () => {
     expect(localEmailLockSeconds(4)).toBe(0)

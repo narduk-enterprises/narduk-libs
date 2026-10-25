@@ -26,7 +26,7 @@ export function normalizeAuthUrl(value: string) {
 }
 
 export function isAuthProvider(value: string): value is AppAuthProvider {
-  return value === 'apple' || value === 'email'
+  return value === 'apple' || value === 'email' || value === 'google'
 }
 
 export function getSessionCookieSecure(event: H3Event) {

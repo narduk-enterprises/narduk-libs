@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull } from 'drizzle-orm'
 import { createError } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
@@ -141,6 +141,8 @@ export async function completeLocalEmailPassword(
       .where(
         and(
           eq(authEmailLinks.tokenHash, tokenHash),
+          // A sign-in link never matches here, so posting one is refused, not spent.
+          inArray(authEmailLinks.purpose, ['setup', 'reset']),
           isNull(authEmailLinks.consumedAt),
           gt(authEmailLinks.expiresAt, nowSeconds),
         ),

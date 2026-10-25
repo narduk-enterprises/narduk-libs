@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { z } from 'zod'
 
+import { cardOAuthOffers } from '../../internal/auth-card-actions'
 import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
+
+import AuthProviderButtons from './AuthProviderButtons.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -23,7 +26,7 @@ const emit = defineEmits<{
 
 const config = useRuntimeConfig()
 const route = useRoute()
-const { register, startOAuth } = useAuth()
+const { register } = useAuth()
 
 const { data: authRuntime } = useAuthRuntimePublic()
 
@@ -40,22 +43,9 @@ const state = reactive({
 })
 
 const loading = ref(false)
-const appleLoading = ref(false)
 const errorMsg = ref('')
 
-const effectiveAuthBackend = computed(
-  () => authRuntime.value?.authBackend ?? config.public.authBackend,
-)
-const effectiveAuthProviders = computed(
-  () => authRuntime.value?.authProviders ?? config.public.authProviders,
-)
-// The server's `appleEnabled` covers the local backend too (narduk-libs#164);
-// without a runtime answer, keep the build-time Supabase-only rule.
-const canUseApple = computed(
-  () =>
-    authRuntime.value?.appleEnabled ??
-    (effectiveAuthBackend.value === 'supabase' && effectiveAuthProviders.value.includes('apple')),
-)
+const oauthOffers = computed(() => cardOAuthOffers(authRuntime.value, config.public))
 const redirectRequest = computed(() =>
   resolveLocalRedirectRequest(props.redirectPath, route.query.next, config.public.authRedirectPath),
 )
@@ -100,23 +90,6 @@ async function onSubmit() {
     loading.value = false
   }
 }
-
-async function onAppleSignIn() {
-  appleLoading.value = true
-  errorMsg.value = ''
-
-  try {
-    const result = await startOAuth({
-      provider: 'apple',
-      next: resolvedRedirectPath.value,
-    })
-    await navigateTo(result.url, { external: true })
-  } catch (error) {
-    errorMsg.value = toUserFacingError(error, 'Unable to start Sign in with Apple.')
-  } finally {
-    appleLoading.value = false
-  }
-}
 </script>
 
 <template>
@@ -143,19 +116,15 @@ async function onAppleSignIn() {
     />
 
     <div class="space-y-4">
-      <UButton
-        v-if="canUseApple"
-        color="neutral"
-        variant="solid"
-        class="w-full justify-center"
-        :loading="appleLoading"
-        @click="onAppleSignIn"
-      >
-        Continue with Apple
-      </UButton>
+      <AuthProviderButtons
+        v-model:error="errorMsg"
+        :apple="oauthOffers.apple"
+        :google="oauthOffers.google"
+        :next="resolvedRedirectPath"
+      />
 
       <div
-        v-if="canUseApple"
+        v-if="oauthOffers.apple || oauthOffers.google"
         class="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-dimmed"
       >
         <span class="h-px flex-1 bg-default" />

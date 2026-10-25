@@ -228,6 +228,7 @@ Postgres see [Postgres (Hyperdrive)](#postgres-hyperdrive) below):
 3. `drizzle/0003_webauthn_credentials.sql`
 4. `drizzle/0004_native_auth.sql`
 5. `drizzle/0005_mcp_oauth.sql`
+6. `drizzle/0006_identities_and_signin_links.sql`
 
 As of 1.20.0, `0002_local_email_auth.sql` is **required for the default local
 backend**, not just the optional email-link feature: every local email/password
@@ -247,11 +248,20 @@ down-migration; reverting means dropping `auth_webauthn_credentials` and
 [MCP OAuth](#mcp-oauth-connected-apps). It is additive (`auth_oauth_kv` and one
 index); dropping the table disconnects every connected app.
 
+`0006_identities_and_signin_links.sql` adds `auth_identities` (the Google
+subjects of [Google sign-in](#google-sign-in-on-the-local-backend)) and allows
+`purpose = 'signin'` on `auth_email_links` for
+[email-link sign-in](#passwordless-email-link-sign-in). SQLite cannot alter a
+`CHECK`, so on D1 it rebuilds `auth_email_links` (copy, drop, rename, recreate
+both indexes) and keeps every row; on Postgres it swaps the named
+`auth_email_links_purpose_check` constraint. Apply it before upgrading to a
+version that ships these features, whether or not the app turns them on.
+
 ### Postgres (Hyperdrive)
 
 An app on narduk-core's `databaseBackend: 'postgres'` applies the Postgres
 translations in `drizzle-pg/` instead. They carry the same file names and the
-same tables as `drizzle/`, `drizzle-pg/0001`–`0005`, and are exported as
+same tables as `drizzle/`, `drizzle-pg/0001`–`0006`, and are exported as
 `@narduk-enterprises/narduk-auth/drizzle-pg/*`.
 
 **In a named schema** (narduk-libs#1953): set `nardukCore.postgresSchema` once
@@ -291,9 +301,11 @@ nothing in the app changes. Where the dialects differ:
 nullability, defaults, collations, `CHECK` values, keys, foreign keys, indexes),
 and `tests/postgres-runtime.integration.test.ts` runs registration, login,
 lockout, sessions, email links, Apple account linking, passkey storage, MCP
-OAuth and native sessions against that server. The tests use
-`embedded-postgres`; set `NARDUK_PG17_TEST_URL` to use an external PostgreSQL 17
-instead.
+OAuth and native sessions against that server.
+`tests/google-email-link-postgres.integration.test.ts` and its D1 twin run
+Google sign-in (against a fake issuer with its own JWKS) and email-link sign-in
+on each backend. The tests use `embedded-postgres`; set `NARDUK_PG17_TEST_URL`
+to use an external PostgreSQL 17 instead.
 
 Two limits. `GET /api/health` on Postgres does not check for the auth tables
 (core reports `unsupported-backend` for that probe). And password hashes are
@@ -338,26 +350,28 @@ one conditional database update. Harvest-specific farm membership and role
 ceilings remain in Harvest Tracker; PACC-specific tenant and prototype-provider
 logic remains in PACC TRAC.
 
-The pathway is email plus password, not passwordless sign-in. Existing local
-users may request a reset link. A new local user may receive a setup link only
-when their normalized address exactly matches `AUTH_EMAIL_ALLOWLIST`; public
-registration remains governed separately by `AUTH_PUBLIC_SIGNUP`. Browser page
-loads never consume a link—the password completion POST does.
+The pathway is email plus password; passwordless sign-in is a separate opt-in
+(see [Passwordless email-link sign-in](#passwordless-email-link-sign-in)).
+Existing local users may request a reset link. A new local user may receive a
+setup link only when their normalized address exactly matches
+`AUTH_EMAIL_ALLOWLIST`; public registration remains governed separately by
+`AUTH_PUBLIC_SIGNUP`. Browser page loads never consume a link—the password
+completion POST does.
 
 ### Configuration
 
 Apply all package migrations, including `drizzle/0002_local_email_auth.sql`,
 then configure server-only runtime values:
 
-| Variable                       | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AUTH_EMAIL_ALLOWLIST`         | Optional comma-separated exact addresses allowed to create a local account from a setup link.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `AUTH_EMAIL_APP_URL`           | Trusted application origin used to build links; defaults to public `appUrl`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `AUTH_EMAIL_RESEND_API_KEY`    | Resend credential; falls back to `RESEND_API_KEY`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `AUTH_EMAIL_FROM`              | Verified sender; falls back to `MAIL_FROM`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `AUTH_EMAIL_TOKEN_TTL_MINUTES` | Link lifetime, bounded to 5–60 minutes; defaults to 15.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `AUTH_EMAIL_SELF_SERVE_LINKS`  | Local fixture shortcut that returns a password link instead of sending mail. Requires an exact matching request and `AUTH_EMAIL_APP_URL` origin on `localhost`, `127.0.0.1`, or `[::1]`; public/mismatched origins fail with 503 before token issuance. Forwarded host/protocol headers cannot enable it.                                                                                                                                                                                                                                                                        |
-| `AUTH_LOCAL_PROVIDERS`         | Optional comma-separated opt-in to advertise additional providers (from `apple`, `passkey`) alongside the always-on `email` provider on the local backend. Unknown names are silently dropped. Unset, the local backend advertises exactly `['email']`, unchanged from prior versions. Adding `passkey` is what turns on the WebAuthn ceremonies (see [Passkeys](#passkeys)), which additionally require `AUTH_WEBAUTHN_RP_ID` and `AUTH_WEBAUTHN_ORIGIN`. Adding `apple` still only advertises the provider; native Sign in with Apple on the local backend is not implemented. |
+| Variable                       | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_EMAIL_ALLOWLIST`         | Optional comma-separated exact addresses allowed to create a local account from a setup link.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `AUTH_EMAIL_APP_URL`           | Trusted application origin used to build links; defaults to public `appUrl`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `AUTH_EMAIL_RESEND_API_KEY`    | Resend credential; falls back to `RESEND_API_KEY`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `AUTH_EMAIL_FROM`              | Verified sender; falls back to `MAIL_FROM`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `AUTH_EMAIL_TOKEN_TTL_MINUTES` | Link lifetime, bounded to 5–60 minutes; defaults to 15.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `AUTH_EMAIL_SELF_SERVE_LINKS`  | Local fixture shortcut that returns a password link instead of sending mail. Requires an exact matching request and `AUTH_EMAIL_APP_URL` origin on `localhost`, `127.0.0.1`, or `[::1]`; public/mismatched origins fail with 503 before token issuance. Forwarded host/protocol headers cannot enable it.                                                                                                                                                                                                                                                                                                                                                                                     |
+| `AUTH_LOCAL_PROVIDERS`         | Optional comma-separated opt-in to advertise additional providers (from `apple`, `google`, `passkey`) alongside the always-on `email` provider on the local backend. Unknown names are silently dropped. Unset, the local backend advertises exactly `['email']`, unchanged from prior versions. Adding `passkey` is what turns on the WebAuthn ceremonies (see [Passkeys](#passkeys)), which additionally require `AUTH_WEBAUTHN_RP_ID` and `AUTH_WEBAUTHN_ORIGIN`. Adding `apple` or `google` turns on that provider only once its client ids are also set (see [Sign in with Apple](#sign-in-with-apple-on-the-local-backend) and [Google sign-in](#google-sign-in-on-the-local-backend)). |
 
 Email requests return the same public message for existing, preauthorized, and
 unknown addresses. Stored links contain only a SHA-256 token digest and expire
@@ -643,6 +657,90 @@ rather than letting whoever registered the address first share the account. With
 no match, a password-less account is created when public sign-up is open (403
 when closed), named from the name Apple posts on first authorization. Password
 login stays available to accounts that have a password.
+
+## Google sign-in on the local backend
+
+The local backend runs Google's OpenID Connect authorization code flow itself
+(narduk-libs#1951). It is on only when the app advertises the provider and sets
+both Google credentials; otherwise the button is hidden and the routes
+answer 501.
+
+| Variable                      | Purpose                                                        |
+| ----------------------------- | -------------------------------------------------------------- |
+| `AUTH_LOCAL_PROVIDERS=google` | Advertise the provider (comma-separated with others).          |
+| `AUTH_GOOGLE_CLIENT_ID`       | The OAuth web client id: `client_id` and the ID token's `aud`. |
+| `AUTH_GOOGLE_CLIENT_SECRET`   | The client secret, used only to redeem the code server-side.   |
+
+`GET /api/auth/runtime-public` reports `googleEnabled`, and the login and
+register cards show "Continue with Google" from it.
+
+**Flow.** `POST /api/auth/oauth/start` with `provider: 'google'` returns
+`/api/auth/google/start?next=…`. That route binds a random `state`, nonce and
+PKCE verifier to the browser in a single-use `HttpOnly`, `SameSite=Lax` cookie
+scoped to `/api` (ten minutes; `Secure` as the session cookie is), then
+redirects to Google with `response_type=code`, `scope=openid email profile`, the
+nonce's SHA-256 and an S256 `code_challenge`. Google redirects back to
+`/api/callbacks/auth/google`, which refuses a `state` that is not this
+browser's, redeems the code with the verifier and secret, and verifies the ID
+token against Google's JWKS (cached for an hour): RS256 signature, `iss`, `aud`
+= the client id, `exp`/`iat` and the nonce. It then redirects to `next`, or to
+the auth callback page with an error. Register
+`https://<app>/api/callbacks/auth/google` as an authorized redirect URI on the
+client.
+
+**Accounts.** A user is found by their Google subject in `auth_identities`. A
+first Google sign-in links to an existing account with the same address only
+when Google marks it verified **and** this app has proven it
+(`auth_verified_emails`), the same rule as Apple; otherwise it is refused
+with 409. Proof is recorded only when `authLocalEmailVerification` is on; with
+it off, linking to an existing account is always refused. An address Google has
+not verified never links or creates. With no match, a password-less account is
+created when public sign-up is open (403 when closed).
+
+### Importing Google identities
+
+An importer (for example stonx leaving Supabase) writes each Google subject to
+`auth_identities`, one row per user, after the user row exists:
+
+```sql
+INSERT INTO auth_identities (id, provider, subject, user_id, email, created_at)
+VALUES (<new uuid>, 'google', <Supabase auth.identities.provider_id>, <users.id>,
+        <lower-cased email>, <identity created_at, ISO-8601>);
+```
+
+`(provider, subject)` and `(user_id, provider)` are unique. `subject` is
+Google's `sub`, which Supabase stores as `auth.identities.provider_id` where
+`provider = 'google'`. Also insert the address into `auth_verified_emails` if
+the account should keep linking by email.
+
+## Passwordless email-link sign-in
+
+The local backend can sign people in with a single-use emailed link
+(narduk-libs#1952). It reuses `auth_email_links`, the token TTL, the delivery
+settings and the throttle of the password links above.
+
+| Variable                       | Purpose                                                                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_EMAIL_LINK_SIGNIN`       | `true` turns the feature on. Off, both routes answer 501 and the login card hides the button.                                            |
+| `AUTH_EMAIL_LINK_CREATE_USERS` | `true` lets a link create the account for a new address when `AUTH_PUBLIC_SIGNUP` is open. An `AUTH_EMAIL_ALLOWLIST` address may always. |
+
+`POST /api/auth/email-link/request` (`{ email, next? }`) answers the same
+`email_link_sent` message for every address; a link is issued only to an
+existing account or to an address allowed to create one, and it replaces any
+outstanding link for that address. The mail (`narduk-auth:email` hook purpose
+`signin`) links to `/auth/email-link?next=…#token=…`; the token travels in the
+fragment, so it is not in server logs or `Referer`. Only its SHA-256 is stored.
+The page never redeems on load: the user presses "Sign in", which posts the
+token to `POST /api/auth/email-link/redeem`; one conditional update claims the
+link, so it signs in once. A password setup or reset token posted there, or a
+sign-in token posted to the password route, is refused without being spent.
+Redeeming a link for an account whose address this app has not proven (for
+example one registered by someone else; with `authLocalEmailVerification` off,
+that is every account with a password) drops that account's password and its
+other sessions, as a password reset would, before signing the holder in.
+
+`GET /api/auth/runtime-public` reports `emailLinkEnabled`; `useAuth()` exposes
+`requestEmailLink({ email, next? })` and `signInWithEmailLink({ token })`.
 
 ## Passkeys
 

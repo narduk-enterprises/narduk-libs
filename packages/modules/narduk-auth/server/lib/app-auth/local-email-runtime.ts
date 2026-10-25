@@ -27,6 +27,10 @@ export interface LocalEmailSettings {
   allowlist: string[]
   appName: string
   appUrl: string
+  /** `AUTH_EMAIL_LINK_CREATE_USERS`: a sign-in link may create the account (narduk-libs#1952). */
+  emailLinkCreateUsers: boolean
+  /** `AUTH_EMAIL_LINK_SIGNIN`: passwordless sign-in links are on (narduk-libs#1952). */
+  emailLinkSignIn: boolean
   from: string
   resendApiKey: string
   selfServeLinks: boolean
@@ -60,6 +64,8 @@ export function readLocalEmailSettings(event: H3Event): LocalEmailSettings {
     allowlist: readRuntimeStringList(event, 'AUTH_EMAIL_ALLOWLIST').map(normalizeEmailAddress),
     appName: readRuntimeConfigString(config.public.appName, 'Narduk app'),
     appUrl,
+    emailLinkCreateUsers: readRuntimeBoolean(event, 'AUTH_EMAIL_LINK_CREATE_USERS'),
+    emailLinkSignIn: readRuntimeBoolean(event, 'AUTH_EMAIL_LINK_SIGNIN'),
     from: readRuntimeStringFromKeys(event, ['AUTH_EMAIL_FROM', 'MAIL_FROM']),
     resendApiKey: readRuntimeStringFromKeys(event, ['AUTH_EMAIL_RESEND_API_KEY', 'RESEND_API_KEY']),
     selfServeLinks,

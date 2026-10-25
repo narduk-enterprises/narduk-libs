@@ -2,9 +2,12 @@
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { z } from 'zod'
 
+import { cardOAuthOffers, useCardEmailLink } from '../../internal/auth-card-actions'
 import { resolveLoginSubtitle } from '../../utils/loginCopy'
 import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
+
+import AuthProviderButtons from './AuthProviderButtons.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -25,7 +28,7 @@ const emit = defineEmits<{
 
 const config = useRuntimeConfig()
 const route = useRoute()
-const { login, startOAuth, signInWithPasskey } = useAuth()
+const { login, requestEmailLink, signInWithPasskey } = useAuth()
 
 const { data: authRuntime } = useAuthRuntimePublic()
 
@@ -40,7 +43,6 @@ const state = reactive({
 })
 
 const loading = ref(false)
-const appleLoading = ref(false)
 const passkeyLoading = ref(false)
 // WebAuthn is a browser API: on the server this is always false, so the button
 // renders only after hydration rather than flashing an affordance the visiting
@@ -52,19 +54,7 @@ onMounted(() => {
 const errorMsg = ref('')
 const infoMsg = ref('')
 
-const effectiveAuthBackend = computed(
-  () => authRuntime.value?.authBackend ?? config.public.authBackend,
-)
-const effectiveAuthProviders = computed(
-  () => authRuntime.value?.authProviders ?? config.public.authProviders,
-)
-// The server's `appleEnabled` covers the local backend too (narduk-libs#164);
-// without a runtime answer, keep the build-time Supabase-only rule.
-const canUseApple = computed(
-  () =>
-    authRuntime.value?.appleEnabled ??
-    (effectiveAuthBackend.value === 'supabase' && effectiveAuthProviders.value.includes('apple')),
-)
+const oauthOffers = computed(() => cardOAuthOffers(authRuntime.value, config.public))
 // `passkeysEnabled` is the server's own answer to "would a ceremony succeed?" —
 // backend, provider opt-in AND a valid Relying Party binding. Falling back to
 // the provider list alone would show a button that 501s on the first click, so
@@ -72,14 +62,23 @@ const canUseApple = computed(
 const canUsePasskey = computed(
   () => browserHasWebAuthn.value && authRuntime.value?.passkeysEnabled === true,
 )
+// Passwordless email links (narduk-libs#1952) are local-backend only and opt-in.
+const canUseEmailLink = computed(() => authRuntime.value?.emailLinkEnabled === true)
 const resolvedSubtitle = computed(() =>
-  resolveLoginSubtitle(canUseApple.value, props.subtitle, canUsePasskey.value),
+  resolveLoginSubtitle(oauthOffers.value.apple, props.subtitle, canUsePasskey.value),
 )
 const canRegister = computed(() => config.public.authPublicSignup)
 const redirectRequest = computed(() =>
   resolveLocalRedirectRequest(props.redirectPath, route.query.next, config.public.authRedirectPath),
 )
 const resolvedRedirectPath = computed(() => redirectRequest.value.path)
+const emailLink = useCardEmailLink({
+  email: () => state.email,
+  errorMsg,
+  infoMsg,
+  next: resolvedRedirectPath,
+  requestEmailLink,
+})
 const registerLink = computed(() =>
   withLocalRedirectQuery(config.public.authRegisterPath, redirectRequest.value),
 )
@@ -150,23 +149,6 @@ async function onPasskeySignIn() {
     passkeyLoading.value = false
   }
 }
-
-async function onAppleSignIn() {
-  appleLoading.value = true
-  errorMsg.value = ''
-
-  try {
-    const result = await startOAuth({
-      provider: 'apple',
-      next: resolvedRedirectPath.value,
-    })
-    await navigateTo(result.url, { external: true })
-  } catch (error) {
-    errorMsg.value = toUserFacingError(error, 'Unable to start Sign in with Apple.')
-  } finally {
-    appleLoading.value = false
-  }
-}
 </script>
 
 <template>
@@ -202,16 +184,12 @@ async function onAppleSignIn() {
     />
 
     <div class="space-y-4">
-      <UButton
-        v-if="canUseApple"
-        color="neutral"
-        variant="solid"
-        class="w-full justify-center"
-        :loading="appleLoading"
-        @click="onAppleSignIn"
-      >
-        Continue with Apple
-      </UButton>
+      <AuthProviderButtons
+        v-model:error="errorMsg"
+        :apple="oauthOffers.apple"
+        :google="oauthOffers.google"
+        :next="resolvedRedirectPath"
+      />
 
       <UButton
         v-if="canUsePasskey"
@@ -227,7 +205,7 @@ async function onAppleSignIn() {
       </UButton>
 
       <div
-        v-if="canUseApple || canUsePasskey"
+        v-if="oauthOffers.apple || oauthOffers.google || canUsePasskey"
         class="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-dimmed"
       >
         <span class="h-px flex-1 bg-default" />
@@ -274,6 +252,19 @@ async function onAppleSignIn() {
           Sign In
         </UButton>
       </UForm>
+
+      <UButton
+        v-if="canUseEmailLink"
+        type="button"
+        color="neutral"
+        variant="ghost"
+        class="w-full justify-center"
+        :loading="emailLink.loading.value"
+        data-testid="auth-login-email-link"
+        @click="emailLink.send"
+      >
+        Email me a sign-in link
+      </UButton>
     </div>
 
     <template #footer>

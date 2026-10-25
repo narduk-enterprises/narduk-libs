@@ -11,6 +11,10 @@ import {
   resolveAuthEnvironment,
   type ResolvedAuthEnvironment,
 } from '../../shared/utils/auth-environment'
+import {
+  type GoogleSignInConfig,
+  resolveGoogleSignInConfig,
+} from '../../shared/utils/google-sign-in-config'
 
 import type { H3Event } from 'h3'
 
@@ -84,6 +88,20 @@ export function resolveAppleSignInForEvent(
   const env = readAuthRuntimeEnv(event)
   const resolved = resolveAuthEnvironment(env)
   return resolveAppleSignInConfig({
+    authBackend: backend ?? resolved.authBackend,
+    authProviders: resolved.authProviders,
+    env,
+  })
+}
+
+/** Google sign-in as the running Worker sees it (narduk-libs#1951); see `resolveAppleSignInForEvent`. */
+export function resolveGoogleSignInForEvent(
+  event: H3Event,
+  backend?: AppAuthBackend,
+): GoogleSignInConfig {
+  const env = readAuthRuntimeEnv(event)
+  const resolved = resolveAuthEnvironment(env)
+  return resolveGoogleSignInConfig({
     authBackend: backend ?? resolved.authBackend,
     authProviders: resolved.authProviders,
     env,

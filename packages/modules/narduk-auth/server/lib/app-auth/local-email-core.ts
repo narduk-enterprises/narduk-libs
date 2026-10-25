@@ -1,6 +1,7 @@
 import { sanitizeSameOriginPath } from '../../../shared/utils/same-origin-path'
 
-export type LocalEmailLinkPurpose = 'reset' | 'setup'
+/** `signin` is the passwordless email link (narduk-libs#1952). */
+export type LocalEmailLinkPurpose = 'reset' | 'setup' | 'signin'
 
 /** The response-link shortcut is only for a matching loopback fixture origin. */
 export function isLocalEmailSelfServeOrigin(appUrl: string, requestUrl: string): boolean {
@@ -51,7 +52,7 @@ export function normalizeEmailAddress(value: string): string {
   return value.trim().toLowerCase()
 }
 
-function bytesToBase64Url(bytes: Uint8Array): string {
+export function bytesToBase64Url(bytes: Uint8Array): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
   let encoded = ''
 
@@ -87,7 +88,7 @@ export function selectLocalEmailLinkPurpose(params: {
   allowlist: readonly string[]
   email: string
   userExists: boolean
-}): LocalEmailLinkPurpose | null {
+}): 'reset' | 'setup' | null {
   if (params.userExists) return 'reset'
   return isEmailPreauthorized(params.email, params.allowlist) ? 'setup' : null
 }
@@ -112,6 +113,40 @@ export function buildLocalEmailActionUrl(params: {
   return url.toString()
 }
 
+/**
+ * Whether a sign-in link may be issued to (and redeemed for) an address with no
+ * account yet: the app opted into creating accounts by link and public sign-up
+ * is open, or the address is preauthorized.
+ */
+export function mayCreateUserByEmailLink(params: {
+  allowlist: readonly string[]
+  createUsers: boolean
+  email: string
+  publicSignup: boolean
+}): boolean {
+  return (
+    (params.createUsers && params.publicSignup) ||
+    isEmailPreauthorized(params.email, params.allowlist)
+  )
+}
+
+/**
+ * The passwordless sign-in link. The token rides in the fragment, which the
+ * browser never sends, so it stays out of request logs and `Referer`; the page
+ * reads it and redeems it only on an explicit POST.
+ */
+export function buildLocalEmailSignInUrl(params: {
+  appUrl: string
+  next: string
+  signInPath: string
+  token: string
+}): string {
+  const url = new URL(params.signInPath, params.appUrl)
+  url.searchParams.set('next', params.next)
+  url.hash = new URLSearchParams({ token: params.token }).toString()
+  return url.toString()
+}
+
 export function escapeEmailHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -128,6 +163,7 @@ export function buildLocalEmailMessage(params: {
   ttlMinutes: number
 }) {
   const appName = params.appName.trim() || 'Narduk app'
+  if (params.purpose === 'signin') return buildLocalEmailSignInMessage({ ...params, appName })
   const action = params.purpose === 'setup' ? 'set up your password' : 'reset your password'
   const escapedAppName = escapeEmailHtml(appName)
   const escapedActionUrl = escapeEmailHtml(params.actionUrl)
@@ -136,6 +172,20 @@ export function buildLocalEmailMessage(params: {
     subject: `${appName}: ${params.purpose === 'setup' ? 'set up' : 'reset'} your password`,
     text: `Use this link to ${action} for ${appName}:\n\n${params.actionUrl}\n\nThis single-use link expires in ${params.ttlMinutes} minutes. If you did not request it, you can ignore this email.`,
     html: `<p>Use the link below to ${escapeEmailHtml(action)} for ${escapedAppName}.</p><p><a href="${escapedActionUrl}">${params.purpose === 'setup' ? 'Set up password' : 'Reset password'}</a></p><p>This single-use link expires in ${params.ttlMinutes} minutes. If you did not request it, you can ignore this email.</p>`,
+  }
+}
+
+function buildLocalEmailSignInMessage(params: {
+  actionUrl: string
+  appName: string
+  ttlMinutes: number
+}) {
+  const escapedAppName = escapeEmailHtml(params.appName)
+  const escapedActionUrl = escapeEmailHtml(params.actionUrl)
+  return {
+    subject: `${params.appName}: your sign-in link`,
+    text: `Use this link to sign in to ${params.appName}:\n\n${params.actionUrl}\n\nThis single-use link expires in ${params.ttlMinutes} minutes. If you did not request it, you can ignore this email.`,
+    html: `<p>Use the link below to sign in to ${escapedAppName}.</p><p><a href="${escapedActionUrl}">Sign in</a></p><p>This single-use link expires in ${params.ttlMinutes} minutes. If you did not request it, you can ignore this email.</p>`,
   }
 }
 
