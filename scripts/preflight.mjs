@@ -22,7 +22,14 @@
  * `releasePrIdentity`. `--release-pr` asks for that proof on a detached head;
  * a checkout of the `changeset-release/main` branch asks for it implicitly.
  *
+ * A diff that reaches every package (the root package.json, the lockfile) runs
+ * every package's gates serially, and that has taken 50 minutes on a loaded
+ * lane guest (agent-infrastructure#3802, #3864). `--packages` narrows the
+ * package gates to the packages the author names; the run then says it is
+ * partial, because CI still gates the whole affected set.
+ *
  * Usage: pnpm run preflight [--base <ref>] [--no-fetch] [--no-consumer] [--release-pr]
+ *                           [--packages <name,name>]
  */
 import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
@@ -119,7 +126,23 @@ export function preflightChangedFiles(repositoryRoot, base) {
 }
 
 function parsePreflightArgs(argv) {
-  const options = { base: 'origin/main', fetch: true, consumer: true, releasePr: false }
+  const options = {
+    base: 'origin/main',
+    fetch: true,
+    consumer: true,
+    releasePr: false,
+    packages: null,
+  }
+  const packageList = (value) => {
+    const names = (value ?? '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean)
+    if (names.length === 0 || names.some((name) => name.startsWith('-'))) {
+      throw new Error('--packages requires a comma-separated list.')
+    }
+    return names
+  }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--base') options.base = argv[(index += 1)]
@@ -127,6 +150,9 @@ function parsePreflightArgs(argv) {
     else if (argument === '--no-fetch') options.fetch = false
     else if (argument === '--no-consumer') options.consumer = false
     else if (argument === '--release-pr') options.releasePr = true
+    else if (argument === '--packages') options.packages = packageList(argv[(index += 1)])
+    else if (argument.startsWith('--packages='))
+      options.packages = packageList(argument.slice('--packages='.length))
     else throw new Error(`Unknown preflight argument: ${argument}`)
   }
   if (!options.base) throw new Error('--base requires a ref.')
@@ -134,6 +160,31 @@ function parsePreflightArgs(argv) {
 }
 
 export { parsePreflightArgs }
+
+/**
+ * The package names `--packages` selects, resolved against the workspace. A
+ * name may be the full `@scope/name` or the bare directory-style name
+ * (`narduk-core`), which is how the CI duration table and most people spell
+ * it. An unknown name is refused rather than silently gating nothing.
+ *
+ * @param {string[]} requested
+ * @param {Iterable<string>} workspaceNames
+ * @returns {string[]}
+ */
+export function selectPackages(requested, workspaceNames) {
+  const known = [...workspaceNames]
+  const unknown = []
+  const selected = new Set()
+  for (const name of requested) {
+    const match = known.find((candidate) => candidate === name || candidate.endsWith(`/${name}`))
+    if (match) selected.add(match)
+    else unknown.push(name)
+  }
+  if (unknown.length > 0) {
+    throw new Error(`--packages names no workspace package: ${unknown.join(', ')}`)
+  }
+  return [...selected].sort()
+}
 
 export { fetchTargetForBase } from './git-base-refresh.mjs'
 
@@ -233,6 +284,13 @@ async function main() {
     console.log(`preflight: ${refreshed ?? `${options.base} names no remote branch to refresh.`}`)
   }
 
+  // Resolve --packages before any phase runs, so a misspelled name fails in
+  // seconds rather than after the contracts and the audit.
+  const workspace = loadWorkspace(root)
+  const requestedPackages = options.packages
+    ? selectPackages(options.packages, workspace.byName.keys())
+    : null
+
   const baseline = trackedTreeSnapshot(root)
   const failures = []
 
@@ -276,7 +334,6 @@ async function main() {
   // --- Plan ---------------------------------------------------------------
   const plannedBase = plannedComparisonBase(root, options.base)
   const changedFiles = preflightChangedFiles(root, plannedBase)
-  const workspace = loadWorkspace(root)
   const plan = computeAffectedSet({ changedFiles, consumerScopeMode: 'scoped' })
   console.log(`=== plan (against ${options.base} ${plannedBase.slice(0, 12)}) ===`)
   console.log(`Changed files: ${changedFiles.length}`)
@@ -366,11 +423,22 @@ async function main() {
   phase('audit', 'pnpm', ['audit', '--audit-level', 'high'])
 
   // --- The affected packages' own gates -----------------------------------
-  const gateable = plan.affectedNames.filter((name) => {
+  const gateNames = requestedPackages ?? plan.affectedNames
+  if (requestedPackages) {
+    const outside = gateNames.filter((name) => !plan.affectedNames.includes(name))
+    console.log(
+      `\npreflight: --packages limits the package gates to ${gateNames.join(', ')}; ` +
+        `the plan selected ${plan.affectedNames.length}. CI still gates the whole set.`,
+    )
+    if (outside.length > 0) {
+      console.log(`preflight: not in the affected set, gated anyway: ${outside.join(', ')}`)
+    }
+  }
+  const gateable = gateNames.filter((name) => {
     const entry = workspace.byName.get(name)
     return packageGates.every((gate) => typeof entry?.manifest.scripts?.[gate] === 'string')
   })
-  const skipped = plan.affectedNames.filter((name) => !gateable.includes(name))
+  const skipped = gateNames.filter((name) => !gateable.includes(name))
   if (skipped.length > 0) {
     console.log(`\npreflight: no package gates for ${skipped.join(', ')} (missing scripts).`)
   }
@@ -383,7 +451,9 @@ async function main() {
     if (gateable.length > 6) {
       console.log(
         `This diff reaches ${gateable.length} packages, so all ${packageGates.length} gates run for each of them, serially. ` +
-          'A narrower diff is the only thing that makes this quick.',
+          'A full run has taken 50 minutes on a loaded lane guest: run it in the background ' +
+          'with a timeout of at least 60 minutes, or gate only what you changed with ' +
+          '--packages <name,name> --no-consumer and let CI run the rest.',
       )
     }
     try {
@@ -443,6 +513,14 @@ async function main() {
   if (failures.length > 0) {
     console.error(`preflight: FAILED\n${failures.map((failure) => `  - ${failure}`).join('\n')}`)
     process.exit(1)
+  }
+  if (requestedPackages) {
+    const ran = gateable.length > 0 ? `ran only for ${gateable.join(', ')}` : 'did not run'
+    console.log(
+      `preflight: OK (partial) — package gates ${ran}; ` +
+        'CI gates the full affected set. The working tree is unchanged.',
+    )
+    return
   }
   console.log('preflight: OK — the working tree is unchanged.')
 }
