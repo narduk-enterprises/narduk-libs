@@ -234,9 +234,11 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     head: { sha: headSha, ref: 'feature', repo: { full_name: 'example/app' } },
     ...extra,
   })
+  /** The pull requests GitHub lists for the head branch, open or closed. */
+  const pullsByHead = `pulls?state=all&head=${encodeURIComponent('example:feature')}&per_page=100`
   const pullTables = (sha: string, p: object, headEvs: Ev[], headTree = tree) => [
     ci(sha, []),
-    { [`commits/${sha}/pulls?per_page=30`]: [p] },
+    { [`commits/${sha}/pulls?per_page=30`]: [p], [pullsByHead]: [p] },
     ci(headSha, headEvs),
     { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: headTree } } },
   ]
@@ -302,7 +304,7 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     const merged = fakeTree(landedLeaves)
     return [
       ci(sha, []),
-      { [`commits/${sha}/pulls?per_page=30`]: [pull(sha)] },
+      { [`commits/${sha}/pulls?per_page=30`]: [pull(sha)], [pullsByHead]: [pull(sha)] },
       ci(headSha, headEvs),
       head.table,
       merged.table,
@@ -705,7 +707,37 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
       // GitHub empties pull_requests once the pull request merges (operator-portal
       // run 40380182555 after #3173): the run on the pull request's own head
       // branch is its evidence, and a run of the same head from another branch is not.
-      expect(assertCiGateGreen(answers({ ...prEv, pulls: [] }), gate)).toContain('#7')
+      const merged = (...others: object[]) => ({ [pullsByHead]: [pull(sha), ...others] })
+      expect(
+        assertCiGateGreen(
+          github(...pullTables(sha, pull(sha), [{ ...prEv, pulls: [] }]), merged()),
+          gate,
+        ),
+      ).toContain('#7')
+      // Another pull request of the same head (onto a release base) ran CI on
+      // another merge result; its run reads the same, so none of them counts.
+      const sibling = pull(sha, { number: 8, merged_at: null, base: { ref: 'release' } })
+      expect(
+        refusal(github(...pullTables(sha, pull(sha), [{ ...prEv, pulls: [] }]), merged(sibling))),
+      ).toThrow('not green')
+      // A pull request of the same branch at another head is no rival.
+      expect(
+        assertCiGateGreen(
+          github(
+            ...pullTables(sha, pull(sha), [{ ...prEv, pulls: [] }]),
+            merged(pull(sha, { number: 5, head: { sha: 'e'.repeat(40), ref: 'feature' } })),
+          ),
+          gate,
+        ),
+      ).toContain('#7')
+      for (const unreadable of [null, Array.from({ length: 100 }, () => pull(sha))])
+        expect(
+          refusal(
+            github(...pullTables(sha, pull(sha), [{ ...prEv, pulls: [] }]), {
+              [pullsByHead]: unreadable,
+            }),
+          ),
+        ).toThrow('Could not list the pull requests of feature')
       expect(refusal(answers({ ...prEv, pulls: [], branch: 'release-copy' }))).toThrow('not green')
       expect(
         refusal(

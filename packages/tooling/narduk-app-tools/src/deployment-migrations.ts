@@ -307,7 +307,7 @@ function ciVerdict(
   commit: string,
   events: ReadonlySet<string>,
   branch: string | null,
-  pull: { number: number; headRef: string } | null = null,
+  pull: PullEvidence | null = null,
 ): CheckVerdict {
   const checkRuns = listOf(
     get(
@@ -378,20 +378,56 @@ function ciVerdict(
   return verdicts.includes('pending') ? 'pending' : 'green'
 }
 
+/** The merged pull request whose head's runs may stand in for its merge commit. */
+interface PullEvidence {
+  number: number
+  headRef: string
+  /** Whether no other pull request, open or closed, has this head SHA. */
+  soleHead: () => boolean
+}
+
 /**
  * Pull-request evidence belongs to the pull request that merged: the same head
  * can sit in pull requests onto other bases, whose runs test other merge
- * results. A run that names its pull requests must name this one. GitHub
- * empties `pull_requests` on a pull request's runs once it is merged
- * (operator-portal run 40380182555 after #3173), so a run naming none counts
- * when it ran on the pull request's own head branch (head SHA and repository
- * are checked by the caller).
+ * results. A run that names its pull requests must name this one. GitHub lists
+ * only open pull requests there, so a merged one's runs name none (operator-
+ * portal run 40380182555 after #3173). Such a run counts when it ran on the
+ * pull request's own head branch and no other pull request ever had this head,
+ * because then nothing else can have produced a pull_request run on it (head
+ * SHA and repository are checked by the caller).
  */
-function runOfPull(run: WorkflowRunLike, pull: { number: number; headRef: string }): boolean {
+function runOfPull(run: WorkflowRunLike, pull: PullEvidence): boolean {
   if (!Array.isArray(run.pull_requests)) return false
   if (run.pull_requests.length > 0)
     return run.pull_requests.some((entry) => entry?.number === pull.number)
-  return run.head_branch === pull.headRef
+  return run.head_branch === pull.headRef && pull.soleHead()
+}
+
+/** `PullEvidence.soleHead`, read once from GitHub on first use. */
+function soleHeadReader(
+  get: GitHubGet,
+  repository: string,
+  number: number,
+  headRef: string,
+  headSha: string,
+): () => boolean {
+  let answer: boolean | undefined
+  return () => {
+    if (answer !== undefined) return answer
+    const owner = repository.split('/')[0]!
+    const pulls = get(
+      `pulls?state=all&head=${encodeURIComponent(`${owner}:${headRef}`)}&per_page=100`,
+    )
+    if (!Array.isArray(pulls) || pulls.length >= 100) {
+      throw new GitHubReadError(
+        `Could not list the pull requests of ${headRef} from GitHub; refusing to migrate`,
+      )
+    }
+    answer = !(pulls as Array<{ number?: unknown; head?: { sha?: unknown } | null }>).some(
+      (other) => other.number !== number && other.head?.sha === headSha,
+    )
+    return answer
+  }
 }
 
 /**
@@ -671,8 +707,11 @@ export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
       continue
     }
     if (
-      ciVerdict(get, gate, headSha, PULL_CI_EVENTS, null, { number: pullNumber, headRef }) !==
-      'green'
+      ciVerdict(get, gate, headSha, PULL_CI_EVENTS, null, {
+        number: pullNumber,
+        headRef,
+        soleHead: soleHeadReader(get, gate.repository, pullNumber, headRef, headSha),
+      }) !== 'green'
     )
       continue
     const landed = `${gate.check} succeeded on #${String(pull.number)} head ${headSha}, merged as ${gate.sha}`
