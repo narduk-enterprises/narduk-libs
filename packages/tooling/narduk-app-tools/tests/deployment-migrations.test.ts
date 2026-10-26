@@ -265,12 +265,32 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     return { root: build(''), table }
   }
   const mergedLeaves = {
+    'Config/cloudflare-app.json': `100644 ${'a'.repeat(40)}`,
+    'apps/web/wrangler.json': `100644 ${'b'.repeat(40)}`,
     'apps/web/migrations.sources.json': `100644 ${'1'.repeat(40)}`,
     'apps/web/sql': `040000 ${'2'.repeat(40)}`,
     'pnpm-lock.yaml': `100644 ${'3'.repeat(40)}`,
     'README.md': `100644 ${'4'.repeat(40)}`,
   }
   const behindMain = { ...mergedLeaves, 'README.md': `100644 ${'5'.repeat(40)}` }
+  /** Recursive listings of the leaf directories: plain SQL, and SQL beside a symlink or a submodule. */
+  const subtree = (sha: string, ...modes: string[]) => ({
+    [`git/trees/${sha}?recursive=1`]: {
+      sha,
+      truncated: false,
+      tree: modes.map((mode, index) => ({
+        path: `000${String(index)}.sql`,
+        mode,
+        sha: '9'.repeat(40),
+      })),
+    },
+  })
+  const subtrees = {
+    ...subtree('2'.repeat(40), '100644', '100644'),
+    ...subtree('6'.repeat(40), '100644'),
+    ...subtree('7'.repeat(40), '100644', '120000'),
+    ...subtree('8'.repeat(40), '100644', '160000'),
+  }
   /** A merged pull request whose head tree is `headLeaves` and whose merge commit's is `mergedLeaves`. */
   const landedTables = (
     sha: string,
@@ -286,6 +306,7 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
       ci(headSha, headEvs),
       head.table,
       merged.table,
+      subtrees,
       {
         [treePath(sha)]: { tree: { sha: merged.root } },
         [treePath(headSha)]: { tree: { sha: head.root } },
@@ -339,8 +360,10 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
   it('accepts a pull request merged behind the production branch when the migrations it would apply are identical (operator-portal#3173)', () => {
     const t = setup()
     expect(deploymentMigrationPaths(t.plan, t.f.root)).toEqual([
+      'Config/cloudflare-app.json',
       'apps/web/migrations.sources.json',
       'apps/web/sql',
+      'apps/web/wrangler.json',
     ])
     const run = (headLeaves: Record<string, string>) => () =>
       assertMigrationContext(
@@ -352,7 +375,7 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         t.proof({ get: github(...landedTables(t.f.sha, headLeaves)) }),
       )
     expect(run(behindMain)()).toContain(
-      'with identical migrations (apps/web/migrations.sources.json, apps/web/sql)',
+      'with identical migrations (Config/cloudflare-app.json, apps/web/migrations.sources.json, apps/web/sql, apps/web/wrangler.json)',
     )
     expect(run({ ...behindMain, 'apps/web/sql': `040000 ${'6'.repeat(40)}` })).toThrow(
       'identical migrations; refusing to migrate',
@@ -634,6 +657,23 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
       )
     })
 
+    it('needs every gate check of an unfinished run to belong to its current attempt', () => {
+      const ev: Ev = { suite: 1, number: 1, runStatus: 'in_progress' }
+      const checkRun = (id: number) => ({
+        id,
+        name: check,
+        status: 'completed',
+        conclusion: 'success',
+        app: { slug: 'github-actions' },
+        check_suite: { id: 1 },
+      })
+      const get = github(ci(sha, [ev]), {
+        [checkPath(sha)]: { total_count: 2, check_runs: [checkRun(checkId(ev)), checkRun(1)] },
+        [pullsPath]: [],
+      })
+      expect(refusal(get)).toThrow('still running')
+    })
+
     it('refuses when the jobs of the current attempt cannot be read', () => {
       const ev: Ev = { suite: 1, number: 1, runStatus: 'in_progress' }
       expect(refusal(github(ci(sha, [ev]), { [jobsPath(ev)]: null, [pullsPath]: [] }))).toThrow(
@@ -743,7 +783,13 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     })
 
     describe('a pull request merged behind the production branch', () => {
-      const paths = ['apps/web/migrations.sources.json', 'apps/web/sql', 'pnpm-lock.yaml']
+      const paths = [
+        'Config/cloudflare-app.json',
+        'apps/web/migrations.sources.json',
+        'apps/web/sql',
+        'apps/web/wrangler.json',
+        'pnpm-lock.yaml',
+      ]
       const migrationsGate = { ...gate, migrationPaths: paths }
       const landed = (headLeaves: Record<string, string>, headEvs?: Ev[]) =>
         github(...landedTables(sha, headLeaves, headEvs))
@@ -763,6 +809,10 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
           { ...behindMain, 'apps/web/sql': `040000 ${'6'.repeat(40)}` },
           { ...behindMain, 'apps/web/migrations.sources.json': `100644 ${'6'.repeat(40)}` },
           { ...behindMain, 'pnpm-lock.yaml': `100644 ${'6'.repeat(40)}` },
+          { ...behindMain, 'apps/web/wrangler.json': `100644 ${'6'.repeat(40)}` },
+          { ...behindMain, 'Config/cloudflare-app.json': `100644 ${'6'.repeat(40)}` },
+          // A submodule's commit pointer is not the content behind it.
+          { ...behindMain, 'apps/web/sql': `160000 ${'2'.repeat(40)}` },
           // A behind-main head lacking the migrations main added.
           Object.fromEntries(
             Object.entries(behindMain).filter(([path]) => path !== 'apps/web/sql'),
@@ -772,30 +822,43 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         ]
         for (const leaves of differs)
           expect(refused(landed(leaves))).toThrow('identical migrations; refusing to migrate')
-        // A symlink's blob says nothing about what it points at, even when both sides hold the same one.
-        const linked = { ...mergedLeaves, 'apps/web': `120000 ${'7'.repeat(40)}` }
-        delete (linked as Record<string, string>)['apps/web/migrations.sources.json']
-        delete (linked as Record<string, string>)['apps/web/sql']
-        expect(
+        // Identical on both sides is still refused when git cannot vouch for what the runner reads.
+        const both = (leaves: Record<string, string>) =>
           refused(
             github(
               ...landedTables(
                 sha,
-                { ...linked, 'README.md': `100644 ${'5'.repeat(40)}` },
+                { ...leaves, 'README.md': `100644 ${'5'.repeat(40)}` },
                 [prEv],
-                linked,
+                leaves,
               ),
             ),
-          ),
-        ).toThrow('identical migrations; refusing to migrate')
+          )
+        const without = (path: string) =>
+          Object.fromEntries(Object.entries(mergedLeaves).filter(([key]) => key !== path))
+        const sameEverywhere = [
+          // A symlink on the way: its blob says nothing about what it points at.
+          { ...without('apps/web/sql'), 'apps/web/sql': `120000 ${'2'.repeat(40)}` },
+          // A symlink or a submodule inside the migrations directory.
+          { ...mergedLeaves, 'apps/web/sql': `040000 ${'7'.repeat(40)}` },
+          { ...mergedLeaves, 'apps/web/sql': `040000 ${'8'.repeat(40)}` },
+          // Untracked at both commits: the runner would read it from disk.
+          without('apps/web/sql'),
+          without('pnpm-lock.yaml'),
+        ]
+        for (const leaves of sameEverywhere)
+          expect(both(leaves)).toThrow('identical migrations; refusing to migrate')
         for (const evs of [
           [{ ...prEv, conclusion: 'failure' }],
           [{ ...prEv, conclusion: null }],
           [],
         ])
           expect(refused(landed(behindMain, evs))).toThrow('not green')
-        // Without migration paths the whole tree must match, as before.
+        // Without migration paths (or with none) the whole tree must match, as before.
         expect(refusal(landed(behindMain))).toThrow('identical tree; refusing to migrate')
+        expect(() =>
+          assertCiGateGreen(landed(behindMain), { ...gate, migrationPaths: [] }),
+        ).toThrow('identical tree; refusing to migrate')
       })
 
       it('treats an unreadable or truncated subtree as a failed read, not a match', () => {
@@ -807,9 +870,21 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         expect(() =>
           assertCiGateGreen(github(...tables, { [rootPath]: null }), migrationsGate),
         ).toThrow('Could not read tree')
+        for (const truncated of [true, undefined]) {
+          expect(() =>
+            assertCiGateGreen(
+              github(...tables, { [rootPath]: { ...head[rootPath], truncated } }),
+              migrationsGate,
+            ),
+          ).toThrow('Could not read tree')
+        }
+        const listing = `git/trees/${'2'.repeat(40)}?recursive=1`
+        expect(() =>
+          assertCiGateGreen(github(...tables, { [listing]: null }), migrationsGate),
+        ).toThrow('Could not read tree')
         expect(() =>
           assertCiGateGreen(
-            github(...tables, { [rootPath]: { ...head[rootPath], truncated: true } }),
+            github(...tables, { [listing]: { tree: [], truncated: true } }),
             migrationsGate,
           ),
         ).toThrow('Could not read tree')
@@ -1013,35 +1088,73 @@ describe('deploymentMigrationPaths', () => {
       paths: () => deploymentMigrationPaths(planDeploymentMigrations(f.root, 'production'), f.root),
     }
   }
+  /** A pnpm virtual-store entry named `entry`, linked at apps/web/node_modules/@x/<name>. */
+  const pnpmPackage = (root: string, entry: string, name: string) => {
+    const real = join(root, 'node_modules/.pnpm', entry, 'node_modules/@x', name)
+    mkdirSync(join(real, 'drizzle'), { recursive: true })
+    mkdirSync(join(root, 'apps/web/node_modules/@x'), { recursive: true })
+    symlinkSync(real, join(root, 'apps/web/node_modules/@x', name))
+  }
+  const lock = (root: string) =>
+    writeFileSync(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
 
-  it('pins a package-provided source by the lockfile, and a workspace link by its repository path', () => {
+  it('pins a registry package by the lockfile, and a workspace link by its repository path', () => {
     const t = withSources([
       { source: 'app', path: 'sql', sourceVersion: '1' },
       { source: '@x/pkg', path: 'node_modules/@x/pkg/drizzle', sourceVersion: '1' },
       { source: '@x/ws', path: 'node_modules/@x/ws/drizzle', sourceVersion: '1' },
     ])
-    mkdirSync(join(t.f.root, 'apps/web/node_modules/@x/pkg/drizzle'), { recursive: true })
+    pnpmPackage(t.f.root, '@x+pkg@1.2.3_zod@4.0.0', 'pkg')
     mkdirSync(join(t.f.root, 'packages/ws/drizzle'), { recursive: true })
     symlinkSync(join(t.f.root, 'packages/ws'), join(t.f.root, 'apps/web/node_modules/@x/ws'))
     // An installed package with no lockfile to pin it cannot be proved identical.
     expect(t.paths()).toBeNull()
-    writeFileSync(join(t.f.root, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
+    lock(t.f.root)
     expect(t.paths()).toEqual([
+      'Config/cloudflare-app.json',
       'apps/web/migrations.sources.json',
       'apps/web/sql',
+      'apps/web/wrangler.json',
       'packages/ws/drizzle',
       'pnpm-lock.yaml',
     ])
   })
 
-  it('cannot pin a package that is not installed or a source outside the checkout', () => {
+  it('cannot pin a package pnpm installed from a directory, or one outside the pnpm store', () => {
+    const injected = withSources([
+      { source: '@x/db', path: 'node_modules/@x/db/drizzle', sourceVersion: '1' },
+    ])
+    lock(injected.f.root)
+    pnpmPackage(injected.f.root, '@x+db@file+packages+db', 'db')
+    expect(injected.paths()).toBeNull()
+    const copied = withSources([
+      { source: '@x/db', path: 'node_modules/@x/db/drizzle', sourceVersion: '1' },
+    ])
+    lock(copied.f.root)
+    mkdirSync(join(copied.f.root, 'apps/web/node_modules/@x/db/drizzle'), { recursive: true })
+    expect(copied.paths()).toBeNull()
+  })
+
+  it('cannot pin a package that is not installed, or a source outside the checkout, missing or reached through a symlink', () => {
     const missing = withSources([
       { source: '@x/pkg', path: 'node_modules/@x/pkg/drizzle', sourceVersion: '1' },
     ])
-    writeFileSync(join(missing.f.root, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
+    lock(missing.f.root)
     expect(missing.paths()).toBeNull()
     expect(
       withSources([{ source: 'app', path: '../../..', sourceVersion: '1' }]).paths(),
     ).toBeNull()
+    expect(
+      withSources([{ source: 'app', path: 'generated', sourceVersion: '1' }]).paths(),
+    ).toBeNull()
+    const linked = withSources([{ source: 'app', path: 'vendor/pkg/drizzle', sourceVersion: '1' }])
+    pnpmPackage(linked.f.root, '@x+pkg@1.2.3', 'pkg')
+    lock(linked.f.root)
+    mkdirSync(join(linked.f.root, 'apps/web/vendor'))
+    symlinkSync(
+      join(linked.f.root, 'apps/web/node_modules/@x/pkg'),
+      join(linked.f.root, 'apps/web/vendor/pkg'),
+    )
+    expect(linked.paths()).toBeNull()
   })
 })

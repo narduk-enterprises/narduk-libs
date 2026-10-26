@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 
-import { readAppConfigText } from './app-config/resolve.js'
+import { APP_CONFIG_PATHS, readAppConfigText } from './app-config/resolve.js'
 import { githubGet, type GitHubGet } from './commit-containment.js'
 import {
   contractEvidenceIssuesOnDisk,
@@ -416,32 +416,38 @@ function treeOf(get: GitHubGet, commit: string): string {
 }
 
 const TREE_MODE = '040000'
-const SYMLINK_MODE = '120000'
+const FILE_MODES = new Set(['100644', '100755'])
+
+function readTree(get: GitHubGet, sha: string, recursive = false): unknown[] {
+  const body = get(`git/trees/${sha}${recursive ? '?recursive=1' : ''}`) as {
+    tree?: unknown
+    truncated?: unknown
+  } | null
+  if (!body || !Array.isArray(body.tree) || body.truncated !== false) {
+    throw new GitHubReadError(`Could not read tree ${sha} from GitHub; refusing to migrate`)
+  }
+  return body.tree
+}
 
 /**
- * The mode and object id at `path` in the tree `root`, or null when nothing is
- * there, read one path segment at a time. A symlink on the way is `symlink`:
- * its own blob says nothing about what it points at.
+ * The mode and object id at `path` under the tree `root`, read one segment at
+ * a time; null when nothing plain is there. Only directories lead to a path,
+ * and only a directory or a regular file can be one: a symlink's blob or a
+ * submodule's commit pointer says nothing about the content the runner reads.
  */
 function objectAt(
   get: GitHubGet,
   root: string,
   path: string,
   cache: Map<string, unknown[]>,
-): string | null {
-  let mode = TREE_MODE
-  let sha = root
+): { mode: string; sha: string } | null {
+  let current = { mode: TREE_MODE, sha: root }
   for (const segment of path.split('/')) {
-    if (mode === SYMLINK_MODE) return 'symlink'
-    if (mode !== TREE_MODE) return null
-    let entries = cache.get(sha)
+    if (current.mode !== TREE_MODE) return null
+    let entries = cache.get(current.sha)
     if (!entries) {
-      const body = get(`git/trees/${sha}`) as { tree?: unknown; truncated?: unknown } | null
-      if (!body || !Array.isArray(body.tree) || body.truncated !== false) {
-        throw new GitHubReadError(`Could not read tree ${sha} from GitHub; refusing to migrate`)
-      }
-      entries = body.tree as unknown[]
-      cache.set(sha, entries)
+      entries = readTree(get, current.sha)
+      cache.set(current.sha, entries)
     }
     const entry = (entries as Array<{ path?: unknown; mode?: unknown; sha?: unknown }>).find(
       (item) => item.path === segment,
@@ -452,19 +458,31 @@ function objectAt(
       typeof entry.sha !== 'string' ||
       !FULL_SHA.test(entry.sha)
     )
-      throw new GitHubReadError(`Could not read tree ${sha} from GitHub; refusing to migrate`)
-    mode = entry.mode
-    sha = entry.sha
+      throw new GitHubReadError(
+        `Could not read tree ${current.sha} from GitHub; refusing to migrate`,
+      )
+    current = { mode: entry.mode, sha: entry.sha }
   }
-  return mode === SYMLINK_MODE ? 'symlink' : `${mode} ${sha}`
+  return current.mode === TREE_MODE || FILE_MODES.has(current.mode) ? current : null
 }
 
-/** Whether every one of `paths` holds the same object at both commits (both absent counts). */
+/**
+ * Whether every one of `paths` is the same directory or regular file at both
+ * trees. A path missing on either side is never a match (the runner would read
+ * it from disk, untracked), and a directory holding a symlink or a submodule
+ * anywhere below it is refused, because the runner follows what git only
+ * records as a pointer.
+ */
 function sameAt(get: GitHubGet, head: string, merged: string, paths: readonly string[]): boolean {
   const cache = new Map<string, unknown[]>()
   return paths.every((path) => {
     const before = objectAt(get, head, path, cache)
-    return before !== 'symlink' && before === objectAt(get, merged, path, cache)
+    const after = objectAt(get, merged, path, cache)
+    if (!before || !after || before.mode !== after.mode || before.sha !== after.sha) return false
+    if (after.mode !== TREE_MODE) return true
+    return (readTree(get, after.sha, true) as Array<{ mode?: unknown }>).every(
+      (entry) => entry.mode === TREE_MODE || FILE_MODES.has(entry.mode as string),
+    )
   })
 }
 
@@ -476,14 +494,20 @@ const LOCKFILES = [
   'bun.lock',
   'bun.lockb',
 ]
+/** A pnpm virtual-store entry of a registry version (`@scope+name@1.2.3_peers`), never `file:`, `link:` or git. */
+const PNPM_REGISTRY_ENTRY =
+  /^(?:@[\w.-]+\+)?[\w.-]+@\d+\.\d+\.\d+(?:-[a-zA-Z\d.-]+)?(?:_[\w.+=@-]+)?$/u
 
 /**
  * The repository paths whose content decides which migration files a
- * deployment applies: each database's sources file, each source directory in
- * the repository, and, for a source installed from a package, the lockfiles
- * that pin that package's version. Null when a source cannot be pinned by
- * repository content (outside the checkout, or a package that is not
- * installed), which leaves the gate needing the whole tree identical.
+ * deployment applies to which database: the app manifest when the checkout
+ * carries it, the wrangler config, each database's sources file, each source
+ * directory in the repository, and, for a source installed from the registry
+ * by pnpm, the lockfiles that pin its version. Null when any of them cannot be
+ * pinned by repository content (a symlink on the way, a path outside the
+ * checkout or missing from it, a package that is not installed, or one pnpm
+ * installed from a directory), which leaves the gate needing the whole tree
+ * identical.
  */
 export function deploymentMigrationPaths(
   plan: DeploymentMigrationPlan,
@@ -492,38 +516,69 @@ export function deploymentMigrationPaths(
   const top = realpathSync(
     execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' }).trim(),
   )
+  const checkout = realpathSync(root)
   const repoPath = (path: string): string | null => {
     const rel = relative(top, path)
     return rel === '' || rel.startsWith('..') || isAbsolute(rel) ? null : rel.split(sep).join('/')
   }
+  /** `path` as the repository records it: present, inside it, and reached through no symlink. */
+  const plain = (path: string): string | null =>
+    existsSync(path) && realpathSync(path) === path ? repoPath(path) : null
+  const manifest = manifestSchema.parse(
+    JSON.parse(readAppConfigText({ root, file: 'cloudflare-app.json', required: true })!),
+  )
+  const configured = readDeploymentBlock({ deployment: manifest.deployment })
+  if (configured.kind !== 'valid') return null
+  const fixed = [
+    resolve(checkout, manifest.worker.wranglerConfig),
+    ...plan.databases.map((database) =>
+      resolve(
+        checkout,
+        configured.block.migrations!.databases.find((item) => item.binding === database.binding)!
+          .sources,
+      ),
+    ),
+  ]
+  // A manifest the portal serves is not commit content; one the checkout carries is.
+  const manifestFile = join(checkout, APP_CONFIG_PATHS['cloudflare-app.json'])
+  if (existsSync(manifestFile)) fixed.push(manifestFile)
   const paths = new Set<string>()
+  for (const file of fixed) {
+    const rel = plain(file)
+    if (rel === null) return null
+    paths.add(rel)
+  }
   for (const database of plan.databases) {
-    const sources = repoPath(database.sources)
-    if (sources === null) return null
-    paths.add(sources)
     const config = parseMigrationConfig(JSON.parse(readFileSync(database.sources, 'utf8')))
     for (const source of config.sources) {
       const directory = resolve(dirname(database.sources), source.path)
-      const rel = repoPath(directory)
-      if (rel === null) return null
-      const segments = rel.split('/')
+      const segments = relative(top, directory).split(sep)
       const modules = segments.indexOf('node_modules')
       if (modules === -1) {
+        const rel = plain(directory)
+        if (rel === null) return null
         paths.add(rel)
         continue
       }
+      const owner = join(top, ...segments.slice(0, modules))
+      if (plain(owner) === null && owner !== top) return null
       if (!existsSync(directory)) return null
+      const real = realpathSync(directory)
+      const rel = repoPath(real)
+      if (rel === null) return null
+      const parts = rel.split('/')
       // A workspace package linked into node_modules is repository content.
-      const linked = repoPath(realpathSync(directory))
-      if (linked !== null && !linked.split('/').includes('node_modules')) {
-        paths.add(linked)
+      if (!parts.includes('node_modules')) {
+        paths.add(rel)
         continue
       }
+      const store = parts.indexOf('.pnpm')
+      if (store === -1 || !PNPM_REGISTRY_ENTRY.test(parts[store + 1] ?? '')) return null
       const locks: string[] = []
-      for (let dir = join(top, ...segments.slice(0, modules)); ; dir = dirname(dir)) {
+      for (let dir = owner; ; dir = dirname(dir)) {
         for (const name of LOCKFILES) {
-          const lock = repoPath(join(dir, name))
-          if (lock !== null && existsSync(join(dir, name))) locks.push(lock)
+          const lock = plain(join(dir, name))
+          if (lock !== null) locks.push(lock)
         }
         if (dir === top || dirname(dir) === dir) break
       }
@@ -590,11 +645,11 @@ export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
     const headTree = treeOf(get, headSha)
     const mergedTree = treeOf(get, gate.sha)
     if (headTree === mergedTree) return `${landed} with an identical tree`
-    if (gate.migrationPaths && sameAt(get, headTree, mergedTree, gate.migrationPaths))
+    if (gate.migrationPaths?.length && sameAt(get, headTree, mergedTree, gate.migrationPaths))
       return `${landed} with identical migrations (${gate.migrationPaths.join(', ')})`
   }
   throw new Error(
-    `${gate.check} is not green on ${gate.sha} or on a merged pull request that landed as it with ${gate.migrationPaths ? 'identical migrations' : 'an identical tree'}; refusing to migrate`,
+    `${gate.check} is not green on ${gate.sha} or on a merged pull request that landed as it with ${gate.migrationPaths?.length ? 'identical migrations' : 'an identical tree'}; refusing to migrate`,
   )
 }
 
