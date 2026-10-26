@@ -1209,5 +1209,12 @@ describe('deploymentMigrationPaths', () => {
     expect(t.onDisk()).toContain('apps/web/sql')
     writeFileSync(join(t.f.root, 'apps/web/sql/0001.sql'), 'DROP TABLE example;')
     expect(t.onDisk()).toBeNull()
+    // A top-level path that git could read as pathspec magic is matched literally.
+    const magic = withSources([{ source: 'app', path: '../../:sql', sourceVersion: '1' }])
+    mkdirSync(join(magic.f.root, ':sql'))
+    writeFileSync(join(magic.f.root, ':sql/0001.sql'), 'CREATE TABLE example (id TEXT);')
+    expect(magic.paths()).toContain(':sql')
+    writeFileSync(join(magic.f.root, ':sql/0002.sql'), 'DROP TABLE example;')
+    expect(magic.onDisk()).toBeNull()
   })
 })

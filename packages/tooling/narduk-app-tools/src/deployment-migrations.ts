@@ -592,7 +592,16 @@ export function deploymentMigrationPaths(
   // file under a compared path is content no tree comparison sees.
   const dirty = execFileSync(
     'git',
-    ['status', '--porcelain', '--ignored', '--untracked-files=all', '--', ...sorted],
+    // Literal: a path such as `:sql` must never be read as pathspec magic.
+    [
+      '--literal-pathspecs',
+      'status',
+      '--porcelain',
+      '--ignored',
+      '--untracked-files=all',
+      '--',
+      ...sorted,
+    ],
     { cwd: top, encoding: 'utf8' },
   )
   return dirty.trim() === '' ? sorted : null
