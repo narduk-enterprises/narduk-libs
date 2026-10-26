@@ -165,6 +165,8 @@ test('preflight arguments parse, and an unknown one is refused', () => {
   assert.deepEqual(parsePreflightArgs(['--packages=narduk-core']).packages, ['narduk-core'])
   assert.throws(() => parsePreflightArgs(['--packages']), /comma-separated list/u)
   assert.throws(() => parsePreflightArgs(['--packages=,']), /comma-separated list/u)
+  // A missing value must not swallow the next flag as a package name.
+  assert.throws(() => parsePreflightArgs(['--packages', '--no-consumer']), /comma-separated list/u)
   assert.equal(parsePreflightArgs(['--release-pr']).releasePr, true)
   assert.equal(parsePreflightArgs(['--base=upstream/main']).base, 'upstream/main')
   assert.equal(parsePreflightArgs(['--no-consumer']).consumer, false)

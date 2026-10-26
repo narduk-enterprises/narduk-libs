@@ -138,7 +138,9 @@ function parsePreflightArgs(argv) {
       .split(',')
       .map((name) => name.trim())
       .filter(Boolean)
-    if (names.length === 0) throw new Error('--packages requires a comma-separated list.')
+    if (names.length === 0 || names.some((name) => name.startsWith('-'))) {
+      throw new Error('--packages requires a comma-separated list.')
+    }
     return names
   }
   for (let index = 0; index < argv.length; index += 1) {
@@ -282,6 +284,13 @@ async function main() {
     console.log(`preflight: ${refreshed ?? `${options.base} names no remote branch to refresh.`}`)
   }
 
+  // Resolve --packages before any phase runs, so a misspelled name fails in
+  // seconds rather than after the contracts and the audit.
+  const workspace = loadWorkspace(root)
+  const requestedPackages = options.packages
+    ? selectPackages(options.packages, workspace.byName.keys())
+    : null
+
   const baseline = trackedTreeSnapshot(root)
   const failures = []
 
@@ -325,7 +334,6 @@ async function main() {
   // --- Plan ---------------------------------------------------------------
   const plannedBase = plannedComparisonBase(root, options.base)
   const changedFiles = preflightChangedFiles(root, plannedBase)
-  const workspace = loadWorkspace(root)
   const plan = computeAffectedSet({ changedFiles, consumerScopeMode: 'scoped' })
   console.log(`=== plan (against ${options.base} ${plannedBase.slice(0, 12)}) ===`)
   console.log(`Changed files: ${changedFiles.length}`)
@@ -415,10 +423,8 @@ async function main() {
   phase('audit', 'pnpm', ['audit', '--audit-level', 'high'])
 
   // --- The affected packages' own gates -----------------------------------
-  const gateNames = options.packages
-    ? selectPackages(options.packages, workspace.byName.keys())
-    : plan.affectedNames
-  if (options.packages) {
+  const gateNames = requestedPackages ?? plan.affectedNames
+  if (requestedPackages) {
     const outside = gateNames.filter((name) => !plan.affectedNames.includes(name))
     console.log(
       `\npreflight: --packages limits the package gates to ${gateNames.join(', ')}; ` +
@@ -508,9 +514,10 @@ async function main() {
     console.error(`preflight: FAILED\n${failures.map((failure) => `  - ${failure}`).join('\n')}`)
     process.exit(1)
   }
-  if (options.packages) {
+  if (requestedPackages) {
+    const ran = gateable.length > 0 ? `ran only for ${gateable.join(', ')}` : 'did not run'
     console.log(
-      `preflight: OK (partial) — package gates ran only for ${gateNames.join(', ')}; ` +
+      `preflight: OK (partial) — package gates ${ran}; ` +
         'CI gates the full affected set. The working tree is unchanged.',
     )
     return
