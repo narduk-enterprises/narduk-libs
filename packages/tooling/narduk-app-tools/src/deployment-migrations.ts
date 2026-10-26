@@ -307,7 +307,7 @@ function ciVerdict(
   commit: string,
   events: ReadonlySet<string>,
   branch: string | null,
-  pullNumber: number | null = null,
+  pull: { number: number; headRef: string } | null = null,
 ): CheckVerdict {
   const checkRuns = listOf(
     get(
@@ -342,14 +342,7 @@ function ciVerdict(
       typeof run.event !== 'string' ||
       !events.has(run.event) ||
       (branch !== null && run.head_branch !== branch) ||
-      // Pull-request evidence belongs to the pull request that merged: the
-      // same head can sit in pull requests onto other bases, whose runs test
-      // other merge results.
-      (pullNumber !== null &&
-        !(
-          Array.isArray(run.pull_requests) &&
-          run.pull_requests.some((pull) => pull?.number === pullNumber)
-        ))
+      (pull !== null && !runOfPull(run, pull))
     ) {
       return []
     }
@@ -383,6 +376,22 @@ function ciVerdict(
     .flatMap((entry) => entry.verdicts)
   if (verdicts.includes('red')) return 'red'
   return verdicts.includes('pending') ? 'pending' : 'green'
+}
+
+/**
+ * Pull-request evidence belongs to the pull request that merged: the same head
+ * can sit in pull requests onto other bases, whose runs test other merge
+ * results. A run that names its pull requests must name this one. GitHub
+ * empties `pull_requests` on a pull request's runs once it is merged
+ * (operator-portal run 40380182555 after #3173), so a run naming none counts
+ * when it ran on the pull request's own head branch (head SHA and repository
+ * are checked by the caller).
+ */
+function runOfPull(run: WorkflowRunLike, pull: { number: number; headRef: string }): boolean {
+  if (!Array.isArray(run.pull_requests)) return false
+  if (run.pull_requests.length > 0)
+    return run.pull_requests.some((entry) => entry?.number === pull.number)
+  return run.head_branch === pull.headRef
 }
 
 /**
@@ -643,10 +652,11 @@ export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
     merged_at?: unknown
     merge_commit_sha?: unknown
     base?: { ref?: unknown } | null
-    head?: { sha?: unknown; repo?: { full_name?: unknown } | null } | null
+    head?: { sha?: unknown; ref?: unknown; repo?: { full_name?: unknown } | null } | null
   }>) {
     const headSha = pull.head?.sha
     const pullNumber = pull.number
+    const headRef = pull.head?.ref
     if (
       typeof pullNumber !== 'number' ||
       !pull.merged_at ||
@@ -654,11 +664,17 @@ export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
       pull.base?.ref !== gate.productionBranch ||
       pull.head?.repo?.full_name !== gate.repository ||
       typeof headSha !== 'string' ||
+      typeof headRef !== 'string' ||
+      headRef === '' ||
       !FULL_SHA.test(headSha)
     ) {
       continue
     }
-    if (ciVerdict(get, gate, headSha, PULL_CI_EVENTS, null, pullNumber) !== 'green') continue
+    if (
+      ciVerdict(get, gate, headSha, PULL_CI_EVENTS, null, { number: pullNumber, headRef }) !==
+      'green'
+    )
+      continue
     const landed = `${gate.check} succeeded on #${String(pull.number)} head ${headSha}, merged as ${gate.sha}`
     const headTree = treeOf(get, headSha)
     const mergedTree = treeOf(get, gate.sha)

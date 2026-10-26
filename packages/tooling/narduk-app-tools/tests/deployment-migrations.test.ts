@@ -231,7 +231,7 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     merged_at: '2026-10-24T01:00:00Z',
     merge_commit_sha: sha,
     base: { ref: 'main' },
-    head: { sha: headSha, repo: { full_name: 'example/app' } },
+    head: { sha: headSha, ref: 'feature', repo: { full_name: 'example/app' } },
     ...extra,
   })
   const pullTables = (sha: string, p: object, headEvs: Ev[], headTree = tree) => [
@@ -702,7 +702,30 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
       ).toThrow('not green')
       // Evidence from a run of some other pull request alone is not evidence.
       expect(refusal(answers({ ...prEv, pulls: [8] }))).toThrow('not green')
-      expect(refusal(answers({ ...prEv, pulls: [] }))).toThrow('not green')
+      // GitHub empties pull_requests once the pull request merges (operator-portal
+      // run 40380182555 after #3173): the run on the pull request's own head
+      // branch is its evidence, and a run of the same head from another branch is not.
+      expect(assertCiGateGreen(answers({ ...prEv, pulls: [] }), gate)).toContain('#7')
+      expect(refusal(answers({ ...prEv, pulls: [], branch: 'release-copy' }))).toThrow('not green')
+      expect(
+        refusal(
+          answers(
+            { ...prEv, suite: 9, number: 4, pulls: [], conclusion: 'failure' },
+            { ...prEv, suite: 10, number: 5, pulls: [], branch: 'release-copy' },
+          ),
+        ),
+      ).toThrow('not green')
+      expect(
+        refusal(
+          github(
+            ...pullTables(
+              sha,
+              pull(sha, { head: { sha: headSha, repo: { full_name: 'example/app' } } }),
+              [{ ...prEv, pulls: [] }],
+            ),
+          ),
+        ),
+      ).toThrow('not green')
       expect(assertCiGateGreen(answers({ ...prEv, pulls: [7, 8] }), gate)).toContain('#7')
     })
 
@@ -769,9 +792,11 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         ok(pull(sha, { merged_at: null })),
         ok(pull(sha, { merge_commit_sha: 'b'.repeat(40) })),
         ok(pull(sha, { base: { ref: 'release' } })),
-        ok(pull(sha, { head: { sha: headSha, repo: { full_name: 'fork/app' } } })),
-        ok(pull(sha, { head: { sha: headSha, repo: null } })),
-        ok(pull(sha, { head: { sha: 'short', repo: { full_name: 'example/app' } } })),
+        ok(pull(sha, { head: { sha: headSha, ref: 'feature', repo: { full_name: 'fork/app' } } })),
+        ok(pull(sha, { head: { sha: headSha, ref: 'feature', repo: null } })),
+        ok(
+          pull(sha, { head: { sha: 'short', ref: 'feature', repo: { full_name: 'example/app' } } }),
+        ),
         ok(pull(sha), 'e'.repeat(40)),
         ok(pull(sha), tree, [{ ...prEv, conclusion: 'failure' }]),
         ok(pull(sha), tree, [{ ...prEv, conclusion: null }]),
