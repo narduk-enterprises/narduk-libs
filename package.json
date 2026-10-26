@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.33.4",
   "scripts": {
-    "postinstall": "pnpm --filter @narduk-enterprises/eslint-config run build",
+    "postinstall": "pnpm --filter @narduk-enterprises/eslint-config --filter @narduk-enterprises/narduk-testkit run build",
     "build": "turbo run build --filter='./packages/*/*' --concurrency=4",
     "build:affected": "turbo run build --filter='./packages/*/*' --affected --concurrency=4",
     "typecheck": "turbo run typecheck --filter='./packages/*/*' --concurrency=4",

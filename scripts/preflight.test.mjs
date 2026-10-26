@@ -15,6 +15,7 @@ import {
   preflightChangedFiles,
   releasePrBranch,
   releasePrIdentity,
+  selectPackages,
   trackedTreeSnapshot,
 } from './preflight.mjs'
 
@@ -148,17 +149,41 @@ test('preflight arguments parse, and an unknown one is refused', () => {
     fetch: true,
     consumer: true,
     releasePr: false,
+    packages: null,
   })
   assert.deepEqual(parsePreflightArgs(['--base', 'origin/release', '--no-fetch']), {
     base: 'origin/release',
     fetch: false,
     consumer: true,
     releasePr: false,
+    packages: null,
   })
+  assert.deepEqual(parsePreflightArgs(['--packages', 'narduk-core, narduk-shell']).packages, [
+    'narduk-core',
+    'narduk-shell',
+  ])
+  assert.deepEqual(parsePreflightArgs(['--packages=narduk-core']).packages, ['narduk-core'])
+  assert.throws(() => parsePreflightArgs(['--packages']), /comma-separated list/u)
+  assert.throws(() => parsePreflightArgs(['--packages=,']), /comma-separated list/u)
   assert.equal(parsePreflightArgs(['--release-pr']).releasePr, true)
   assert.equal(parsePreflightArgs(['--base=upstream/main']).base, 'upstream/main')
   assert.equal(parsePreflightArgs(['--no-consumer']).consumer, false)
   assert.throws(() => parsePreflightArgs(['--write']), /Unknown preflight argument/u)
+})
+
+test('--packages resolves bare and scoped names and refuses an unknown one', () => {
+  const workspace = [
+    '@narduk-enterprises/narduk-core',
+    '@narduk-enterprises/narduk-shell',
+    '@narduk-enterprises/narduk-testkit',
+  ]
+  assert.deepEqual(
+    selectPackages(['narduk-shell', '@narduk-enterprises/narduk-core', 'narduk-core'], workspace),
+    ['@narduk-enterprises/narduk-core', '@narduk-enterprises/narduk-shell'],
+  )
+  // A bare suffix must match a whole name segment, not a substring.
+  assert.throws(() => selectPackages(['core'], workspace), /names no workspace package: core/u)
+  assert.throws(() => selectPackages(['narduk-nope'], workspace), /narduk-nope/u)
 })
 
 test('--base decides which ref is fetched, and a base naming no remote is left alone', () => {

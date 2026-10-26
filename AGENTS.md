@@ -134,6 +134,15 @@ baseline 190 drained, and the count admitted since the freeze.
   `docs/package-releases.md`). A diff that touches a global trigger such as the
   root `package.json` or the lockfile selects every package, and the command
   says so before spending the time.
+- **A full preflight is long.** Every package's gates run serially, and a global
+  trigger (root `package.json`, lockfile) has taken 50 minutes on a loaded lane
+  guest (agent-infrastructure#3802, #3864). An agent runs it in the background
+  with a timeout of at least 60 minutes (Claude Code: Bash `run_in_background`
+  with `timeout: 3600000` or more); a 10-minute default kills it part-way. To
+  gate only what you changed, add `--packages <name,name> --no-consumer` (bare
+  or `@narduk-enterprises/` names): contracts still run in full, the package
+  gates run for the named packages only, and the run ends `OK (partial)` because
+  CI gates the rest.
 - **When to run the full preflight before pushing** (Logan, 2026-09-25, for this
   repo only): this repo is public, its CI runs on GitHub-hosted runners, and the
   ruleset makes CI a merge gate, so a local preflight re-runs checks CI will run
@@ -151,7 +160,13 @@ baseline 190 drained, and the count admitted since the freeze.
   timings. The merge gate is unchanged — `verify-pr-gate.py` must print
   `verdict=GREEN`. Revisit this if the delivery tiers (E9) stop CI from gating
   merges here, because the local check would then be the only proof.
-- `pnpm install`
+- `pnpm install` — a fresh worktree needs nothing else before tests. Its
+  `postinstall` builds `eslint-config` and `narduk-testkit`, whose `dist/` the
+  `narduk-core`, `narduk-shell` and `narduk-mapkit` test setups import
+  (agent-infrastructure#3021, #3418). Every dependency resolves from the public
+  registry or the workspace, so no `gh-packages-run.sh` wrapper is needed; that
+  script lives in agent-infrastructure, not here. After editing testkit source,
+  rebuild it with `pnpm --filter @narduk-enterprises/narduk-testkit run build`.
 - Direct `release-plan:check` refreshes its named remote comparison branch once
   (30-second bound) before diffing; a failed refresh is unknown and stops the
   gate. Explicit local or historical comparison refs retain their existing
