@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 
 import { readAppConfigText } from './app-config/resolve.js'
@@ -18,6 +18,7 @@ import { describePreviewPlan, planPreviewConfig } from './preview-config.js'
 import { parseGateAttestation, type GateAttestation } from './promote.js'
 import {
   inspectMigrations,
+  parseMigrationConfig,
   runMigrations,
   type MigrationExecutor,
   type MigrationPlan,
@@ -216,6 +217,7 @@ const BRANCH_EVENTS = new Set(['push', 'workflow_dispatch'])
 const FULL_SHA = /^[a-f0-9]{40}$/u
 
 interface CheckRunLike {
+  id?: unknown
   name?: unknown
   status?: unknown
   conclusion?: unknown
@@ -224,7 +226,9 @@ interface CheckRunLike {
 }
 
 interface WorkflowRunLike {
+  id?: unknown
   run_number?: unknown
+  run_attempt?: unknown
   path?: unknown
   event?: unknown
   head_sha?: unknown
@@ -254,6 +258,13 @@ export interface CiGate {
   workflow: string
   repository: string
   productionBranch: string
+  /**
+   * Repository paths whose content decides what the migration applies
+   * (`deploymentMigrationPaths`). When set, the merged-pull-request fallback
+   * needs only these identical between the pull request head and the merge
+   * commit; when absent, it needs the whole tree identical.
+   */
+  migrationPaths?: readonly string[]
 }
 
 const WORKFLOW_PATH = /^\.github\/workflows\/[\w.-]+\.ya?ml$/u
@@ -281,6 +292,14 @@ function listOf(body: unknown, key: string, what: string): unknown[] {
  * `run_number` decides; runs that produced no such check run are not evidence.
  * Check runs of one suite (job re-runs) and runs tied on a number must all
  * agree, so a tie holding any red refuses.
+ *
+ * The gate check's own status and conclusion decide, not the whole workflow
+ * run's: a gate check that finished while other jobs of its run (E2E) are still
+ * going is a verdict (operator-portal#3173). A re-run keeps its run_number and
+ * its check suite, and `filter=latest` keeps answering with the previous
+ * attempt's check run until the re-run creates its own, so while the run is
+ * unfinished a finished gate check counts only when it is a job of the run's
+ * current attempt.
  */
 function ciVerdict(
   get: GitHubGet,
@@ -342,21 +361,18 @@ function ciVerdict(
         { number: run.run_number, verdicts: [run.status === 'completed' ? 'red' : 'pending'] },
       ]
     }
-    // A successful gate check on a workflow run that has not finished is a
-    // re-run in flight (re-runs keep their run_number) and does not count.
+    const done = checks.filter((check) => check.status === 'completed')
+    const stale = run.status !== 'completed' && done.length > 0 && !currentAttempt(get, run, done)
     return [
       {
         number: run.run_number,
-        verdicts: [
-          ...(run.status === 'completed' ? [] : ['pending']),
-          ...checks.map((check) =>
-            check.status !== 'completed'
-              ? 'pending'
-              : check.conclusion === 'success'
-                ? 'green'
-                : 'red',
-          ),
-        ],
+        verdicts: checks.map((check) =>
+          check.status !== 'completed' || stale
+            ? 'pending'
+            : check.conclusion === 'success'
+              ? 'green'
+              : 'red',
+        ),
       },
     ]
   })
@@ -369,6 +385,26 @@ function ciVerdict(
   return verdicts.includes('pending') ? 'pending' : 'green'
 }
 
+/**
+ * Whether every one of `checks` is a job of the unfinished `run`'s current
+ * attempt (a job's id is its check run's id). A check run left from an earlier
+ * attempt is a re-run in flight, which is still running, never a verdict.
+ */
+function currentAttempt(get: GitHubGet, run: WorkflowRunLike, checks: CheckRunLike[]): boolean {
+  if (typeof run.id !== 'number' || typeof run.run_attempt !== 'number') {
+    throw new GitHubReadError(
+      'Could not read the attempt of a CI run from GitHub; refusing to migrate',
+    )
+  }
+  const jobs = listOf(
+    get(`actions/runs/${String(run.id)}/attempts/${String(run.run_attempt)}/jobs?per_page=100`),
+    'jobs',
+    `the jobs of run ${String(run.id)} attempt ${String(run.run_attempt)}`,
+  ) as Array<{ id?: unknown }>
+  const ids = new Set(jobs.map((job) => job.id))
+  return checks.every((check) => typeof check.id === 'number' && ids.has(check.id))
+}
+
 function treeOf(get: GitHubGet, commit: string): string {
   const tree = (get(`git/commits/${commit}`) as { tree?: { sha?: unknown } } | null)?.tree?.sha
   if (typeof tree !== 'string' || !FULL_SHA.test(tree)) {
@@ -377,6 +413,125 @@ function treeOf(get: GitHubGet, commit: string): string {
     )
   }
   return tree
+}
+
+const TREE_MODE = '040000'
+const SYMLINK_MODE = '120000'
+
+/**
+ * The mode and object id at `path` in the tree `root`, or null when nothing is
+ * there, read one path segment at a time. A symlink on the way is `symlink`:
+ * its own blob says nothing about what it points at.
+ */
+function objectAt(
+  get: GitHubGet,
+  root: string,
+  path: string,
+  cache: Map<string, unknown[]>,
+): string | null {
+  let mode = TREE_MODE
+  let sha = root
+  for (const segment of path.split('/')) {
+    if (mode === SYMLINK_MODE) return 'symlink'
+    if (mode !== TREE_MODE) return null
+    let entries = cache.get(sha)
+    if (!entries) {
+      const body = get(`git/trees/${sha}`) as { tree?: unknown; truncated?: unknown } | null
+      if (!body || !Array.isArray(body.tree) || body.truncated !== false) {
+        throw new GitHubReadError(`Could not read tree ${sha} from GitHub; refusing to migrate`)
+      }
+      entries = body.tree as unknown[]
+      cache.set(sha, entries)
+    }
+    const entry = (entries as Array<{ path?: unknown; mode?: unknown; sha?: unknown }>).find(
+      (item) => item.path === segment,
+    )
+    if (!entry) return null
+    if (
+      typeof entry.mode !== 'string' ||
+      typeof entry.sha !== 'string' ||
+      !FULL_SHA.test(entry.sha)
+    )
+      throw new GitHubReadError(`Could not read tree ${sha} from GitHub; refusing to migrate`)
+    mode = entry.mode
+    sha = entry.sha
+  }
+  return mode === SYMLINK_MODE ? 'symlink' : `${mode} ${sha}`
+}
+
+/** Whether every one of `paths` holds the same object at both commits (both absent counts). */
+function sameAt(get: GitHubGet, head: string, merged: string, paths: readonly string[]): boolean {
+  const cache = new Map<string, unknown[]>()
+  return paths.every((path) => {
+    const before = objectAt(get, head, path, cache)
+    return before !== 'symlink' && before === objectAt(get, merged, path, cache)
+  })
+}
+
+const LOCKFILES = [
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+]
+
+/**
+ * The repository paths whose content decides which migration files a
+ * deployment applies: each database's sources file, each source directory in
+ * the repository, and, for a source installed from a package, the lockfiles
+ * that pin that package's version. Null when a source cannot be pinned by
+ * repository content (outside the checkout, or a package that is not
+ * installed), which leaves the gate needing the whole tree identical.
+ */
+export function deploymentMigrationPaths(
+  plan: DeploymentMigrationPlan,
+  root: string,
+): string[] | null {
+  const top = realpathSync(
+    execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' }).trim(),
+  )
+  const repoPath = (path: string): string | null => {
+    const rel = relative(top, path)
+    return rel === '' || rel.startsWith('..') || isAbsolute(rel) ? null : rel.split(sep).join('/')
+  }
+  const paths = new Set<string>()
+  for (const database of plan.databases) {
+    const sources = repoPath(database.sources)
+    if (sources === null) return null
+    paths.add(sources)
+    const config = parseMigrationConfig(JSON.parse(readFileSync(database.sources, 'utf8')))
+    for (const source of config.sources) {
+      const directory = resolve(dirname(database.sources), source.path)
+      const rel = repoPath(directory)
+      if (rel === null) return null
+      const segments = rel.split('/')
+      const modules = segments.indexOf('node_modules')
+      if (modules === -1) {
+        paths.add(rel)
+        continue
+      }
+      if (!existsSync(directory)) return null
+      // A workspace package linked into node_modules is repository content.
+      const linked = repoPath(realpathSync(directory))
+      if (linked !== null && !linked.split('/').includes('node_modules')) {
+        paths.add(linked)
+        continue
+      }
+      const locks: string[] = []
+      for (let dir = join(top, ...segments.slice(0, modules)); ; dir = dirname(dir)) {
+        for (const name of LOCKFILES) {
+          const lock = repoPath(join(dir, name))
+          if (lock !== null && existsSync(join(dir, name))) locks.push(lock)
+        }
+        if (dir === top || dirname(dir) === dir) break
+      }
+      if (locks.length === 0) return null
+      for (const lock of locks) paths.add(lock)
+    }
+  }
+  return [...paths].sort()
 }
 
 /**
@@ -389,10 +544,12 @@ function treeOf(get: GitHubGet, commit: string): string {
  * 2. Only when the commit has no such run: a merged pull request whose merge
  *    commit IS this commit, into the production branch, from a head in this
  *    same repository, with the CI workflow's newest pull_request run green on
- *    that head AND the head's tree identical to the commit's tree. A squash
- *    merge's own commit carries no pull-request run, and some apps run CI only
- *    on pull requests; the tree check makes the head's run a run of exactly the
- *    content being migrated.
+ *    that head AND the head's tree identical to the commit's tree, or, when
+ *    the gate names `migrationPaths`, those paths identical. A squash merge's
+ *    own commit carries no pull-request run, and some apps run CI only on pull
+ *    requests; the comparison makes the head's run a run of exactly the
+ *    migrations being applied, so a pull request merged behind the production
+ *    branch still counts unless the branch moved the migrations under it.
  */
 export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
   const direct = ciVerdict(get, gate, gate.sha, BRANCH_CI_EVENTS, gate.productionBranch)
@@ -429,11 +586,15 @@ export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
       continue
     }
     if (ciVerdict(get, gate, headSha, PULL_CI_EVENTS, null, pullNumber) !== 'green') continue
-    if (treeOf(get, headSha) !== treeOf(get, gate.sha)) continue
-    return `${gate.check} succeeded on #${String(pull.number)} head ${headSha}, merged as ${gate.sha} with an identical tree`
+    const landed = `${gate.check} succeeded on #${String(pull.number)} head ${headSha}, merged as ${gate.sha}`
+    const headTree = treeOf(get, headSha)
+    const mergedTree = treeOf(get, gate.sha)
+    if (headTree === mergedTree) return `${landed} with an identical tree`
+    if (gate.migrationPaths && sameAt(get, headTree, mergedTree, gate.migrationPaths))
+      return `${landed} with identical migrations (${gate.migrationPaths.join(', ')})`
   }
   throw new Error(
-    `${gate.check} is not green on ${gate.sha} or on a merged pull request that landed as it with an identical tree; refusing to migrate`,
+    `${gate.check} is not green on ${gate.sha} or on a merged pull request that landed as it with ${gate.migrationPaths ? 'identical migrations' : 'an identical tree'}; refusing to migrate`,
   )
 }
 
@@ -555,6 +716,10 @@ export function assertMigrationContext(
       workflow: proof.gateWorkflow,
       repository: plan.repository,
       productionBranch: plan.productionBranch,
+      ...(() => {
+        const paths = deploymentMigrationPaths(plan, root)
+        return paths ? { migrationPaths: paths } : {}
+      })(),
     }
     try {
       verified = assertCiGateGreen(get, ci)

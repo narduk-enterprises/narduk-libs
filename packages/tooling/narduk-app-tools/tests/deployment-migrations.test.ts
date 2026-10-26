@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -8,6 +9,7 @@ import {
   assertCiGateGreen,
   assertMigrationContext,
   checkDeploymentMigrationContext,
+  deploymentMigrationPaths,
   planDeploymentMigrations,
   parseDeploymentMigrationArgs,
   runDeploymentMigrations,
@@ -168,13 +170,20 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     runStatus?: string
     /** Pull requests the workflow run belongs to; defaults to #7 for a pull_request run. */
     pulls?: number[]
+    /** The gate check run is left from an earlier attempt of a run being re-run. */
+    staleCheck?: boolean
   }
+  const runId = (e: Ev) => 5000 + e.suite
+  const checkId = (e: Ev) => 9000 + e.suite
+  const jobsPath = (e: Ev) =>
+    `actions/runs/${String(runId(e))}/attempts/${e.staleCheck ? '2' : '1'}/jobs?per_page=100`
   const ci = (commit: string, evs: Ev[]): Record<string, unknown> => ({
     [checkPath(commit)]: {
       total_count: evs.filter((e) => !e.noCheckYet).length,
       check_runs: evs
         .filter((e) => !e.noCheckYet)
         .map((e) => ({
+          id: checkId(e),
           name: e.name ?? check,
           status: e.conclusion === null ? 'in_progress' : 'completed',
           conclusion: e.conclusion === undefined ? 'success' : e.conclusion,
@@ -186,7 +195,9 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     [runsPath(commit)]: {
       total_count: evs.length,
       workflow_runs: evs.map((e) => ({
+        id: runId(e),
         run_number: e.number,
+        run_attempt: e.staleCheck ? 2 : 1,
         path: e.path ?? workflow,
         event: e.event ?? 'schedule',
         head_sha: commit,
@@ -203,6 +214,12 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         head_repository: { full_name: e.repo ?? 'example/app' },
       })),
     },
+    ...Object.fromEntries(
+      evs.map((e) => [
+        jobsPath(e),
+        { total_count: 1, jobs: [{ id: e.staleCheck ? checkId(e) + 1 : checkId(e) }] },
+      ]),
+    ),
   })
   /** A GitHub whose answers are the table; any other path is a failed read (null). */
   const github =
@@ -224,6 +241,57 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: headTree } } },
   ]
   const prEv: Ev = { suite: 9, number: 4, event: 'pull_request', branch: 'feature' }
+
+  /** A GitHub git tree holding `leaves` (path -> "<mode> <sha>"), and its `git/trees` answers. */
+  const fakeTree = (leaves: Record<string, string>) => {
+    const table: Record<string, unknown> = {}
+    const build = (prefix: string): string => {
+      const names = new Set(
+        Object.keys(leaves)
+          .filter((path) => path.startsWith(prefix))
+          .map((path) => path.slice(prefix.length).split('/')[0]!),
+      )
+      const entries = [...names].sort().map((name) => {
+        const leaf = leaves[prefix + name]
+        if (leaf === undefined)
+          return { path: name, mode: '040000', type: 'tree', sha: build(`${prefix}${name}/`) }
+        const [mode, sha] = leaf.split(' ')
+        return { path: name, mode, type: mode === '040000' ? 'tree' : 'blob', sha }
+      })
+      const sha = createHash('sha1').update(JSON.stringify(entries)).digest('hex')
+      table[`git/trees/${sha}`] = { sha, tree: entries, truncated: false }
+      return sha
+    }
+    return { root: build(''), table }
+  }
+  const mergedLeaves = {
+    'apps/web/migrations.sources.json': `100644 ${'1'.repeat(40)}`,
+    'apps/web/sql': `040000 ${'2'.repeat(40)}`,
+    'pnpm-lock.yaml': `100644 ${'3'.repeat(40)}`,
+    'README.md': `100644 ${'4'.repeat(40)}`,
+  }
+  const behindMain = { ...mergedLeaves, 'README.md': `100644 ${'5'.repeat(40)}` }
+  /** A merged pull request whose head tree is `headLeaves` and whose merge commit's is `mergedLeaves`. */
+  const landedTables = (
+    sha: string,
+    headLeaves: Record<string, string>,
+    headEvs: Ev[] = [prEv],
+    landedLeaves: Record<string, string> = mergedLeaves,
+  ) => {
+    const head = fakeTree(headLeaves)
+    const merged = fakeTree(landedLeaves)
+    return [
+      ci(sha, []),
+      { [`commits/${sha}/pulls?per_page=30`]: [pull(sha)] },
+      ci(headSha, headEvs),
+      head.table,
+      merged.table,
+      {
+        [treePath(sha)]: { tree: { sha: merged.root } },
+        [treePath(headSha)]: { tree: { sha: head.root } },
+      },
+    ]
+  }
 
   const setup = () => {
     const f = fixture()
@@ -266,6 +334,29 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     expect(
       assertMigrationContext(t.plan, t.f.sha, t.f.root, t.env(), false, t.proof({ get })),
     ).toContain('with an identical tree')
+  })
+
+  it('accepts a pull request merged behind the production branch when the migrations it would apply are identical (operator-portal#3173)', () => {
+    const t = setup()
+    expect(deploymentMigrationPaths(t.plan, t.f.root)).toEqual([
+      'apps/web/migrations.sources.json',
+      'apps/web/sql',
+    ])
+    const run = (headLeaves: Record<string, string>) => () =>
+      assertMigrationContext(
+        t.plan,
+        t.f.sha,
+        t.f.root,
+        t.env(),
+        false,
+        t.proof({ get: github(...landedTables(t.f.sha, headLeaves)) }),
+      )
+    expect(run(behindMain)()).toContain(
+      'with identical migrations (apps/web/migrations.sources.json, apps/web/sql)',
+    )
+    expect(run({ ...behindMain, 'apps/web/sql': `040000 ${'6'.repeat(40)}` })).toThrow(
+      'identical migrations; refusing to migrate',
+    )
   })
 
   it('refuses every event, ref and repository that is not a push or dispatch on the production branch', () => {
@@ -517,11 +608,45 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
       ).toThrow('did not succeed')
     })
 
-    it('does not accept a green gate check while its workflow run is being re-run', () => {
-      expect(refusal(direct({ suite: 1, number: 1, runStatus: 'in_progress' }))).toThrow(
-        'still running',
+    it('judges the gate check, not the whole run: a finished gate check of the current attempt decides while other jobs still run (operator-portal#3173)', () => {
+      expect(
+        assertCiGateGreen(direct({ suite: 1, number: 1, runStatus: 'in_progress' }), gate),
+      ).toContain('succeeded')
+      expect(
+        refusal(direct({ suite: 1, number: 1, runStatus: 'in_progress', conclusion: 'failure' })),
+      ).toThrow('did not succeed')
+      expect(
+        refusal(direct({ suite: 1, number: 1, runStatus: 'in_progress', conclusion: null })),
+      ).toThrow('still running')
+    })
+
+    it('does not accept a gate check left from an earlier attempt while the run is being re-run', () => {
+      for (const runStatus of ['in_progress', 'queued']) {
+        for (const conclusion of ['success', 'failure']) {
+          expect(
+            refusal(direct({ suite: 1, number: 1, runStatus, conclusion, staleCheck: true })),
+          ).toThrow('still running')
+        }
+      }
+      // Once the re-run finishes, its own (latest) gate check decides.
+      expect(assertCiGateGreen(direct({ suite: 1, number: 1, staleCheck: true }), gate)).toContain(
+        'succeeded',
       )
-      expect(refusal(direct({ suite: 1, number: 1, runStatus: 'queued' }))).toThrow('still running')
+    })
+
+    it('refuses when the jobs of the current attempt cannot be read', () => {
+      const ev: Ev = { suite: 1, number: 1, runStatus: 'in_progress' }
+      expect(refusal(github(ci(sha, [ev]), { [jobsPath(ev)]: null, [pullsPath]: [] }))).toThrow(
+        'Could not read',
+      )
+      expect(
+        refusal(
+          github(ci(sha, [ev]), {
+            [jobsPath(ev)]: { total_count: 101, jobs: [] },
+            [pullsPath]: [],
+          }),
+        ),
+      ).toThrow('more entries than one page')
     })
 
     it('binds the fallback to the pull request that merged, not to another pull request of the same head', () => {
@@ -615,6 +740,80 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         ok(pull(sha), tree, [{ ...prEv, path: '.github/workflows/e2e.yml' }]),
       ]
       for (const get of bad) expect(refusal(get)).toThrow('not green')
+    })
+
+    describe('a pull request merged behind the production branch', () => {
+      const paths = ['apps/web/migrations.sources.json', 'apps/web/sql', 'pnpm-lock.yaml']
+      const migrationsGate = { ...gate, migrationPaths: paths }
+      const landed = (headLeaves: Record<string, string>, headEvs?: Ev[]) =>
+        github(...landedTables(sha, headLeaves, headEvs))
+
+      it('is accepted when its tree differs only outside the migration paths', () => {
+        expect(assertCiGateGreen(landed(behindMain), migrationsGate)).toContain(
+          `#7 head ${headSha}, merged as ${sha} with identical migrations`,
+        )
+        expect(assertCiGateGreen(landed(mergedLeaves), migrationsGate)).toContain(
+          'with an identical tree',
+        )
+      })
+
+      it('is refused when anything it would apply differs, or the head is not green', () => {
+        const refused = (get: GitHubGet) => () => assertCiGateGreen(get, migrationsGate)
+        const differs = [
+          { ...behindMain, 'apps/web/sql': `040000 ${'6'.repeat(40)}` },
+          { ...behindMain, 'apps/web/migrations.sources.json': `100644 ${'6'.repeat(40)}` },
+          { ...behindMain, 'pnpm-lock.yaml': `100644 ${'6'.repeat(40)}` },
+          // A behind-main head lacking the migrations main added.
+          Object.fromEntries(
+            Object.entries(behindMain).filter(([path]) => path !== 'apps/web/sql'),
+          ),
+          // Same id, but a file where the merge commit has a directory.
+          { ...behindMain, 'apps/web/sql': `100644 ${'2'.repeat(40)}` },
+        ]
+        for (const leaves of differs)
+          expect(refused(landed(leaves))).toThrow('identical migrations; refusing to migrate')
+        // A symlink's blob says nothing about what it points at, even when both sides hold the same one.
+        const linked = { ...mergedLeaves, 'apps/web': `120000 ${'7'.repeat(40)}` }
+        delete (linked as Record<string, string>)['apps/web/migrations.sources.json']
+        delete (linked as Record<string, string>)['apps/web/sql']
+        expect(
+          refused(
+            github(
+              ...landedTables(
+                sha,
+                { ...linked, 'README.md': `100644 ${'5'.repeat(40)}` },
+                [prEv],
+                linked,
+              ),
+            ),
+          ),
+        ).toThrow('identical migrations; refusing to migrate')
+        for (const evs of [
+          [{ ...prEv, conclusion: 'failure' }],
+          [{ ...prEv, conclusion: null }],
+          [],
+        ])
+          expect(refused(landed(behindMain, evs))).toThrow('not green')
+        // Without migration paths the whole tree must match, as before.
+        expect(refusal(landed(behindMain))).toThrow('identical tree; refusing to migrate')
+      })
+
+      it('treats an unreadable or truncated subtree as a failed read, not a match', () => {
+        const tables = landedTables(sha, behindMain)
+        const head = tables[3] as Record<string, { tree: Array<{ path: string; sha: string }> }>
+        const [rootPath] = Object.entries(head).find(([, body]) =>
+          body.tree.some((entry) => entry.path === 'README.md'),
+        )!
+        expect(() =>
+          assertCiGateGreen(github(...tables, { [rootPath]: null }), migrationsGate),
+        ).toThrow('Could not read tree')
+        expect(() =>
+          assertCiGateGreen(
+            github(...tables, { [rootPath]: { ...head[rootPath], truncated: true } }),
+            migrationsGate,
+          ),
+        ).toThrow('Could not read tree')
+      })
     })
 
     it('treats an unreadable tree as a failed read, not a match', () => {
@@ -802,5 +1001,47 @@ describe('preview bundle edge cases', () => {
     f.manifest.deployment.migrations.databases[0]!.sources = '/etc/hosts'
     f.save()
     expect(() => planDeploymentMigrations(f.root, 'production')).toThrow('relative to the checkout')
+  })
+})
+
+describe('deploymentMigrationPaths', () => {
+  const withSources = (sources: object[]) => {
+    const f = fixture()
+    writeFileSync(join(f.root, 'apps/web/migrations.sources.json'), JSON.stringify({ sources }))
+    return {
+      f,
+      paths: () => deploymentMigrationPaths(planDeploymentMigrations(f.root, 'production'), f.root),
+    }
+  }
+
+  it('pins a package-provided source by the lockfile, and a workspace link by its repository path', () => {
+    const t = withSources([
+      { source: 'app', path: 'sql', sourceVersion: '1' },
+      { source: '@x/pkg', path: 'node_modules/@x/pkg/drizzle', sourceVersion: '1' },
+      { source: '@x/ws', path: 'node_modules/@x/ws/drizzle', sourceVersion: '1' },
+    ])
+    mkdirSync(join(t.f.root, 'apps/web/node_modules/@x/pkg/drizzle'), { recursive: true })
+    mkdirSync(join(t.f.root, 'packages/ws/drizzle'), { recursive: true })
+    symlinkSync(join(t.f.root, 'packages/ws'), join(t.f.root, 'apps/web/node_modules/@x/ws'))
+    // An installed package with no lockfile to pin it cannot be proved identical.
+    expect(t.paths()).toBeNull()
+    writeFileSync(join(t.f.root, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
+    expect(t.paths()).toEqual([
+      'apps/web/migrations.sources.json',
+      'apps/web/sql',
+      'packages/ws/drizzle',
+      'pnpm-lock.yaml',
+    ])
+  })
+
+  it('cannot pin a package that is not installed or a source outside the checkout', () => {
+    const missing = withSources([
+      { source: '@x/pkg', path: 'node_modules/@x/pkg/drizzle', sourceVersion: '1' },
+    ])
+    writeFileSync(join(missing.f.root, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
+    expect(missing.paths()).toBeNull()
+    expect(
+      withSources([{ source: 'app', path: '../../..', sourceVersion: '1' }]).paths(),
+    ).toBeNull()
   })
 })
