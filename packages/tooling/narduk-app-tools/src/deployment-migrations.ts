@@ -503,11 +503,12 @@ const PNPM_REGISTRY_ENTRY =
  * deployment applies to which database: the app manifest when the checkout
  * carries it, the wrangler config, each database's sources file, each source
  * directory in the repository, and, for a source installed from the registry
- * by pnpm, the lockfiles that pin its version. Null when any of them cannot be
- * pinned by repository content (a symlink on the way, a path outside the
- * checkout or missing from it, a package that is not installed, or one pnpm
- * installed from a directory), which leaves the gate needing the whole tree
- * identical.
+ * by pnpm or linked from the workspace, the lockfiles that pin it. Null when
+ * any of them cannot be pinned by repository content (a symlink on the way, a
+ * path outside the checkout or missing from it, a package that is not
+ * installed, one pnpm installed from a directory, or a compared path with
+ * untracked, ignored or edited files on disk), which leaves the gate needing
+ * the whole tree identical.
  */
 export function deploymentMigrationPaths(
   plan: DeploymentMigrationPlan,
@@ -567,13 +568,13 @@ export function deploymentMigrationPaths(
       const rel = repoPath(real)
       if (rel === null) return null
       const parts = rel.split('/')
-      // A workspace package linked into node_modules is repository content.
-      if (!parts.includes('node_modules')) {
-        paths.add(rel)
-        continue
-      }
+      // A workspace package linked into node_modules is repository content,
+      // and the lockfile pins which workspace directory its name resolves to.
+      const workspace = !parts.includes('node_modules')
+      if (workspace) paths.add(rel)
       const store = parts.indexOf('.pnpm')
-      if (store === -1 || !PNPM_REGISTRY_ENTRY.test(parts[store + 1] ?? '')) return null
+      if (!workspace && (store === -1 || !PNPM_REGISTRY_ENTRY.test(parts[store + 1] ?? '')))
+        return null
       const locks: string[] = []
       for (let dir = owner; ; dir = dirname(dir)) {
         for (const name of LOCKFILES) {
@@ -586,7 +587,15 @@ export function deploymentMigrationPaths(
       for (const lock of locks) paths.add(lock)
     }
   }
-  return [...paths].sort()
+  const sorted = [...paths].sort()
+  // The runner reads the disk, not the commit: an untracked, ignored or edited
+  // file under a compared path is content no tree comparison sees.
+  const dirty = execFileSync(
+    'git',
+    ['status', '--porcelain', '--ignored', '--untracked-files=all', '--', ...sorted],
+    { cwd: top, encoding: 'utf8' },
+  )
+  return dirty.trim() === '' ? sorted : null
 }
 
 /**

@@ -1080,12 +1080,39 @@ describe('preview bundle edge cases', () => {
 })
 
 describe('deploymentMigrationPaths', () => {
+  /** Commits whatever is on disk, as a checkout of that commit would hold it. */
+  const commit = (root: string) => {
+    execFileSync('git', ['add', '-A'], { cwd: root })
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=Test',
+        '-c',
+        'user.email=test@example.com',
+        'commit',
+        '--allow-empty',
+        '-qm',
+        'paths',
+      ],
+      { cwd: root },
+    )
+  }
   const withSources = (sources: object[]) => {
     const f = fixture()
     writeFileSync(join(f.root, 'apps/web/migrations.sources.json'), JSON.stringify({ sources }))
+    writeFileSync(join(f.root, '.gitignore'), 'node_modules\n')
+    commit(f.root)
+    const plan = () => planDeploymentMigrations(f.root, 'production')
     return {
       f,
-      paths: () => deploymentMigrationPaths(planDeploymentMigrations(f.root, 'production'), f.root),
+      /** The paths of what is on disk once committed. */
+      paths: () => {
+        commit(f.root)
+        return deploymentMigrationPaths(plan(), f.root)
+      },
+      /** The paths of the working tree as it is. */
+      onDisk: () => deploymentMigrationPaths(plan(), f.root),
     }
   }
   /** A pnpm virtual-store entry named `entry`, linked at apps/web/node_modules/@x/<name>. */
@@ -1156,5 +1183,31 @@ describe('deploymentMigrationPaths', () => {
       join(linked.f.root, 'apps/web/vendor/pkg'),
     )
     expect(linked.paths()).toBeNull()
+  })
+
+  it('needs a lockfile to pin which directory a workspace link resolves to', () => {
+    const t = withSources([
+      { source: '@x/ws', path: 'node_modules/@x/ws/drizzle', sourceVersion: '1' },
+    ])
+    mkdirSync(join(t.f.root, 'packages/ws/drizzle'), { recursive: true })
+    mkdirSync(join(t.f.root, 'apps/web/node_modules/@x'), { recursive: true })
+    symlinkSync(join(t.f.root, 'packages/ws'), join(t.f.root, 'apps/web/node_modules/@x/ws'))
+    expect(t.paths()).toBeNull()
+    lock(t.f.root)
+    expect(t.paths()).toContain('pnpm-lock.yaml')
+  })
+
+  it('cannot vouch for a compared path whose files on disk differ from the commit', () => {
+    const t = withSources([{ source: 'app', path: 'sql', sourceVersion: '1' }])
+    expect(t.onDisk()).toContain('apps/web/sql')
+    writeFileSync(join(t.f.root, 'apps/web/sql/0002_gen.sql'), 'DROP TABLE example;')
+    expect(t.onDisk()).toBeNull()
+    writeFileSync(join(t.f.root, '.gitignore'), 'node_modules\napps/web/sql/*_gen.sql\n')
+    commit(t.f.root)
+    expect(t.onDisk()).toBeNull()
+    rmSync(join(t.f.root, 'apps/web/sql/0002_gen.sql'))
+    expect(t.onDisk()).toContain('apps/web/sql')
+    writeFileSync(join(t.f.root, 'apps/web/sql/0001.sql'), 'DROP TABLE example;')
+    expect(t.onDisk()).toBeNull()
   })
 })

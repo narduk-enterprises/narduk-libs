@@ -10,7 +10,7 @@
   - the wrangler config
   - each database's sources file
   - each in-repo source directory
-  - the lockfile for a pnpm registry package source
+  - the lockfile for a pnpm registry package source or a workspace-linked package
 
-  It still refuses when any of these differ or is untracked. It also refuses a symlink or submodule on the way to or inside a compared path, and a red, missing or unreadable head check. A source git cannot pin (outside the checkout, behind a symlink, not installed, or installed from a directory) keeps the whole-tree rule.
+  It still refuses when any of these differ, is untracked, or has untracked, ignored or edited files on disk. It also refuses a symlink or submodule on the way to or inside a compared path, and a red, missing or unreadable head check. A source git cannot pin (outside the checkout, behind a symlink, not installed, or installed from a directory) keeps the whole-tree rule.
 - New export: `deploymentMigrationPaths(plan, root)`. New optional `CiGate.migrationPaths`: without it, `assertCiGateGreen` still requires the whole tree to be identical.
