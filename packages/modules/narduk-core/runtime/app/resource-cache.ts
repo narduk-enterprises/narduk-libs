@@ -383,6 +383,8 @@ export interface PollOptions {
  *   already out and skips a key some other caller read moments ago, instead of reading twice.
  * - A failed tick is kept as the key's error by the cache; the next tick tries again.
  * - On the server, and outside an effect scope, it does nothing.
+ * - The first poller's `load` and `everyMs` drive the key's timer until the last poller goes; pass
+ *   the same ones from every caller (a store method does this for you).
  */
 export function createResourcePoller(resources: ResourceCache) {
   const polls = new Map<string, { holders: number; stop: () => void }>()

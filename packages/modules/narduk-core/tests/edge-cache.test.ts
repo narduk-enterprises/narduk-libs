@@ -92,6 +92,18 @@ describe('createEdgeCache', () => {
     expect(api.entries.size).toBe(1)
   })
 
+  it('an event with no waitUntil of its own is held by the plugin, like no event', async () => {
+    const event = { context: {} } as unknown as H3Event
+    createEdgeCache(options).putInBackground('movers:dev', 1, 60, event)
+    expect(pendingEdgeCacheWrites()).not.toBeNull()
+    await pendingEdgeCacheWrites()
+    expect(api.entries.size).toBe(1)
+  })
+
+  it('refuses an empty path', () => {
+    expect(() => createEdgeCache({ origin: 'https://stonx.app', path: '/' })).toThrow(TypeError)
+  })
+
   it('a zero TTL stores nothing', async () => {
     await createEdgeCache(options).put('k', 1, 0)
     expect(api.entries.size).toBe(0)

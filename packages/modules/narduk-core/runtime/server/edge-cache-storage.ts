@@ -31,7 +31,11 @@
  */
 
 export interface EdgeCacheStorageOptions {
-  /** The site's own origin; keeps staging and production entries apart. */
+  /**
+   * The site's own origin; keeps staging and production entries apart. Pass it
+   * (and `path`) explicitly: an app moving an existing driver here keeps its
+   * entries only if both match the URLs it already wrote.
+   */
   base?: string
   /** Most entries the isolate copy keeps. Default 1000. */
   localMax?: number
@@ -50,7 +54,7 @@ const DEFAULT_LOCAL_MAX = 1000
 
 export default function edgeCacheStorage(options: EdgeCacheStorageOptions = {}) {
   const base = String(options.base || 'https://localhost').replace(/\/$/, '')
-  const path = `/${String(options.path ?? DEFAULT_PATH).replaceAll(/^\/+|\/+$/g, '')}/`
+  const path = `/${String(options.path || DEFAULT_PATH).replaceAll(/^\/+|\/+$/g, '') || '__nitro-edge-cache'}/`
   const localMax = options.localMax ?? DEFAULT_LOCAL_MAX
   const store = () =>
     (globalThis as { caches?: { default?: EdgeCacheStore } }).caches?.default ?? null

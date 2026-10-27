@@ -42,7 +42,7 @@
  * ```
  */
 
-import { runInBackground } from './wait-until'
+import { resolveWaitUntil, runInBackground } from './wait-until'
 
 import type { H3Event } from 'h3'
 
@@ -115,7 +115,13 @@ export function holdEdgeCacheWrites(nitroApp: NitroAppLike): void {
 }
 
 export function createEdgeCache(options: EdgeCacheOptions) {
-  const path = `/${options.path.replaceAll(/^\/+|\/+$/g, '')}/`
+  const segment = options.path.replaceAll(/^\/+|\/+$/g, '')
+  if (!segment) {
+    throw new TypeError(
+      'createEdgeCache: options.path must name a path, such as /__app-edge-cache/',
+    )
+  }
+  const path = `/${segment}/`
 
   function edgeRequest(key: string): Request {
     const origin = typeof options.origin === 'function' ? options.origin() : options.origin
@@ -160,7 +166,8 @@ export function createEdgeCache(options: EdgeCacheOptions) {
    */
   function putInBackground(key: string, value: unknown, ttlSeconds: number, event?: H3Event) {
     if (!edgeStore()) return
-    if (event) {
+    // An event with no `waitUntil` of its own (dev, a node preset) is tracked like no event.
+    if (event && resolveWaitUntil(event)) {
       void runInBackground(event, put(key, value, ttlSeconds))
       return
     }

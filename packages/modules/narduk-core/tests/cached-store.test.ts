@@ -193,6 +193,35 @@ describe('useIntervalRefresh pauseWhenHidden', () => {
     scope.stop()
   })
 
+  it('short trips away still catch up once a full interval has passed since the last read', async () => {
+    const callback = vi.fn()
+    const scope = effectScope()
+    scope.run(() => useIntervalRefresh(callback, 10_000, { pauseWhenHidden: true }))
+    for (let trip = 0; trip < 3; trip++) {
+      await vi.advanceTimersByTimeAsync(4_000)
+      setVisibility('hidden')
+      await vi.advanceTimersByTimeAsync(1_000)
+      setVisibility('visible')
+    }
+    // 15 s since setup, never a full visible interval: the third return caught up.
+    expect(callback).toHaveBeenCalledTimes(1)
+    scope.stop()
+  })
+
+  it('an immediate read skipped while hidden at mount runs on first show', async () => {
+    const callback = vi.fn()
+    setVisibility('hidden')
+    const scope = effectScope()
+    scope.run(() =>
+      useIntervalRefresh(callback, 10_000, { pauseWhenHidden: true, immediate: true }),
+    )
+    expect(callback).toHaveBeenCalledTimes(0)
+    await vi.advanceTimersByTimeAsync(2_000)
+    setVisibility('visible')
+    expect(callback).toHaveBeenCalledTimes(1)
+    scope.stop()
+  })
+
   it('stays paused on return while disabled', async () => {
     const callback = vi.fn()
     const scope = effectScope()
