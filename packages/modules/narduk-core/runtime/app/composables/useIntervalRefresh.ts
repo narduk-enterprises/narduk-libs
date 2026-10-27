@@ -1,5 +1,5 @@
 // Explicit import (not a Nuxt auto-import): required for isolated Vitest execution where Nuxt auto-imports are unavailable.
-import { type MaybeRefOrGetter, onScopeDispose, toValue, watch } from 'vue'
+import { type MaybeRefOrGetter, onScopeDispose, shallowRef, toValue, watch } from 'vue'
 
 /**
  * useIntervalRefresh — generic interval-based poller for reactive UIs.
@@ -21,6 +21,9 @@ import { type MaybeRefOrGetter, onScopeDispose, toValue, watch } from 'vue'
  * const intervalMs = ref(30_000)
  * const enabled = computed(() => route.name === 'dashboard')
  * useIntervalRefresh(refresh, intervalMs, { enabled, immediate: true })
+ *
+ * // No reads from a background tab; one catch-up read on return:
+ * useIntervalRefresh(refresh, 30_000, { pauseWhenHidden: true })
  * ```
  */
 export interface UseIntervalRefreshOptions {
@@ -32,6 +35,14 @@ export interface UseIntervalRefreshOptions {
   enabled?: MaybeRefOrGetter<boolean>
   /** Invoke `callback` immediately on mount in addition to each interval tick. */
   immediate?: boolean
+  /**
+   * Stop the timer while the page is hidden (`document.visibilityState`), so
+   * a background tab makes no requests. On return the callback runs at once if
+   * a full interval has passed since it last ran (or since setup),
+   * then the timer re-arms. Still subject to `enabled`. With `immediate`, a page
+   * hidden at mount gets its first read when it is shown. Defaults to `false`.
+   */
+  pauseWhenHidden?: boolean
 }
 
 export interface UseIntervalRefreshHandle {
@@ -80,20 +91,52 @@ export function useIntervalRefresh(
     }
   }
 
+  /**
+   * When the callback last ran (or the composable was set up): the catch-up
+   * clock. A re-arm does not reset it, so short trips away still catch up once
+   * a full interval has passed since the last read.
+   */
+  let lastRunAt = Date.now()
+
+  function tick() {
+    lastRunAt = Date.now()
+    runGuardedCallback(callback)
+  }
+
   function start() {
     stop()
     const ms = toValue(intervalMs)
     if (!Number.isFinite(ms) || ms <= 0) return
-    timerId = setInterval(() => {
-      runGuardedCallback(callback)
-    }, ms)
+    timerId = setInterval(tick, ms)
   }
 
   const enabledSource: MaybeRefOrGetter<boolean> = options.enabled ?? true
+  const visible = shallowRef(true)
+  const watchVisibility = Boolean(options.pauseWhenHidden) && typeof document !== 'undefined'
+  /** An `immediate` read skipped because the page was hidden at mount, owed on first show. */
+  let owed = false
+  const onVisibility = () => {
+    const now = document.visibilityState !== 'hidden'
+    if (now === visible.value) return
+    // Catch up before the watcher re-arms, so the new timer counts from this read.
+    if (now && toValue(enabledSource) && (owed || Date.now() - lastRunAt >= toValue(intervalMs))) {
+      owed = false
+      tick()
+    }
+    visible.value = now
+  }
+  if (watchVisibility) {
+    visible.value = document.visibilityState !== 'hidden'
+    document.addEventListener('visibilitychange', onVisibility)
+  }
+  onScopeDispose(() => {
+    if (watchVisibility) document.removeEventListener('visibilitychange', onVisibility)
+  })
+
   watch(
-    [() => toValue(intervalMs), () => toValue(enabledSource)],
-    ([, isEnabled]) => {
-      if (isEnabled) {
+    [() => toValue(intervalMs), () => toValue(enabledSource), visible],
+    ([, isEnabled, isVisible]) => {
+      if (isEnabled && isVisible) {
         start()
       } else {
         stop()
@@ -108,7 +151,8 @@ export function useIntervalRefresh(
   // fire unwanted API calls on views that are intentionally disabled.
   const enabledAtMount = toValue(enabledSource)
   if (options.immediate && enabledAtMount) {
-    runGuardedCallback(callback)
+    if (visible.value) tick()
+    else owed = true
   }
 
   onScopeDispose(stop)

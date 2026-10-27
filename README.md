@@ -76,6 +76,15 @@ Pagination is an end-to-end contract, not just a control:
 | Shared list types                            | [narduk-platform](packages/contracts/narduk-platform/README.md)                                                                  |
 | Offset collection fetching and pagination UI | [narduk-shell](packages/design/narduk-shell/README.md): `useCollection`, `NePager` (offset only)                                 |
 
+Client and Worker caching:
+
+| Capability                                                                                                              | Start here                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A page's own server read, hydrated once                                                                                 | [narduk-core](packages/modules/narduk-core/README.md#shared-server-reads-defineserverresource): `defineServerResource`                            |
+| A resource many pages share, in a Pinia store, with SSR seeding, identity scoping and one visibility-aware poll per key | [narduk-core](packages/modules/narduk-core/README.md#shared-client-stores-definecachedstore): `app/cached-store`, `app/resource-cache`            |
+| A hot SSR read cached inside the Worker                                                                                 | [narduk-core](packages/modules/narduk-core/README.md#worker-data-cache-withworkercache): `withWorkerCache`                                        |
+| The Cache API tier without a request event, and a Nitro `cache` driver on it                                            | [narduk-core](packages/modules/narduk-core/README.md#event-less-cache-api-tier-createedgecache): `server/edge-cache`, `server/edge-cache-storage` |
+
 Growing lists require source query bounds and reachable continuation. A hard cap
 or browser slice alone does not provide pagination. Read the package API before
 choosing offset versus cursor mode; preserve documented bounded catalogs,
