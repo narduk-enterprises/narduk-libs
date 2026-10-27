@@ -1,5 +1,21 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.47.3
+
+### Patch Changes
+
+- caaaf7d: Doctor item 9.5 no longer names a `posthog-js` pin that sits only in
+  `devDependencies`. That pin is a test or tooling dependency (it ships in no
+  bundle), so the "pins posthog-js directly with no import in the scanned
+  source" heuristic now fires only for a pin in `dependencies`,
+  `optionalDependencies` or `peerDependencies`. Direct `posthog-js` imports in
+  scanned app source still fail as before. Fixes harbor reading Platform=unknown
+  on /products.
+- 6d9174f: narduk-app-tools doctor item 9: the source-scan ceiling is now 10000
+  files (was 2000), so a large conformant app such as stonx reads Platform as
+  `pass` instead of `unknown`; a scan that does reach the ceiling now stops
+  walking instead of continuing past it.
+
 ## 0.47.2
 
 ### Patch Changes
