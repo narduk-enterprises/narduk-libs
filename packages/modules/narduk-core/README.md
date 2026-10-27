@@ -2323,6 +2323,7 @@ rely on Nitro's auto-import.
 | The same data when **SSR pages call the API in-process**, or any hot D1 read | `withWorkerCache` + a version    | The in-process call never reaches the edge; this caches the value inside the handler.    |
 | A response from an **external API** (weather, analytics, search console)     | `withKVCache` or `withD1Cache`   | Time-based, survives isolate recycling and cold datacentres; a lookup costs a KV/D1 row. |
 | Per-user data                                                                | `setCacheProfile(event, 'none')` | Never shared. Add `withWorkerCache` with `scope: 'private'` if the read is hot.          |
+| A bare get/put **with no request event** (a service module, a class cache)   | `createEdgeCache`                | The Cache API tier alone; background puts are held open by a Nitro plugin.               |
 
 They compose: a route can set a cache profile for outside callers and call
 `withWorkerCache` inside its handler for the SSR path.
@@ -2439,6 +2440,61 @@ never sweeps it.
 
 `tests/worker-cache.test.ts` covers each guarantee above and
 `tests/worker-cache-version-d1.test.ts` the versions on Miniflare D1.
+
+### Event-less Cache API tier: `createEdgeCache`
+
+`withWorkerCache` needs the request event. Code that has none (a service module
+shared by routes and scheduled work, a class-based cache) uses the bare tier
+underneath: `createEdgeCache` from
+`@narduk-enterprises/narduk-core/server/edge-cache` (explicit import, no
+auto-imported names). It is per data centre, and a delete reaches only the data
+centre it runs in, so only data that tolerates its whole TTL belongs there. On
+Node (dev, tests) there is no `caches` and every call is a no-op.
+
+```ts
+// server/utils/quotes-edge.ts
+import { createEdgeCache } from '@narduk-enterprises/narduk-core/server/edge-cache'
+
+export const quotesEdge = createEdgeCache({
+  origin: () => useRuntimeConfig().public.siteUrl || 'https://example.com',
+  path: '/__example-edge-cache/', // keep an existing path to keep its entries
+})
+
+const hit = await quotesEdge.get<Quote>(`quote:${symbol}`) // { value, expiresAt } | null
+quotesEdge.putInBackground(`quote:${symbol}`, quote, 30) // never delays the response
+await quotesEdge.delete(`quote:${symbol}`)
+```
+
+`putInBackground(key, value, ttl, event?)` hands the write to that request's
+`waitUntil` when you pass the event. Without one, the write is tracked until a
+request ends, and the `holdEdgeCacheWrites` plugin passes it to that request's
+`waitUntil` after the response is out:
+
+```ts
+// server/plugins/edge-cache-writes.ts
+import { holdEdgeCacheWrites } from '@narduk-enterprises/narduk-core/server/edge-cache'
+
+export default defineNitroPlugin(holdEdgeCacheWrites)
+```
+
+For Nitro's own `cache` mount (`cachedEventHandler`, `defineCachedFunction`),
+`@narduk-enterprises/narduk-core/server/edge-cache-storage` is a storage driver
+on the same tier, with a bounded isolate copy in front (on workers.dev the Cache
+API stores nothing). The Cache API cannot list or clear, so mount it only for
+routes never invalidated before their TTL:
+
+```ts
+// nuxt.config.ts, Cloudflare build
+nitro: {
+  storage: {
+    cache: {
+      driver: '@narduk-enterprises/narduk-core/server/edge-cache-storage',
+      base: 'https://example.com',
+      path: '/__example-nitro-cache/',
+    },
+  },
+}
+```
 
 ## Per-browser state: `useStoredState`
 
@@ -2841,6 +2897,95 @@ composable is awaitable; `await` resolves once the first read settles.
 `tests/define-server-resource.test.ts` proves sharing, freshness, hydration,
 error retention, forced reads, writes with invalidation, keepAlive and
 single-timer polling.
+
+## Shared client stores: `defineCachedStore`
+
+A Pinia store whose resources are read once and shared by every page and the
+shell that ask for them (extracted from stonx's store resource layer). Import it
+explicitly; none of these names is auto-imported:
+
+- `@narduk-enterprises/narduk-core/app/cached-store`: `defineCachedStore`,
+  `useResourceIdentityStore`;
+- `@narduk-enterprises/narduk-core/app/resource-cache`: the Vue-only primitive,
+  `createResourceCache`, `createResourcePoller`, `isAbortError`,
+  `describeError`;
+- `@narduk-enterprises/narduk-core/app/server-prefetch`:
+  `onHydrationSafeServerPrefetch`.
+
+| Need                                                                                                                         | Use                                |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| One page's own read, hydrated without a second read                                                                          | `defineServerResource`             |
+| A resource several components or pages read, kept across navigation, with writes that must not be overtaken by an older read | `defineCachedStore`                |
+| Per-user data in either                                                                                                      | Also tag it with the actor (below) |
+
+```ts
+// app/stores/releases.ts
+import { defineCachedStore } from '@narduk-enterprises/narduk-core/app/cached-store'
+
+export const useReleasesStore = defineCachedStore(
+  'releases',
+  ({ resources, poll }) => {
+    const load = () => $fetch<Release[]>('/api/releases')
+    return {
+      releases: computed(() => resources.read<Release[]>('list') ?? []),
+      pending: computed(() => resources.isPending('list')),
+      error: computed(() => resources.error('list')),
+      ensure: () =>
+        resources.ensure('list', load, { staleMs: 30_000, retryMs: 10_000 }),
+      refresh: () => resources.refresh('list', load),
+      poll: () => poll('list', load, { everyMs: 60_000 }),
+    }
+  },
+  { actor: () => null }, // data every visitor shares; see "Identity"
+)
+
+// A page or the shell
+const releases = useReleasesStore()
+await useAsyncData('releases', () => releases.ensure()) // SSR read; hydration reuses it
+releases.poll() // one timer per key, however many components call it
+```
+
+What the cache guarantees (`resource-cache.ts`):
+
+- `ensure(key, load, { staleMs, retryMs? })` answers a fresh value, else joins
+  the read already out for that key, else starts one. After a failure, `retryMs`
+  holds the failure (or the last good value) instead of asking again.
+- `refresh(key, load)` always reads again; the read it replaces can no longer
+  commit.
+- `invalidate(key)` keeps the last good value readable but stale, and retires
+  reads in flight, so a read started before a write never lands after it. A key
+  ending in `:` invalidates the prefix.
+- `update`, `set`, `capture`, `fail`, `drop`, `clearError` and `reset` cover
+  optimistic writes, page bundles that fill an entry, and identity changes.
+- Entries and errors are store state, so @pinia/nuxt serializes them into the
+  SSR payload, and an entry hydrated from it counts as fresh. Promises and
+  generations stay in the closure, out of the payload.
+
+**Polling.** `poll(key, load, { everyMs })` inside a component's setup keeps the
+key fresh while that component is mounted. There is one timer per key, started
+by the first poller and stopped with the last. It stops while the page is
+hidden, and on return it reads once if a full interval has passed. A tick goes
+through `ensure` with half the interval as its freshness, so it never doubles a
+read that is already out. The pause is `useIntervalRefresh`'s `pauseWhenHidden`
+option, which any poller can use.
+
+**Identity.** Every entry is tagged with the actor epoch and the actor id. For
+per-user data, pass `actor: () => user.value?.id ?? null` (from your session).
+At sign-in, sign-out or an account switch, call
+`useResourceIdentityStore().retire()` synchronously, before the new identity
+reads anything. Every read out then rejects with an `AbortError` and never
+commits, and no entry from the old epoch is read again. Then `reset()` the
+stores, or reload the page.
+
+**Server prefetch and `useId`.** Vue's `useId` treats a component with a server
+prefetch hook as an async boundary. A hook registered on the server alone
+(`if (import.meta.server) onServerPrefetch(...)`) therefore gives every id under
+it one more level on the server than on the client, and hydration mismatches
+(stonx#1356). Prefer `await useAsyncData(...)` in pages. Where a layout or shell
+component must prefetch, use `onHydrationSafeServerPrefetch(work)`: it registers
+the hook on both sides and runs the work only on the server.
+`tests/server-prefetch.test.ts` renders one tree to a string and hydrates it, to
+show the difference.
 
 ## Live data: `useLiveProduct`
 

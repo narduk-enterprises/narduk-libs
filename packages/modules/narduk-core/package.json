@@ -42,6 +42,15 @@
     "./app/stored-state": {
       "import": "./runtime/app/stored-state.ts"
     },
+    "./app/resource-cache": {
+      "import": "./runtime/app/resource-cache.ts"
+    },
+    "./app/cached-store": {
+      "import": "./runtime/app/cached-store.ts"
+    },
+    "./app/server-prefetch": {
+      "import": "./runtime/app/server-prefetch.ts"
+    },
     "./app/types/*": {
       "types": "./runtime/app/types/*.d.ts"
     },
