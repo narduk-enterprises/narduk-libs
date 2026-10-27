@@ -46,6 +46,7 @@ import {
   type CapabilityInventory,
   type CapabilityRow,
 } from '../capability-inventory.js'
+import { isRecord } from '../source.js'
 import {
   NARDUK_ANALYTICS,
   NARDUK_CORE,
@@ -278,9 +279,17 @@ export function evaluateItem9(repo: AppRepo): CapabilityCoverageEvaluation {
   const scan = scanAppSource(repo)
   // A direct `posthog-js` pin with no import anywhere in the scanned source is
   // still worth naming, but only as a heuristic: the code using it may live
-  // outside the bounded scan, or the pin may simply be stale.
+  // outside the bounded scan, or the pin may simply be stale. A pin that lives
+  // only in `devDependencies` cannot ship an analytics wrapper (a test may
+  // import the SDK), so it is not named.
+  const pinnedOutsideDev = packages.some(({ pkg }) =>
+    (['dependencies', 'optionalDependencies', 'peerDependencies'] as const).some((block) => {
+      const section = pkg[block]
+      return isRecord(section) && POSTHOG_PACKAGE in section
+    }),
+  )
   const orphanPosthogPin =
-    POSTHOG_PACKAGE in merged && detectDirectPosthogUse(scan.files).length === 0
+    POSTHOG_PACKAGE in merged && pinnedOutsideDev && detectDirectPosthogUse(scan.files).length === 0
 
   const specs: DetectorSpec[] = [
     {

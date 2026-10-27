@@ -71,8 +71,36 @@ export const SCAN_DIRECTORY_NAMES = [
 export const SCAN_EXTENSIONS = ['.ts', '.mts', '.js', '.mjs', '.vue'] as const
 
 /** Ceiling on files read in one run. A repository larger than this is reported
- * as `unknown` for the detectors rather than as a silently partial pass. */
-export const SCAN_FILE_LIMIT = 2000
+ * as `unknown` for the detectors rather than as a silently partial pass. Test
+ * and generated files are excluded before they count (`isScannedSourcePath`),
+ * so the ceiling bounds app source, and a large app (2106 files in stonx) still
+ * gets a verdict. */
+export const SCAN_FILE_LIMIT = 6000
+
+/** Directory names whose contents are tests, fixtures or generated output, not
+ * app source a reimplementation could live in. */
+const NON_SOURCE_SEGMENTS = new Set([
+  'tests',
+  'test',
+  '__tests__',
+  '__mocks__',
+  '__fixtures__',
+  'fixtures',
+  'e2e',
+  'generated',
+  '.generated',
+])
+
+const NON_SOURCE_FILE = /\.(?:test|spec|stories)\.[cm]?[jt]s$|\.d\.[cm]?ts$/u
+
+/** False for a test, fixture or generated file: it neither carries a fork nor
+ * counts against `SCAN_FILE_LIMIT`. */
+export function isScannedSourcePath(rel: string): boolean {
+  const segments = rel.split('/')
+  const file = segments.pop() ?? ''
+  if (NON_SOURCE_FILE.test(file)) return false
+  return !segments.some((segment) => NON_SOURCE_SEGMENTS.has(segment))
+}
 
 export interface ScannedFile {
   rel: string
@@ -96,7 +124,7 @@ export function scanAppSource(repo: AppRepo): SourceScan {
     for (const name of SCAN_DIRECTORY_NAMES) {
       const dir = `${prefix}${name}`
       if (!repo.exists(dir)) continue
-      const found = repo.walk(dir, SCAN_EXTENSIONS)
+      const found = repo.walk(dir, SCAN_EXTENSIONS).filter(isScannedSourcePath)
       if (found.length === 0 && !repo.exists(dir)) continue
       directories.push(dir)
       for (const rel of found) {

@@ -395,6 +395,29 @@ describe('item 9.5 -- analytics wrapper around posthog-js', () => {
     })
   })
 
+  it('does not flag a posthog-js pin that lives only in devDependencies', () => {
+    const repo = repoWith((root) => {
+      baseline(root, { '@narduk-enterprises/narduk-analytics': '1.19.36' })
+      writeJson(root, 'apps/web/package.json', {
+        name: 'web',
+        devDependencies: { 'posthog-js': '1.0.0' },
+      })
+    })
+    expect(statusOf(repo, '9.5')).toBe('pass')
+    expect(evaluateItem9(repo).detections).toEqual([])
+  })
+
+  it('still warns for a dependencies pin with no import when a devDependencies pin also exists', () => {
+    const repo = repoWith((root) => {
+      baseline(root, { 'posthog-js': '1.0.0' })
+      writeJson(root, 'apps/web/package.json', {
+        name: 'web',
+        devDependencies: { 'posthog-js': '1.0.0' },
+      })
+    })
+    expect(statusOf(repo, '9.5')).toBe('unknown')
+  })
+
   it('does not flag runtime config that merely names PostHog', () => {
     const repo = repoWith((root) => {
       baseline(root, { '@narduk-enterprises/narduk-analytics': '1.19.36' })
@@ -659,5 +682,34 @@ describe('item 9.8 -- hand-rolled narduk-data reader (narduk-libs#373)', () => {
       )
     })
     expect(statusOf(repo, '9.8')).toBe('pass')
+  })
+})
+
+describe('item 9 -- scan ceiling', () => {
+  it('gives a real verdict for an app with more than 2000 source files', () => {
+    const repo = repoWith((root) => {
+      baseline(root)
+      for (let i = 0; i < 2100; i++)
+        writeFile(root, `app/utils/gen/u${i}.ts`, `export const v${i} = ${i}\n`)
+    })
+    const evaluation = evaluateItem9(repo)
+    expect(evaluation.scan.files).toBeGreaterThan(2000)
+    expect(evaluation.scan.truncated).toBe(false)
+    for (const id of ['9.3', '9.4', '9.5']) expect(statusOf(repo, id)).toBe('pass')
+    for (const check of evaluation.checks) expect(check.status).not.toBe('unknown')
+  })
+
+  it('does not count test or generated files against the ceiling', () => {
+    const repo = repoWith((root) => {
+      baseline(root)
+      writeFile(root, 'app/utils/a.ts', 'export const a = 1\n')
+      for (let i = 0; i < 3000; i++) {
+        writeFile(root, `app/tests/t${i}.ts`, 'export const t = 1\n')
+        writeFile(root, `app/utils/x${i}.test.ts`, 'export const t = 1\n')
+      }
+    })
+    const evaluation = evaluateItem9(repo)
+    expect(evaluation.scan.truncated).toBe(false)
+    expect(evaluation.scan.files).toBe(2)
   })
 })
