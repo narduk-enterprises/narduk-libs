@@ -178,5 +178,7 @@ describe('edgeCacheStorage (Nitro cache driver)', () => {
 
 /** Only the hook registry the plugin body touches; each `afterResponse` callback lands in `hooks`. */
 function fakeNitroApp(hooks: Array<(event: never) => unknown>): NitroApp {
-  return { hooks: { hook: (_name: string, fn: (event: never) => unknown) => hooks.push(fn) } } as unknown as NitroApp
+  return {
+    hooks: { hook: (_name: string, fn: (event: never) => unknown) => hooks.push(fn) },
+  } as unknown as NitroApp
 }
