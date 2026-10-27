@@ -213,23 +213,24 @@ export default defineNuxtPlugin({
             )
           }
           const { app_id, site, build_version, analytics_sdk_version, capture_origin } = context()
-          return {
-            ...result,
-            properties: {
-              ...context(),
-              ...result.properties,
-              // Last, so a capture snapshotted before init cannot carry
-              // a stale class past it.
-              ...traffic,
-              // Provenance is the kit's, never an app property's to override.
-              site,
-              app_id,
-              capture_origin,
-              ...(build_version ? { build_version } : {}),
-              ...(analytics_sdk_version ? { analytics_sdk_version } : {}),
-              analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
-            },
+          const properties: Record<string, unknown> = {
+            ...context(),
+            ...result.properties,
+            // Last, so a capture snapshotted before init cannot carry
+            // a stale class past it.
+            ...traffic,
+            // Provenance is the kit's, never an app property's to override.
+            site,
+            app_id,
+            capture_origin,
+            build_version,
+            analytics_sdk_version,
+            analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
           }
+          // Unknown stays unknown: omit it rather than send a placeholder.
+          if (!build_version) delete properties.build_version
+          if (!analytics_sdk_version) delete properties.analytics_sdk_version
+          return { ...result, properties }
         },
         webVitalsEnabled
           ? createWebVitalsBeforeSend({
