@@ -45,6 +45,7 @@
 import { resolveWaitUntil, runInBackground } from './wait-until'
 
 import type { H3Event } from 'h3'
+import type { NitroAppPlugin } from 'nitropack/types'
 
 interface EdgeCacheStore {
   delete(request: Request): Promise<boolean>
@@ -90,26 +91,21 @@ export function pendingEdgeCacheWrites(): Promise<void> | null {
   })()
 }
 
-interface NitroAppLike {
-  hooks: {
-    hook: (
-      name: 'afterResponse',
-      fn: (event: { waitUntil?: (promise: Promise<unknown>) => void }) => unknown,
-    ) => unknown
-  }
-}
-
 /**
  * Nitro plugin body: keep the Worker alive for the writes `putInBackground`
  * started without an event, after the response is out. h3 awaits
  * `afterResponse` before the Worker returns, so registering the writes with
- * `waitUntil` here never delays the response.
+ * the request's `waitUntil` here never delays the response.
+ *
+ * Typed as Nitro's own plugin, so `defineNitroPlugin(holdEdgeCacheWrites)`
+ * typechecks in an app (2.40.0 declared a looser shape that did not).
  */
-export function holdEdgeCacheWrites(nitroApp: NitroAppLike): void {
+export const holdEdgeCacheWrites: NitroAppPlugin = (nitroApp) => {
   nitroApp.hooks.hook('afterResponse', (event) => {
     const writes = pendingEdgeCacheWrites()
     if (!writes) return
-    if (event.waitUntil) event.waitUntil(writes)
+    const waitUntil = resolveWaitUntil(event)
+    if (waitUntil) waitUntil(writes)
     else return writes
   })
 }

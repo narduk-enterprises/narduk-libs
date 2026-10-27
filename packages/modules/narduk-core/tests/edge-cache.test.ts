@@ -9,6 +9,7 @@ import {
 import edgeCacheStorage from '../runtime/server/edge-cache-storage'
 
 import type { H3Event } from 'h3'
+import type { NitroApp } from 'nitropack/types'
 
 // The Worker's shared cache tier, ported from stonx's tests: an isolate's memory is its own, so
 // entries go through the Cache API, which every isolate in a data centre reads. Two caches (or
@@ -71,7 +72,7 @@ describe('createEdgeCache', () => {
   it('a background write returns at once, and the plugin holds the Worker for it', async () => {
     const waitUntil = vi.fn()
     const hooks: Array<(event: { waitUntil?: (p: Promise<unknown>) => void }) => unknown> = []
-    holdEdgeCacheWrites({ hooks: { hook: (_name, fn) => hooks.push(fn) } })
+    holdEdgeCacheWrites(fakeNitroApp(hooks))
 
     createEdgeCache(options).putInBackground('movers:slow', 1, 60)
     expect(api.entries.size).toBe(0)
@@ -80,6 +81,18 @@ describe('createEdgeCache', () => {
     await waitUntil.mock.calls[0]![0]
     expect(api.entries.size).toBe(1)
     expect(pendingEdgeCacheWrites()).toBeNull()
+  })
+
+  it("the plugin finds the Worker's waitUntil on the Cloudflare context, as Nitro's preset puts it", async () => {
+    const waitUntil = vi.fn()
+    const hooks: Array<(event: unknown) => unknown> = []
+    holdEdgeCacheWrites(fakeNitroApp(hooks))
+
+    createEdgeCache(options).putInBackground('movers:cf', 1, 60)
+    hooks[0]!({ context: { cloudflare: { context: { waitUntil } } } })
+    expect(waitUntil).toHaveBeenCalledTimes(1)
+    await waitUntil.mock.calls[0]![0]
+    expect(api.entries.size).toBe(1)
   })
 
   it("with an event, the write goes to that request's waitUntil and is not left pending", async () => {
@@ -162,3 +175,10 @@ describe('edgeCacheStorage (Nitro cache driver)', () => {
     expect(await driver.getItem('c')).toBe('3')
   })
 })
+
+/** Only the hook registry the plugin body touches; each `afterResponse` callback lands in `hooks`. */
+function fakeNitroApp(hooks: Array<(event: never) => unknown>): NitroApp {
+  return {
+    hooks: { hook: (_name: string, fn: (event: never) => unknown) => hooks.push(fn) },
+  } as unknown as NitroApp
+}
