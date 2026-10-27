@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -44,6 +45,16 @@ type NitroPrepareTypesHook = (
   name: 'nitro:prepare:types',
   handler: (options: TypePrepareOptions) => void,
 ) => () => void
+
+/** This package's own version, stamped on every event as `analytics_sdk_version`. */
+function readOwnVersion(packageJsonPath: string): string {
+  try {
+    const { version } = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: unknown }
+    return typeof version === 'string' ? version : ''
+  } catch {
+    return ''
+  }
+}
 
 const ADMIN_ANALYTICS_ROUTE = '/admin/analytics'
 
@@ -339,6 +350,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         analyticsRespectDnt: options.respectDnt === true,
         analyticsAppId: options.appId ?? '',
         analyticsSurface: options.surface ?? 'web',
+        analyticsSdkVersion: readOwnVersion(resolver.resolve('../package.json')),
         analyticsEventsEnabled: options.events === true,
         analyticsEngagementEnabled: options.engagement === true,
         analyticsIdentityEnabled: options.identity === true,
@@ -349,7 +361,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         gaMeasurementId: readPublicEnv('GA_MEASUREMENT_ID', 'NUXT_PUBLIC_GA_MEASUREMENT_ID'),
         posthogPublicKey: readPublicEnv('POSTHOG_PUBLIC_KEY', 'NUXT_PUBLIC_POSTHOG_PUBLIC_KEY'),
         posthogHost:
-          readPublicEnv('POSTHOG_HOST', 'NUXT_PUBLIC_POSTHOG_HOST') || 'https://us.i.posthog.com',
+          readPublicEnv('POSTHOG_HOST', 'NUXT_PUBLIC_POSTHOG_HOST') || 'https://p.nard.uk',
         posthogDeadClicksEnabled: readBooleanEnv('POSTHOG_DEAD_CLICKS_ENABLED'),
         posthogExternalDependencyLoadingEnabled: readBooleanEnv(
           'POSTHOG_EXTERNAL_DEPENDENCY_LOADING_ENABLED',

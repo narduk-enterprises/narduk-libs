@@ -1,5 +1,6 @@
 import { defineNuxtPlugin, nextTick, useRouter, useRuntimeConfig } from '#imports'
 
+import { resolveAnalyticsAppId } from '../../server/utils/captureProvenance'
 import { pageTrafficProperties } from '../traffic/trafficClassBrowser'
 import { analyticsLandingAttribution } from '../utils/analyticsAttribution'
 import { allowsAnalyticsCollection } from '../utils/analyticsCollectionPolicy'
@@ -20,6 +21,7 @@ import {
 } from '../utils/analyticsPrivacy'
 import { createAnalyticsTransport } from '../utils/analyticsTransport'
 import { ANALYTICS_SCHEMA_VERSION } from '../utils/analyticsVersion'
+import { warnAnalyticsOnce } from '../utils/analyticsWarnings'
 import { createWebVitalsBeforeSend, installPostHogWebVitalsCallbacks } from '../utils/webVitals'
 
 import type { TrafficProperties } from '../../server/utils/traffic/trafficClass'
@@ -32,6 +34,9 @@ import type { PostHog } from 'posthog-js'
 
 type LegacyNuxtWindow = Window & { $nuxt?: { $posthog?: PostHog } }
 type PostHogExtensionsWindow = Window & PostHogExtensionsHost
+
+/** The estate ingest proxy; an explicit `posthogHost` always wins. */
+const DEFAULT_POSTHOG_HOST = 'https://p.nard.uk'
 
 export default defineNuxtPlugin({
   name: 'posthog',
@@ -72,6 +77,17 @@ export default defineNuxtPlugin({
         doNotTrack: navigator.doNotTrack,
         userAgent: navigator.userAgent,
       })
+    const warnEnabled = Boolean(import.meta.dev) || import.meta.env?.MODE === 'test'
+    if (
+      resolveAnalyticsAppId(runtimeConfig.public.analyticsAppId, window.location.hostname)
+        .source === 'hostname'
+    ) {
+      warnAnalyticsOnce(
+        warnEnabled,
+        'app_id_hostname',
+        `app_id falls back to the hostname "${window.location.hostname.toLowerCase()}". Set nardukAnalytics.appId to the registry app id so events join the portfolio rollups.`,
+      )
+    }
     const router = useRouter()
     const resolveRoute = (path: string) => router.resolve(path)
     const baseContext = createAnalyticsContext({
@@ -80,6 +96,7 @@ export default defineNuxtPlugin({
       surface: runtimeConfig.public.analyticsSurface,
       appVersion: runtimeConfig.public.appVersion,
       buildVersion: runtimeConfig.public.buildVersion,
+      sdkVersion: runtimeConfig.public.analyticsSdkVersion,
       host: window.location.host,
       hostname: window.location.hostname,
       deploymentTarget: runtimeConfig.public.deploymentTarget as AnalyticsDeploymentTarget,
@@ -96,7 +113,15 @@ export default defineNuxtPlugin({
     let traffic: TrafficProperties | undefined
     const context = () => ({ ...baseContext(), ...landing, ...traffic })
     const identityEnabled = runtimeConfig.public.analyticsIdentityEnabled === true
-    const transport = createAnalyticsTransport({ enabled, context, resetOnAttach: identityEnabled })
+    const transport = createAnalyticsTransport({
+      enabled,
+      context,
+      loadStrategy: strategy,
+      resetOnAttach: identityEnabled,
+      // Under `interaction` the first input can come minutes after load. Queued
+      // captures carry their own timestamp, so they stay valid (#1906).
+      ...(strategy === 'interaction' ? { ttlMs: Number.POSITIVE_INFINITY } : {}),
+    })
     nuxtApp.provide('analytics', transport)
 
     if (!enabled) return { provide: { posthog: undefined } }
@@ -164,24 +189,48 @@ export default defineNuxtPlugin({
       // Web vitals first: it reads the raw URL on each nested metric to find the
       // route. The strict scrub runs last, so nothing an earlier hook adds escapes.
       const beforeSend = composeBeforeSend(
-        (result) =>
-          transport.status === 'failed' ||
-          transport.status === 'disabled' ||
-          (identityEnabled && transport.status === 'pending')
-            ? null
-            : result
-              ? {
-                  ...result,
-                  properties: {
-                    ...context(),
-                    ...result.properties,
-                    // Last, so a capture snapshotted before init cannot carry
-                    // a stale class past it.
-                    ...traffic,
-                    analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
-                  },
-                }
-              : result,
+        (result) => {
+          const blocked =
+            transport.status === 'failed' ||
+            transport.status === 'disabled' ||
+            (identityEnabled && transport.status === 'pending')
+          if (blocked) {
+            transport.suppress(
+              transport.status === 'pending'
+                ? 'identity_pending'
+                : transport.status === 'failed'
+                  ? 'init_failed'
+                  : 'disabled',
+            )
+            return null
+          }
+          if (!result) return result
+          if (!result.properties?.$session_id) {
+            warnAnalyticsOnce(
+              warnEnabled,
+              'session_id_missing',
+              `a browser ${result.event} left without $session_id; check for cookieless or disabled persistence.`,
+            )
+          }
+          const { app_id, site, build_version, analytics_sdk_version, capture_origin } = context()
+          return {
+            ...result,
+            properties: {
+              ...context(),
+              ...result.properties,
+              // Last, so a capture snapshotted before init cannot carry
+              // a stale class past it.
+              ...traffic,
+              // Provenance is the kit's, never an app property's to override.
+              site,
+              app_id,
+              capture_origin,
+              ...(build_version ? { build_version } : {}),
+              ...(analytics_sdk_version ? { analytics_sdk_version } : {}),
+              analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
+            },
+          }
+        },
         webVitalsEnabled
           ? createWebVitalsBeforeSend({
               buildVersion: runtimeConfig.public.buildVersion,
@@ -197,7 +246,7 @@ export default defineNuxtPlugin({
       const posthogClient = posthog.init(posthogApiKey, {
         respect_dnt: runtimeConfig.public.analyticsRespectDnt === true,
         person_profiles: 'identified_only',
-        api_host: posthogHost === '' ? 'https://us.i.posthog.com' : posthogHost,
+        api_host: posthogHost ? posthogHost : DEFAULT_POSTHOG_HOST,
         capture_pageview: false, // We'll handle this manually for Nuxt SPA navigation
         capture_pageleave: true,
 

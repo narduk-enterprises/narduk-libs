@@ -1,1 +1,1 @@
-export const ANALYTICS_SCHEMA_VERSION = 1
+export { ANALYTICS_SCHEMA_VERSION } from '../../server/utils/captureProvenance'

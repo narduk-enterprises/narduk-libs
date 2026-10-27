@@ -31,7 +31,9 @@ import { readRuntimeBoolean, readRuntimeString } from '../utils/runtime-env'
 
 import type { SecurityHeadersMode } from '../../shared/security-headers'
 
-const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
+// The client default is the estate proxy below; PostHog Cloud stays allowed so an
+// explicit `POSTHOG_HOST=https://us.i.posthog.com` override keeps working.
+const POSTHOG_CLOUD_HOST = 'https://us.i.posthog.com'
 // Also added below from POSTHOG_HOST when an app sets it; listed so the two
 // baselines stay identical (shared/security-headers.ts says why it is there).
 const ESTATE_POSTHOG_PROXY = 'https://p.nard.uk'
@@ -46,7 +48,7 @@ const BASELINE_SCRIPT_SRC = [
   "'unsafe-eval'",
   'https://*.googletagmanager.com',
   ESTATE_POSTHOG_PROXY,
-  DEFAULT_POSTHOG_HOST,
+  POSTHOG_CLOUD_HOST,
   'https://us-assets.i.posthog.com',
   'https://static.cloudflareinsights.com',
   'https://cdn.apple-mapkit.com',
@@ -64,7 +66,7 @@ const BASELINE_CONNECT_SRC = [
   // carries the matching entry and the full doc citation).
   'https://www.google.com',
   ESTATE_POSTHOG_PROXY,
-  DEFAULT_POSTHOG_HOST,
+  POSTHOG_CLOUD_HOST,
   'https://us-assets.i.posthog.com',
   'https://*.apple-mapkit.com',
   'https://*.apple.com',
@@ -133,7 +135,7 @@ export default defineEventHandler((event) => {
     fallback: config.public.allowGeolocation,
   })
 
-  const posthogSources = posthogHost && posthogHost !== DEFAULT_POSTHOG_HOST ? [posthogHost] : []
+  const posthogSources = posthogHost && posthogHost !== POSTHOG_CLOUD_HOST ? [posthogHost] : []
 
   const finalScriptSrc = buildDirective(
     'script-src',

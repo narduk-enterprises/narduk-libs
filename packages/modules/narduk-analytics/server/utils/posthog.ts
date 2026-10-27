@@ -4,6 +4,7 @@ import {
 } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 import { createError } from 'h3'
 
+import { createCaptureProvenance } from './captureProvenance'
 import { resolvePosthogApiHost, resolvePosthogDomain } from './siteConfig'
 
 import type { AnalyticsServerRuntimeConfig } from './runtimeConfig'
@@ -45,6 +46,27 @@ function normalizeApiHost(value: string) {
 // a trailing backslash could otherwise end the literal early.
 function escapeHogLiteral(value: string) {
   return value.replaceAll('\\', '\\\\').replaceAll("'", "''")
+}
+
+/**
+ * Provenance for an event captured outside the browser. This package sends no
+ * server-side captures itself; an app or probe that does stamps these keys so a
+ * reader can tell `server` and `synthetic` events from `browser` ones. Merge it
+ * under the event's own properties.
+ */
+export function buildServerCaptureProvenance(
+  config: AnalyticsServerRuntimeConfig,
+  event?: H3Event,
+  origin: 'server' | 'synthetic' = 'server',
+) {
+  const text = (value: unknown) => (typeof value === 'string' ? value : undefined)
+  return createCaptureProvenance({
+    appId: text(config.public.analyticsAppId),
+    buildVersion: text(config.public.buildVersion),
+    origin,
+    sdkVersion: text(config.public.analyticsSdkVersion),
+    site: normalizePosthogDomainHost(resolvePosthogDomain(config, event)),
+  })
 }
 
 export function resolvePosthogProjectConfig(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
