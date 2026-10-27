@@ -26,6 +26,10 @@ export function useAnalytics<const T extends AnalyticsCatalog = Record<never, ne
     get dropped() {
       return app.$analytics?.dropped ?? 0
     },
+    /** Bounded delivery counters for this page load; see `AnalyticsDiagnostics`. */
+    get diagnostics() {
+      return app.$analytics?.diagnostics()
+    },
     capture<K extends keyof Events & string>(
       event: K,
       properties: AnalyticsEventProperties<Events, K>,

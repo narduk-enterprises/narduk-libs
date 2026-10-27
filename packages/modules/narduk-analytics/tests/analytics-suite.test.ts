@@ -97,7 +97,13 @@ describe('analytics transport', () => {
     f.transport.attach(f.client)
     expect(f.client.capture).toHaveBeenCalledWith(
       'search_completed',
-      { result_count: 1, route: '/first', app_id: 'test', environment: 'production' },
+      {
+        result_count: 1,
+        route: '/first',
+        app_id: 'test',
+        environment: 'production',
+        analytics_queue_delay_ms: 400,
+      },
       { timestamp: new Date(100) },
     )
     expect(f.transport.status).toBe('ready')
@@ -148,12 +154,24 @@ describe('analytics transport', () => {
     expect(f.transport.capture('later')).toBe(false)
   })
 
-  it('fails closed on queue overflow without replaying a partial user history', () => {
+  it('evicts the oldest non-pageview capture on overflow instead of failing the visit', () => {
     const f = fixture()
+    f.transport.capture('$pageview')
     for (let index = 0; index < 101; index++) f.transport.capture('a')
+    expect(f.transport.status).toBe('pending')
+    expect(f.transport.queued).toBe(100)
+    f.transport.attach(f.client)
+    expect(f.client.capture).toHaveBeenCalledTimes(100)
+    expect(f.client.capture.mock.calls[0]![0]).toBe('$pageview')
+    expect(f.transport.diagnostics()).toMatchObject({ overflow: 2, sent: 100 })
+  })
+
+  it('fails closed on overflow when only identity barriers are queued', () => {
+    const f = fixture()
+    for (let index = 0; index < 101; index++) f.transport.identify('user-' + index)
     expect(f.transport.status).toBe('failed')
     f.transport.attach(f.client)
-    expect(f.client.capture).not.toHaveBeenCalled()
+    expect(f.client.identify).not.toHaveBeenCalled()
     expect(f.transport.dropped).toBe(101)
   })
 

@@ -98,6 +98,16 @@ describe('runtime-public analytics defaults', () => {
     })
   })
 
+  it('defaults posthogHost to the estate proxy and lets an explicit host win (#2048)', () => {
+    runtimeConfig.current = { public: { posthogHost: '' } }
+    expect(resolveRuntimePublicOverlay(event())).toMatchObject({
+      posthogHost: 'https://p.nard.uk',
+    })
+    expect(
+      resolveRuntimePublicOverlay(event({ POSTHOG_HOST: 'https://us.i.posthog.com' })),
+    ).toMatchObject({ posthogHost: 'https://us.i.posthog.com' })
+  })
+
   it('prefers the short Worker name over a NUXT_PUBLIC_* alias', () => {
     runtimeConfig.current = { public: { gaMeasurementId: '', posthogPublicKey: '' } }
     expect(

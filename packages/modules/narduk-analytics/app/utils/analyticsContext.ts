@@ -1,5 +1,6 @@
+import { createCaptureProvenance } from '../../server/utils/captureProvenance'
+
 import { isInternalAnalyticsTraffic, resolveAnalyticsEnvironment } from './analyticsLoadStrategy'
-import { ANALYTICS_SCHEMA_VERSION } from './analyticsVersion'
 
 import type { AnalyticsDeploymentTarget } from './analyticsLoadStrategy'
 import type { AnalyticsProperties } from './analyticsTransport'
@@ -15,18 +16,23 @@ interface ContextOptions {
   hostname: string
   owner: () => boolean
   route: () => string
+  sdkVersion?: string
   surface?: string
 }
 
 export function createAnalyticsContext(options: ContextOptions): () => AnalyticsProperties {
   return () => ({
     app: options.appName,
-    site: options.hostname,
     // Existing consumers need no new config; explicit registry IDs win.
-    app_id: options.appId || options.hostname.toLowerCase(),
+    ...createCaptureProvenance({
+      appId: options.appId,
+      buildVersion: options.buildVersion,
+      origin: 'browser',
+      sdkVersion: options.sdkVersion,
+      site: options.hostname,
+    }),
     surface: options.surface || 'web',
     route: options.route(),
-    analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
     environment: resolveAnalyticsEnvironment(
       options.hostname,
       options.deploymentTarget,
@@ -39,6 +45,5 @@ export function createAnalyticsContext(options: ContextOptions): () => Analytics
     ),
     is_owner: options.owner(),
     ...(options.appVersion ? { app_version: options.appVersion } : {}),
-    ...(options.buildVersion ? { build_version: options.buildVersion } : {}),
   })
 }

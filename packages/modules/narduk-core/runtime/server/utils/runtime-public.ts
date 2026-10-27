@@ -46,7 +46,8 @@ export interface RuntimePublicOverlay {
   twitterSite: string
 }
 
-const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
+// The estate ingest proxy (#2048); an explicit POSTHOG_HOST always wins.
+const DEFAULT_POSTHOG_HOST = 'https://p.nard.uk'
 const DEFAULT_PUBLIC_CATALOG_BASE_URL = 'https://catalog.nard.uk'
 
 function readPublic(config: RuntimeConfigLike | undefined, key: string): unknown {

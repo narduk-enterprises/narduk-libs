@@ -438,3 +438,60 @@ describe('gtag.client — enabled path', () => {
     ])
   })
 })
+
+describe('posthog.client — provenance and deferred initialization', () => {
+  it('replays a landing pageview 45 s after load under interaction, pins provenance, and warns', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const clock = vi.spyOn(Date, 'now')
+    clock.mockReturnValue(1_000_000)
+    runtimeConfigValue = {
+      public: {
+        analyticsLoadStrategy: 'interaction',
+        posthogPublicKey: 'phc_fixture',
+        posthogHost: '',
+        appName: 'fixture',
+        analyticsAppId: '',
+        analyticsSdkVersion: '9.9.9',
+      },
+    }
+    const { resetAnalyticsWarnings } = await import('../app/utils/analyticsWarnings')
+    resetAnalyticsWarnings()
+    const plugin = (await import('../app/plugins/posthog.client')).default
+    const provide = vi.fn()
+    plugin.setup?.({ provide })
+    expect(warn.mock.calls.some(([message]) => String(message).includes('app_id falls back'))).toBe(
+      true,
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+    clock.mockReturnValue(1_045_000)
+    window.dispatchEvent(new Event('pointerdown'))
+    await vi.waitFor(() => expect(posthogInit).toHaveBeenCalled())
+    await vi.waitFor(() => expect(posthogCapture).toHaveBeenCalled())
+    expect(posthogInit.mock.calls[0]![1].api_host).toBe('https://p.nard.uk')
+    const transport = provide.mock.calls.find(([key]) => key === 'analytics')?.[1]
+    expect(transport.diagnostics()).toMatchObject({ expired: 0, sent: 1, status: 'ready' })
+    expect(posthogCapture.mock.calls[0]![0]).toBe('$pageview')
+    expect(posthogCapture.mock.calls[0]![1]).toMatchObject({
+      analytics_queue_delay_ms: 45_000,
+      analytics_load_strategy: 'interaction',
+      capture_origin: 'browser',
+      analytics_sdk_version: '9.9.9',
+    })
+
+    const beforeSend = posthogInit.mock.calls[0]![1].before_send as (
+      result: Record<string, unknown>,
+    ) => { properties: Record<string, unknown> }
+    const sent = beforeSend({
+      event: '$pageview',
+      properties: { capture_origin: 'server', app_id: 'x', build_version: 'app-forged' },
+    })
+    expect(sent.properties).toMatchObject({ capture_origin: 'browser', app_id: 'example.com' })
+    expect(sent.properties).not.toHaveProperty('build_version')
+    expect(
+      warn.mock.calls.some(([message]) => String(message).includes('without $session_id')),
+    ).toBe(true)
+    warn.mockRestore()
+    clock.mockRestore()
+  })
+})
