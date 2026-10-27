@@ -71,8 +71,11 @@ export const SCAN_DIRECTORY_NAMES = [
 export const SCAN_EXTENSIONS = ['.ts', '.mts', '.js', '.mjs', '.vue'] as const
 
 /** Ceiling on files read in one run. A repository larger than this is reported
- * as `unknown` for the detectors rather than as a silently partial pass. */
-export const SCAN_FILE_LIMIT = 2000
+ * as `unknown` for the detectors rather than as a silently partial pass. Sized
+ * well above the largest conformant app (stonx reads 2106 files from the
+ * bounded directories, which tripped the previous 2000 ceiling); generated
+ * trees are already excluded by `SKIPPED_WALK_DIRECTORIES`. */
+export const SCAN_FILE_LIMIT = 10000
 
 export interface ScannedFile {
   rel: string
@@ -93,7 +96,9 @@ export function scanAppSource(repo: AppRepo): SourceScan {
   const seen = new Set<string>()
   let truncated = false
   for (const prefix of APP_PREFIXES) {
+    if (truncated) break
     for (const name of SCAN_DIRECTORY_NAMES) {
+      if (truncated) break
       const dir = `${prefix}${name}`
       if (!repo.exists(dir)) continue
       const found = repo.walk(dir, SCAN_EXTENSIONS)
