@@ -395,6 +395,22 @@ describe('item 9.5 -- analytics wrapper around posthog-js', () => {
     })
   })
 
+  it('does not flag a posthog-js pin that lives only in devDependencies (test-only SDK)', () => {
+    const repo = repoWith((root) => {
+      baseline(root, { '@narduk-enterprises/narduk-analytics': '1.19.36' })
+      writeJson(root, 'package.json', {
+        name: 'coverage-fixture',
+        dependencies: {
+          '@narduk-enterprises/narduk-core': '2.0.0',
+          '@narduk-enterprises/narduk-analytics': '1.19.36',
+        },
+        devDependencies: { 'posthog-js': '1.0.0' },
+      })
+    })
+    expect(statusOf(repo, '9.5')).toBe('pass')
+    expect(evaluateItem9(repo).detections).toEqual([])
+  })
+
   it('does not flag runtime config that merely names PostHog', () => {
     const repo = repoWith((root) => {
       baseline(root, { '@narduk-enterprises/narduk-analytics': '1.19.36' })

@@ -65,7 +65,7 @@ import {
   type SourceScan,
 } from '../reimplementation-signals.js'
 import { check } from '../schema.js'
-import type { AppRepo } from '../source.js'
+import { isRecord, type AppRepo, type FoundPackage } from '../source.js'
 import {
   STATUS_FAIL,
   STATUS_NA,
@@ -256,6 +256,18 @@ function inventoryChecks(inventory: CapabilityInventory): FoundationSubCheck[] {
   return [inventoryCheck, resolvesCheck]
 }
 
+const RUNTIME_DEPENDENCY_BLOCKS = ['dependencies', 'optionalDependencies', 'peerDependencies']
+
+/** `posthog-js` declared outside `devDependencies` in any candidate manifest. */
+function hasRuntimePosthogPin(packages: FoundPackage[]): boolean {
+  return packages.some(({ pkg }) =>
+    RUNTIME_DEPENDENCY_BLOCKS.some((block) => {
+      const deps = pkg[block]
+      return isRecord(deps) && POSTHOG_PACKAGE in deps
+    }),
+  )
+}
+
 export function evaluateItem9(repo: AppRepo): CapabilityCoverageEvaluation {
   const { packages, inventory } = collectCapabilityInventory(repo)
   if (packages.length === 0) {
@@ -278,9 +290,11 @@ export function evaluateItem9(repo: AppRepo): CapabilityCoverageEvaluation {
   const scan = scanAppSource(repo)
   // A direct `posthog-js` pin with no import anywhere in the scanned source is
   // still worth naming, but only as a heuristic: the code using it may live
-  // outside the bounded scan, or the pin may simply be stale.
+  // outside the bounded scan, or the pin may simply be stale. A pin in
+  // `devDependencies` only is a test/tooling dependency (it ships in no bundle),
+  // so it is not a wrapper around the SDK and is not named.
   const orphanPosthogPin =
-    POSTHOG_PACKAGE in merged && detectDirectPosthogUse(scan.files).length === 0
+    hasRuntimePosthogPin(packages) && detectDirectPosthogUse(scan.files).length === 0
 
   const specs: DetectorSpec[] = [
     {
