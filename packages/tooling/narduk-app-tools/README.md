@@ -2010,7 +2010,7 @@ _not-applicable_.
 
 Only tracked-source directories at the usual monorepo prefixes are walked
 (`app/`, `src/`, `server/`, `shared/`, `composables/`, `utils/`, `plugins/`,
-`components/`, `layers/`, `scripts/`), bounded at 2000 files. `AppRepo.walk()`
+`components/`, `layers/`, `scripts/`), bounded at 10000 files. `AppRepo.walk()`
 skips `node_modules`, `.git`, `dist`, `.output`, `.nuxt`, `.nitro`, `.wrangler`,
 `.turbo` and `coverage` -- which matters most here: a built Nitro bundle inlines
 every dependency, so a conformant app's `.output/server/chunks` contains
@@ -2036,7 +2036,7 @@ would fail every app in the estate.
 | 9.7       | No `server/plugins` directory and no `defineNitroPlugin` in the scan                                                                                                                                                                              | `not-applicable`                                                                   |
 | 9.8       | A file with an `https://data.nard.uk` string literal **and** a `fetch`/`$fetch`/`ofetch` call that never names `createNardukDataClient` or `fetchNardukDataJson` (narduk-libs#373)                                                                | `fail` if narduk-core is a dependency, else `unknown` (WARN)                       |
 | 9.3-9.8   | The scan found no source directory at a known path                                                                                                                                                                                                | `unknown` -- nothing could be looked for                                           |
-| 9.3-9.8   | Scanned, and no reimplementation found                                                                                                                                                                                                            | `pass` (_proven_); `unknown` if the 2000-file ceiling was reached                  |
+| 9.3-9.8   | Scanned, and no reimplementation found                                                                                                                                                                                                            | `pass` (_proven_); `unknown` if the 10000-file ceiling was reached                  |
 
 9.8 needs both halves in one file: the origin alone is satisfied by an
 attribution link or a constant handed to the client, and the shared entry points
