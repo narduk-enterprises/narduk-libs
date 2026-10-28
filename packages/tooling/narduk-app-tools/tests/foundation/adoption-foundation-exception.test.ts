@@ -234,4 +234,70 @@ describe('the portal reader fails closed', () => {
     })
     expect(await reality.read(REPO)).toBeNull()
   })
+
+  describe('with an app-scoped foundation-exception-only key', () => {
+    const scoped =
+      (rows: Array<Record<string, unknown>>, joinStatus = 403) =>
+      async (url: string) =>
+        url.endsWith('/foundation_exception')
+          ? table(rows)
+          : { json: async () => ({}), status: joinStatus }
+    const own = {
+      app_id: 'app-1',
+      decision: 'D-FOCUS-1',
+      expires_on: '2027-03-29',
+      issue: 'https://example.test/issues/1',
+      items: '[2,3]',
+      repos: '[]',
+    }
+
+    it('trusts the app-bound row when every join table is 403', async () => {
+      const reality = createPortalFoundationExceptionReality({ env, fetch: scoped([own]) })
+      expect(await reality.read(REPO)).toMatchObject({ items: [2, 3], expiresOn: '2027-03-29' })
+    })
+
+    it('reads nothing when the scoped key sees no row', async () => {
+      const reality = createPortalFoundationExceptionReality({ env, fetch: scoped([]) })
+      expect(await reality.read(REPO)).toBeNull()
+    })
+
+    it('reads nothing from two scoped rows', async () => {
+      const reality = createPortalFoundationExceptionReality({
+        env,
+        fetch: scoped([own, { ...own, items: '[1]' }]),
+      })
+      expect(await reality.read(REPO)).toBeNull()
+    })
+
+    it('fails closed when the join tables error with anything but 403', async () => {
+      const reality = createPortalFoundationExceptionReality({
+        env,
+        fetch: scoped([own], 503),
+      })
+      expect(await reality.read(REPO)).toBeNull()
+    })
+
+    it('fails closed when only some join tables are 403', async () => {
+      const partial = async (url: string) =>
+        url.endsWith('/app_repo') ? { json: async () => ({}), status: 403 } : fetchFor()(url)
+      const reality = createPortalFoundationExceptionReality({ env, fetch: partial })
+      expect(await reality.read(REPO)).toBeNull()
+    })
+
+    it('fails closed when foundation_exception itself is 403', async () => {
+      const reality = createPortalFoundationExceptionReality({
+        env,
+        fetch: async () => ({ json: async () => ({}), status: 403 }),
+      })
+      expect(await reality.read(REPO)).toBeNull()
+    })
+
+    it('still refuses a repository the run does not own', async () => {
+      const reality = createPortalFoundationExceptionReality({
+        env: { ...env, GITHUB_REPOSITORY: 'narduk-enterprises/impostor' },
+        fetch: scoped([own]),
+      })
+      expect(await reality.read(REPO)).toBeNull()
+    })
+  })
 })
