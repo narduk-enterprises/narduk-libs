@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/create-narduk-app",
-  "version": "0.23.27",
+  "version": "0.23.28",
   "private": false,
   "description": "Deterministic, filesystem-only Narduk app generator.",
   "type": "module",
