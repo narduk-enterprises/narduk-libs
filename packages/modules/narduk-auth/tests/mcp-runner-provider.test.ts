@@ -392,8 +392,9 @@ describe('external runner provider on real local D1 and opaque OAuth library', (
       400,
     )
     // 13 real refreshes (crypto + local D1/KV) take ~1.5s solo but exceeded the
-    // 5s default under quality-job load (agent-infrastructure#3860).
-  }, 30_000)
+    // 5s default under quality-job load (agent-infrastructure#3860) and the 30s
+    // bound on a load-25 lane guest (agent-infrastructure#3801).
+  }, 60_000)
   it('purges expired replay markers using the existing expiry-index cleanup', async () => {
     await mcp.kv.put('narduk-runner-bridge:expired-synthetic-nonce', '1', {
       expiration: Math.floor(Date.now() / 1000) - 1,
