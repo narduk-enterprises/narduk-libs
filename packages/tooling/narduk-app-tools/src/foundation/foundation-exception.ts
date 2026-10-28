@@ -18,7 +18,8 @@ import { execFileSync } from 'node:child_process'
 import { portalOrigin } from '../app-config/resolve.js'
 
 /** A read key that can list estate tables (the portal's `any-authenticated`
- * tables); read from the environment only. Without it nothing is covered. */
+ * tables) or an app-scoped foundation-exception-only key; read from the
+ * environment only. Without it nothing is covered. */
 export const FOUNDATION_EXCEPTION_TOKEN_ENV = 'OPERATOR_PORTAL_FOUNDATION_EXCEPTION_TOKEN'
 
 export interface FoundationExceptionRow {
@@ -150,8 +151,11 @@ function parseRow(raw: Record<string, unknown>): FoundationExceptionRow | null {
 }
 
 /**
- * Reads `foundation_exception`, `app_repo`, `repo` and `org` from the portal and
- * joins them to the row for `repo`. Fails closed to null.
+ * Reads `foundation_exception`, `app_repo`, `repo`, `org` and `app` from the
+ * portal and joins them to the row for `repo`. An app-scoped key
+ * (`operator-portal:foundation-exception-app:<app>`) is refused (403) on every
+ * table but `foundation_exception`, which then returns only its own app's rows,
+ * so the join is skipped. Fails closed to null on any other error.
  */
 export function createPortalFoundationExceptionReality(
   options: PortalFoundationExceptionOptions = {},
@@ -166,13 +170,16 @@ export function createPortalFoundationExceptionReality(
       if (trusted === null || trusted.toLowerCase() !== repo.toLowerCase()) return null
       try {
         const origin = portalOrigin(env)
-        const table = async (name: string): Promise<Fetched['rows']> => {
+        // A table is its rows, or `forbidden` when the key is refused (HTTP 403);
+        // any other failure throws and so fails closed.
+        const table = async (name: string): Promise<Fetched['rows'] | 'forbidden'> => {
           const response = await doFetch(`${origin}/api/estate/${name}`, {
             headers: { accept: 'application/json', authorization: `Bearer ${token}` },
             method: 'GET',
             redirect: 'manual',
             signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
           })
+          if (response.status === 403) return 'forbidden'
           if (response.status !== 200) throw new Error(`${name}: HTTP ${response.status}`)
           const body = (await response.json()) as { rows?: unknown }
           if (!Array.isArray(body.rows)) throw new Error(`${name}: no rows`)
@@ -185,6 +192,18 @@ export function createPortalFoundationExceptionReality(
           table('org'),
           table('app'),
         ])
+        if (exceptions === 'forbidden') return null
+        const joinTables = [appRepos, repos, orgs, apps]
+        if (joinTables.every((t) => t === 'forbidden')) {
+          // An app-scoped key reads only this app's own live rows from
+          // foundation_exception, so there is nothing to join: the rows already
+          // belong to the app. Exactly one row, as in the joined path.
+          if (exceptions.length !== 1) return null
+          return parseRow(exceptions[0] as Record<string, unknown>)
+        }
+        // Anything short of all-or-nothing on the join tables is a partial read: no coverage.
+        if (appRepos === 'forbidden' || repos === 'forbidden' || orgs === 'forbidden') return null
+        if (apps === 'forbidden') return null
         const orgName = new Map(orgs.map((o) => [String(o.id), String(o.name)]))
         const repoIds = repos
           .filter(
