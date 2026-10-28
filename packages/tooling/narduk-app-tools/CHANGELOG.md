@@ -1,5 +1,15 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.49.0
+
+### Minor Changes
+
+- c59b4b0: Adoption R4 now works with an app-scoped, foundation-exception-only
+  portal key: when `app_repo`, `repo`, `org` and `app` all answer 403, it trusts
+  the single app-bound `foundation_exception` row instead of joining. The
+  full-token path is unchanged, and any other error or a partial 403 still fails
+  closed.
+
 ## 0.48.0
 
 ### Minor Changes

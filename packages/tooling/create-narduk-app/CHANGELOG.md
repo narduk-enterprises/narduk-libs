@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.29
+
+### Patch Changes
+
+- Updated dependencies [c59b4b0]
+  - @narduk-enterprises/narduk-app-tools@0.49.0
+
 ## 0.23.28
 
 ### Patch Changes
