@@ -147,10 +147,12 @@ describe('the portal reader fails closed', () => {
       if (url.endsWith('/app_repo')) return table([{ app_id: 'app-1', repo_id: 'repo-1' }])
       if (url.endsWith('/repo'))
         return table([{ id: 'repo-1', name: 'pacc-trac', org_id: 'org-1' }])
+      if (url.endsWith('/app')) return table([{ id: 'app-1' }])
       return table([{ id: 'org-1', name: 'narduk-enterprises-clients' }])
     }
   const env = {
     [FOUNDATION_EXCEPTION_TOKEN_ENV]: 'token',
+    GITHUB_REPOSITORY: REPO,
     OPERATOR_PORTAL_URL: 'https://portal.example.test',
   }
 
@@ -158,6 +160,34 @@ describe('the portal reader fails closed', () => {
     const reality = createPortalFoundationExceptionReality({ env, fetch: fetchFor() })
     expect(await reality.read(REPO)).toMatchObject({ items: [2, 3], expiresOn: '2027-03-29' })
     expect(await reality.read('narduk-enterprises/unlinked')).toBeNull()
+  })
+
+  it('reads nothing under a repository the run does not own', async () => {
+    const reality = createPortalFoundationExceptionReality({
+      env: { ...env, GITHUB_REPOSITORY: 'narduk-enterprises/impostor' },
+      fetch: fetchFor(),
+    })
+    expect(await reality.read(REPO)).toBeNull()
+  })
+
+  it('reads nothing when two apps share the repository', async () => {
+    const shared = async (url: string) =>
+      url.endsWith('/app_repo')
+        ? table([
+            { app_id: 'app-1', repo_id: 'repo-1' },
+            { app_id: 'app-2', repo_id: 'repo-1' },
+          ])
+        : url.endsWith('/app')
+          ? table([{ id: 'app-1' }, { id: 'app-2' }])
+          : fetchFor()(url)
+    const reality = createPortalFoundationExceptionReality({ env, fetch: shared })
+    expect(await reality.read(REPO)).toBeNull()
+  })
+
+  it('reads nothing for an app that is no longer live', async () => {
+    const retired = async (url: string) => (url.endsWith('/app') ? table([]) : fetchFor()(url))
+    const reality = createPortalFoundationExceptionReality({ env, fetch: retired })
+    expect(await reality.read(REPO)).toBeNull()
   })
 
   it('reads nothing without a credential', async () => {

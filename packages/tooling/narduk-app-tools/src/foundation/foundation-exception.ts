@@ -13,6 +13,8 @@
  * behaves exactly as it does without this module.
  */
 
+import { execFileSync } from 'node:child_process'
+
 import { portalOrigin } from '../app-config/resolve.js'
 
 /** A read key that can list estate tables (the portal's `any-authenticated`
@@ -82,12 +84,37 @@ interface Fetched {
 
 type PortalFetch = (
   url: string,
-  init: { method: 'GET'; headers: Record<string, string>; redirect: 'manual' },
+  init: { method: 'GET'; headers: Record<string, string>; redirect: 'manual'; signal: AbortSignal },
 ) => Promise<{ status: number; json(): Promise<unknown> }>
 
 export interface PortalFoundationExceptionOptions {
   env?: NodeJS.ProcessEnv
   fetch?: PortalFetch
+  /** The checkout whose git origin names the repository when `GITHUB_REPOSITORY` is unset. */
+  root?: string
+  timeoutMs?: number
+}
+
+/**
+ * The repository identity the exception may be looked up under: the Actions
+ * run's own `GITHUB_REPOSITORY`, else the checkout's git origin. Never a name
+ * the app's own files declare (`product.repository`, `package.json`), which an
+ * app without a row could point at one that has one.
+ */
+export function trustedRepoSlug(root: string | undefined, env: NodeJS.ProcessEnv): string | null {
+  const fromEnv = env.GITHUB_REPOSITORY?.trim()
+  if (fromEnv && /^[\w.-]+\/[\w.-]+$/u.test(fromEnv)) return fromEnv
+  if (!root) return null
+  try {
+    const origin = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    return /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?\s*$/u.exec(origin)?.[1] ?? null
+  } catch {
+    return null
+  }
 }
 
 function parseRow(raw: Record<string, unknown>): FoundationExceptionRow | null {
@@ -135,6 +162,8 @@ export function createPortalFoundationExceptionReality(
     async read(repo) {
       const token = (env[FOUNDATION_EXCEPTION_TOKEN_ENV] ?? '').trim()
       if (!token) return null
+      const trusted = trustedRepoSlug(options.root, env)
+      if (trusted === null || trusted.toLowerCase() !== repo.toLowerCase()) return null
       try {
         const origin = portalOrigin(env)
         const table = async (name: string): Promise<Fetched['rows']> => {
@@ -142,17 +171,19 @@ export function createPortalFoundationExceptionReality(
             headers: { accept: 'application/json', authorization: `Bearer ${token}` },
             method: 'GET',
             redirect: 'manual',
+            signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
           })
           if (response.status !== 200) throw new Error(`${name}: HTTP ${response.status}`)
           const body = (await response.json()) as { rows?: unknown }
           if (!Array.isArray(body.rows)) throw new Error(`${name}: no rows`)
           return body.rows as Array<Record<string, unknown>>
         }
-        const [exceptions, appRepos, repos, orgs] = await Promise.all([
+        const [exceptions, appRepos, repos, orgs, apps] = await Promise.all([
           table('foundation_exception'),
           table('app_repo'),
           table('repo'),
           table('org'),
+          table('app'),
         ])
         const orgName = new Map(orgs.map((o) => [String(o.id), String(o.name)]))
         const repoIds = repos
@@ -162,11 +193,16 @@ export function createPortalFoundationExceptionReality(
               repo.toLowerCase(),
           )
           .map((r) => String(r.id))
+        // The listing leaves retired rows out, so a retired app is not live here.
+        const liveApps = new Set(apps.map((a) => String(a.id)))
         const appIds = new Set(
-          appRepos.filter((l) => repoIds.includes(String(l.repo_id))).map((l) => String(l.app_id)),
+          appRepos
+            .filter((l) => repoIds.includes(String(l.repo_id)) && liveApps.has(String(l.app_id)))
+            .map((l) => String(l.app_id)),
         )
+        // Several apps on one repository is ambiguous: one app's row must not cover another's.
+        if (appIds.size !== 1) return null
         const mine = exceptions.filter((e) => appIds.has(String(e.app_id)))
-        // One row per app; two linked apps with rows is ambiguous, not a guess.
         if (mine.length !== 1) return null
         return parseRow(mine[0] as Record<string, unknown>)
       } catch {

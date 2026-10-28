@@ -507,9 +507,9 @@ export async function runAdoptionCheck(
   const exceptionRow =
     failingIds.length === 0
       ? null
-      : await (options.foundationException ?? createPortalFoundationExceptionReality()).read(
-          app.repo,
-        )
+      : await (
+          options.foundationException ?? createPortalFoundationExceptionReality({ root })
+        ).read(app.repo)
   const exceptionCover = coverFailingItems(exceptionRow, app.repo, failingIds, generated)
 
   const requirements: AdoptionRequirement[] = [
