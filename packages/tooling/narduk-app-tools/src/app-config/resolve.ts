@@ -316,7 +316,7 @@ export function resolveAppRepoSlug(
 
 // --- the portal -----------------------------------------------------------
 
-function portalOrigin(env: NodeJS.ProcessEnv): string {
+export function portalOrigin(env: NodeJS.ProcessEnv): string {
   const raw = (env[APP_CONFIG_ORIGIN_ENV] ?? '').trim() || APP_CONFIG_DEFAULT_ORIGIN
   let url: URL
   try {
