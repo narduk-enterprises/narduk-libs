@@ -36,6 +36,12 @@
  * declaration can never be read as proving more than was actually checked.
  */
 
+import {
+  coverFailingItems,
+  createPortalFoundationExceptionReality,
+  type FoundationCoverage,
+  type FoundationExceptionReality,
+} from './foundation-exception.js'
 import { primeAppCheckoutConfig, type AppConfigOptions } from '../app-config/resolve.js'
 import { resolveAppInfo, runFoundationCheck } from './evaluate.js'
 import { runSharedUiPinnedCheck, type SharedUiPinnedArtefact } from './evaluate-shared-ui-pinned.js'
@@ -430,6 +436,10 @@ export interface RunAdoptionCheckOptions {
    * probes: a test that reached GitHub would be evidence about GitHub. The
    * default answers `unknown` when the run's token cannot read alerts. */
   dependabotReality?: DependabotReality
+  /** The portal `foundation_exception` row R4 honours for the items it names.
+   * Injectable like the other probes; the default reads the portal and covers
+   * nothing without a credential. */
+  foundationException?: FoundationExceptionReality
   /** Portal resolution of the two app-config documents (env, fetch, timeout). */
   appConfig?: Pick<
     AppConfigOptions,
@@ -491,11 +501,22 @@ export async function runAdoptionCheck(
   // The headers read after the live reading; report the whole run's route.
   if (live) Object.assign(live, egressFields(fallback.summary()))
 
+  const failingIds = [...foundation.items, sharedUi.item, coverage.item]
+    .filter((item) => item.status === 'fail')
+    .map((item) => item.id)
+  const exceptionRow =
+    failingIds.length === 0
+      ? null
+      : await (options.foundationException ?? createPortalFoundationExceptionReality()).read(
+          app.repo,
+        )
+  const exceptionCover = coverFailingItems(exceptionRow, app.repo, failingIds, generated)
+
   const requirements: AdoptionRequirement[] = [
     requirement1(deployment),
     requirement2(currency),
     requirement3(toolchain),
-    requirement4(foundation, sharedUi, coverage),
+    requirement4(foundation, sharedUi, coverage, exceptionCover),
     requirement5(deployment, live),
     requirement6(deployment),
     requirement7(deployment),
@@ -768,22 +789,39 @@ function requirement4(
   foundation: FoundationCheckArtefact,
   sharedUi: SharedUiPinnedArtefact,
   coverage: CapabilityCoverageArtefact,
+  exception: FoundationCoverage,
 ): AdoptionRequirement {
   const items = [...foundation.items, sharedUi.item, coverage.item]
-  const failed = items.filter((item) => item.status === 'fail')
+  const allFailed = items.filter((item) => item.status === 'fail')
+  // A recorded, unexpired portal exception covers a failing item it names. The
+  // item's own status is untouched; only this requirement stops counting it.
+  const failed = allFailed.filter((item) => !exception.covered.includes(item.id))
   const unknown = items.filter((item) => item.status === 'unknown')
+  const row = exception.row
+  const coveredNote =
+    row && exception.covered.length > 0
+      ? `covered by foundation_exception ${row.decision} (${row.issue}) through ${row.expiresOn}: ${exception.covered.map((id) => `item ${id}`).join(', ')}`
+      : null
+  const expiredNote = exception.expired
+    ? `foundation_exception ${exception.expired.decision} expired ${exception.expired.expiresOn}`
+    : null
+  const notes = [coveredNote, expiredNote].filter((note): note is string => note !== null)
+  const suffix = notes.length > 0 ? `; ${notes.join('; ')}` : ''
   return {
     detail:
       failed.length > 0
-        ? `failing: ${failed.map((item) => `item ${item.id}`).join(', ')}`
+        ? `failing: ${failed.map((item) => `item ${item.id}`).join(', ')}${suffix}`
         : unknown.length > 0
-          ? `undecided: ${unknown.map((item) => `item ${item.id}`).join(', ')}`
-          : 'items 1-9 only; all pass or are not applicable',
+          ? `undecided: ${unknown.map((item) => `item ${item.id}`).join(', ')}${suffix}`
+          : coveredNote
+            ? `items 1-9 only; ${coveredNote}; the rest pass or are not applicable`
+            : 'items 1-9 only; all pass or are not applicable',
     enforcement: 'enforced',
     evidence: [
       'narduk-app foundation:check',
       'narduk-app foundation:check:shared-ui-pinned',
       'narduk-app foundation:check:coverage',
+      ...(row && exception.covered.length > 0 ? [`portal foundation_exception ${row.issue}`] : []),
     ],
     id: 'R4',
     owner: OWNER_APP,
