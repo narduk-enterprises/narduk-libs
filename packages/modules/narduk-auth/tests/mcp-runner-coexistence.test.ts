@@ -644,7 +644,9 @@ describe('native Portal and one disabled opt-in runner audience on real D1', () 
         })
       ).status,
     ).toBe(200)
-  })
+    // 13 real refreshes on local D1 exceed the 5s default on a loaded lane guest
+    // (load 25; agent-infrastructure#3801).
+  }, 60_000)
 
   // Explicit cross-repository local proof; normal package CI still exercises the
   // actual OAuth library, D1, bridge auth and DTOs above. No installed service used.
