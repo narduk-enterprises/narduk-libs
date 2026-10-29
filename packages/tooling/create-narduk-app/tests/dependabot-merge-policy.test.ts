@@ -12,6 +12,7 @@ function commit(metadata = dependency()) {
   return {
     sha: 'proved-head',
     author: { id: 49699333, login: 'dependabot[bot]', type: 'Bot' },
+    committer: { id: 19864447, login: 'web-flow', type: 'User' },
     commit: {
       verification: { verified: true },
       message: `Bump dependency\n\n---\nupdated-dependencies:\n${metadata}...\n`,
@@ -62,6 +63,35 @@ describe('verified Dependabot minor/patch policy', () => {
     const spoofed = commit()
     spoofed.author.id = 123
     expect(eligible([spoofed])).toBe(false)
+  })
+  it('rejects a human committer even with a verified bot author', () => {
+    const human = commit()
+    human.committer = { id: 123, login: 'human', type: 'User' }
+    expect(eligible([human])).toBe(false)
+    const spoofed = commit()
+    spoofed.committer.id = 123
+    expect(eligible([spoofed])).toBe(false)
+    const missing = { ...commit(), committer: undefined }
+    const dir = mkdtempSync(join(tmpdir(), 'dependabot-missing-committer-'))
+    try {
+      const filename = join(dir, 'commits.json')
+      writeFileSync(filename, JSON.stringify([missing]))
+      const result = spawnSync(
+        'python3',
+        [
+          '-c',
+          DEPENDABOT_MERGE_POLICY,
+          'proved-head',
+          'dependabot/npm_and_yarn/pkg-1.0.1',
+          filename,
+        ],
+        { encoding: 'utf8' },
+      )
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout.trim()).toBe('false')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
   it('rejects stale heads, empty or oversized histories and other ecosystems', () => {
     expect(eligible([commit()], 'stale')).toBe(false)
