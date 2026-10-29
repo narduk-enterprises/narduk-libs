@@ -11,10 +11,15 @@ eligible = isinstance(commits, list) and 0 < len(commits) <= 100
 eligible = eligible and commits[-1].get("sha") == head
 for entry in commits if eligible else []:
     author = entry.get("author") or {}
+    committer = entry.get("committer") or {}
     commit = entry.get("commit") or {}
     eligible = eligible and author.get("id") == 49699333
     eligible = eligible and author.get("login") == "dependabot[bot]"
     eligible = eligible and author.get("type") == "Bot"
+    # Genuine GitHub-signed Dependabot commits are committed by web-flow.
+    eligible = eligible and committer.get("id") == 19864447
+    eligible = eligible and committer.get("login") == "web-flow"
+    eligible = eligible and committer.get("type") == "User"
     eligible = eligible and commit.get("verification", {}).get("verified") is True
 
 message = commits[-1].get("commit", {}).get("message", "") if eligible else ""
