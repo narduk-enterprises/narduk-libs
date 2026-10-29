@@ -102,7 +102,12 @@ function base64UrlDecode(
 ): Uint8Array<ArrayBuffer> {
   const trimmed = value.trim()
   // Browsers emit unpadded base64url; tolerate padding and the standard alphabet.
-  const normalized = trimmed.replace(/=+$/u, '').replaceAll('+', '-').replaceAll('/', '_')
+  // Strip padding with a loop: `/=+$/` backtracks quadratically on a long run of '='.
+  let end = trimmed.length
+  while (end > 0 && trimmed[end - 1] === '=') {
+    end -= 1
+  }
+  const normalized = trimmed.slice(0, end).replaceAll('+', '-').replaceAll('/', '_')
   if (!/^[\w-]+$/u.test(normalized) || normalized.length % 4 === 1) {
     throw new NotifyError('invalid_credentials', `${name} is not base64url`)
   }

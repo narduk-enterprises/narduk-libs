@@ -98,6 +98,26 @@ describe('VAPID (RFC 8292)', () => {
       expect((error as NotifyError).code).toBe('invalid_credentials')
     }
   })
+
+  it('accepts padded keys and rejects a long run of padding in linear time', async () => {
+    const keys = await generateVapidKeys()
+    const endpoint = 'https://web.push.apple.com/x'
+    await expect(
+      createVapidAuthorization(endpoint, {
+        subject: SUBJECT,
+        ...keys,
+        publicKey: `${keys.publicKey}=`,
+      }),
+    ).resolves.toMatch(/^vapid t=/u)
+    const started = performance.now()
+    const error = await createVapidAuthorization(endpoint, {
+      subject: SUBJECT,
+      ...keys,
+      publicKey: `${'='.repeat(200_000)}x`,
+    }).catch((e: unknown) => e)
+    expect((error as NotifyError).code).toBe('invalid_credentials')
+    expect(performance.now() - started).toBeLessThan(1000)
+  })
 })
 
 describe('VAPID key pair consistency', () => {
