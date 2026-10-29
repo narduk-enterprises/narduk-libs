@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-notify",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "Notification delivery for Narduk products: APNs token auth (alert and Live Activity pushes), Web Push (VAPID, encrypted payloads), email through Resend, per-user preferences and a delivery audit log on D1.",

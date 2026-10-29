@@ -1,5 +1,15 @@
 # @narduk-enterprises/narduk-notify
 
+## 0.2.0
+
+### Minor Changes
+
+- ad0e581: Add Web Push: `sendWebPush` with VAPID (RFC 8292) authentication and
+  `aes128gcm` payload encryption (RFC 8291), `encryptWebPushPayload`,
+  `createVapidAuthorization`, `generateVapidKeys`, and an SSRF endpoint
+  allowlist (`DEFAULT_WEB_PUSH_HOSTS`, `isAllowedPushEndpoint`). Web Crypto
+  only, no new dependencies; verified against the RFC 8291 Appendix A vector.
+
 ## 0.1.0
 
 ### Minor Changes
