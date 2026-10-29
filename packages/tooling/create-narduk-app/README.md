@@ -252,23 +252,30 @@ CI does not run. An app that predates the bar gets it on its next
 `unresolved` and left alone. Apps generated from this version carry every marker
 already.
 
-### Dependabot: two lanes
+### Dependabot: version lanes and standalone security fixes
 
 The generated `.github/dependabot.yml` npm update splits into two groups by
 `update-types`, over the same packages: `safe` (minor + patch) and `majors`
 (major). `.github/workflows/dependabot-merge.yml` merges `safe` on its own once
-CI is green on its exact PR head — nobody has to touch it. It then starts main
-CI by `workflow_dispatch`, and a run started with `GITHUB_TOKEN` fires no
-`workflow_run`, so Promote never saw it (narduk-libs#787). The generated
-`ci.yml` therefore has a `promote-dispatch` job. For a bot-dispatched run on
-`main`, after every CI job passes, it dispatches `promote.yml` with
-`verified-sha` if the commit is still main's head. `promote.yml` is app-owned:
-the generated `docs/workers-builds.md` shows the `workflow_dispatch` input and
-the `gate` job to add. Until an app adds them, the job posts a notice and the
-bump reaches production with the next promoted commit. `majors` always waits for
-a person or an agent: a major bump usually needs a code change, and a
-workflow-file edit (the `github-actions` ecosystem lane) can never be merged by
-a workflow's own `GITHUB_TOKEN` at all, so that lane stays manual regardless.
+CI is green on its exact PR head. Standalone npm minor/patch updates, including
+security fixes, use the same path. Every commit must be signed and authored by
+GitHub Dependabot; signed dependency metadata must identify the safe group or
+one ungrouped dependency, with no major update. Only manifest files may change;
+incomplete or unsupported metadata stays for review. Security updates are
+separate from the weekly version groups; security-update settings are managed in
+GitHub, not enabled by this file. The release-age and toolchain ceilings remain
+unchanged. It then starts main CI by `workflow_dispatch`, and a run started with
+`GITHUB_TOKEN` fires no `workflow_run`, so Promote never saw it
+(narduk-libs#787). The generated `ci.yml` therefore has a `promote-dispatch`
+job. For a bot-dispatched run on `main`, after every CI job passes, it
+dispatches `promote.yml` with `verified-sha` if the commit is still main's head.
+`promote.yml` is app-owned: the generated `docs/workers-builds.md` shows the
+`workflow_dispatch` input and the `gate` job to add. Until an app adds them, the
+job posts a notice and the bump reaches production with the next promoted
+commit. `majors` always waits for a person or an agent: a major bump usually
+needs a code change, and a workflow-file edit (the `github-actions` ecosystem
+lane) can never be merged by a workflow's own `GITHUB_TOKEN` at all, so that
+lane stays manual regardless.
 
 This replaced a single all-in `dependencies` group. Apps that had adopted the
 older canonical shape (`open-pull-requests-limit: 10`, ~10 groups) stacked

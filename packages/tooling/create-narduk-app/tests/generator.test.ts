@@ -1868,7 +1868,10 @@ describe('generated app typecheck and lint surfaces', () => {
           'open-pull-requests-limit'?: number
           cooldown?: Record<string, unknown>
           ignore?: Array<{ 'dependency-name': string; versions: string[] }>
-          groups: Record<string, { patterns: string[]; 'update-types'?: string[] }>
+          groups: Record<
+            string,
+            { patterns: string[]; 'update-types'?: string[]; 'applies-to'?: string }
+          >
         }>
       }
       expect(parsed.version, label).toBe(2)
@@ -1901,6 +1904,7 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(npmUpdate?.registries, label).toEqual(['npm-nard-uk'])
       expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(2)
       expect(npmUpdate?.groups['safe'].patterns, label).toEqual(['*', '@narduk-enterprises/*'])
+      expect(npmUpdate?.groups['safe']['applies-to'], label).toBe('version-updates')
       expect(npmUpdate?.groups['safe']['update-types'], label).toEqual(['minor', 'patch'])
       expect(npmUpdate?.groups.majors.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
       expect(npmUpdate?.groups.majors['update-types'], label).toEqual(['major'])
@@ -1923,7 +1927,7 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(mergeWorkflow, label).toContain('workflow_run:')
       expect(mergeWorkflow, label).toContain('workflows: [CI]')
       expect(mergeWorkflow, label).toContain(
-        "startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/safe-')",
+        "startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/')",
       )
       expect(mergeWorkflow, label).toContain('gh pr merge')
       expect(mergeWorkflow, label).toContain('gh workflow run ci.yml')
