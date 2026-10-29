@@ -849,6 +849,17 @@ the signed-in session; a full page load discards it, so a script from a cached
 page cannot survive into a session. An app that signs users in with its own code
 must end in a full page load too before it turns `htmlCache` on.
 
+### Portable ceremony for apps with their own storage
+
+`@narduk-enterprises/narduk-auth/server/lib/app-auth/webauthn-ceremony` runs the
+same registration and authentication ceremonies without this module's tables or
+Nuxt layer. Pass a `PasskeyCeremonyContext`: a `PasskeyStore` that persists
+credentials and single-use challenges, a `ResolvedWebauthnConfig`, and a
+`WebauthnServer` from `loadWebauthnServer`. Then call
+`beginPasskeyRegistration`, `finishPasskeyRegistration`,
+`beginPasskeyAuthentication`, `finishPasskeyAuthentication`, `listPasskeys` and
+`removePasskey`. Counter clone detection and challenge burning behave as above.
+
 ## Auth card components
 
 The module registers everything under `app/components` with `addComponentsDir`
