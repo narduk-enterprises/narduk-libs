@@ -1,5 +1,7 @@
 import { writeFileSync } from 'node:fs'
 
+import { runRecoveryEvidenceCommand } from './d1-recovery-evidence.js'
+
 import { parseAutoImportsArgs, runAutoImportsCheck } from './auto-imports.js'
 import { parseGhPackagesRunArgs, runGhPackagesCommand } from './gh-packages-run.js'
 import { configureRegistryAuth } from './registry-auth.js'
@@ -148,6 +150,9 @@ function usage(): string {
     '                                       pull request that landed as it with an identical tree.',
     '                                       --check-context runs that proof only: no credential, no write.',
     '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
+    '  db preserve-recovery --checkout <dir> | --probe',
+    '                                       Preserve complete D1 recovery evidence through the existing',
+    '                                       materialized CI artifact route, with authenticated readback.',
     '  db bundle --output <file>          Package SQL/data for the trusted preview migration job',
     '  db create [--checkout <dir>] [--binding <NAME>] [--dry-run] [--json]',
     '                                       Create the D1 database a placeholder binding stands',
@@ -403,6 +408,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         // read the app declaration synchronously. Resolve it first.
         await primeAppConfig({ dir: process.cwd(), files: ['cloudflare-app.json'] })
       }
+      if (subcommand === 'preserve-recovery') {
+        console.log(JSON.stringify(runRecoveryEvidenceCommand(migrateArgs), null, 2))
+        return 0
+      }
       if (subcommand === 'baseline') {
         console.log(JSON.stringify(runBaselineCommand(migrateArgs), null, 2))
         return 0
@@ -444,7 +453,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         return options.check && plans.some((plan) => plan.apply + plan.adopt > 0) ? 2 : 0
       }
       if (subcommand !== 'migrate' && subcommand !== 'status')
-        throw new Error('Usage: narduk-app db migrate|status|migrate-deployment|create ...')
+        throw new Error(
+          'Usage: narduk-app db migrate|status|migrate-deployment|preserve-recovery|create ...',
+        )
       const options = parseMigrationArgs(migrateArgs)
       if (subcommand === 'status') {
         const plan = inspectMigrations(options)

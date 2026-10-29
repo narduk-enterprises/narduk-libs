@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
@@ -1005,6 +1013,14 @@ export function runDeploymentMigrations(
     // Discover all configuration/history errors before touching the first DB.
     const before = targets.map((target) => inspectMigrations(target, executor))
     if (options.check) return before
+    // Set the requirement before an actual apply/adoption can touch D1. The
+    // always-run preservation step must refuse missing evidence after a write.
+    if (process.env.GITHUB_OUTPUT) {
+      appendFileSync(
+        process.env.GITHUB_OUTPUT,
+        `recovery_required=${before.some((item) => item.apply + item.adopt > 0)}\n`,
+      )
+    }
     return targets.map((target) => runMigrations(target, executor))
   } finally {
     rmSync(directory, { recursive: true, force: true })

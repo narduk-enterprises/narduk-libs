@@ -421,6 +421,17 @@ The mode-`0600` recovery artifact is written under `.narduk/recovery/d1/` and
 its path is printed by the CLI. Remote reset is never supported; corrective
 database changes are forward-only.
 
+`narduk-app db preserve-recovery --checkout <repository-root>` archives the
+complete tool-produced recovery evidence through the job's existing approved CI
+artifact route and requires authenticated byte-for-byte readback before
+promotion. `db migrate-deployment` emits `recovery_required` before a pending
+write, so a missing archive cannot pass. No-op runs with no evidence need no
+credential. The command and `preserveRecovery` / `probeRecoveryStore` exports
+share the bounded transport and never create grants, read a credential store, or
+restore a database. See
+[D1 deployment migrations](docs/deployment-migrations.md) for activation,
+receipt verification and the separately labeled manual probe.
+
 Only numbered migration files such as `0000_initial_schema.sql` or `0001.sql`
 are discovered. Utility SQL such as `seed.sql` is deliberately excluded and is
 never executed against local or remote application databases by this command.

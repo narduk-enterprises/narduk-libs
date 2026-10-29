@@ -42,6 +42,27 @@ export const LINUX_DEPLOY_RUNNER_LABELS = [
   'proxmox-deploy',
 ] as const
 
+/** Explicit opt-in only: the default jobs have no approved R2 artifact route. */
+function recoveryStoreOptIn(sha: string): string {
+  return `# OPTIONAL replacement for the default GitHub recovery-upload step.
+# Keep the default unless this SAME trusted job already materializes its approved
+# CI_ARTIFACTS_R2_ACCOUNT_ID, CI_ARTIFACTS_R2_ACCESS_KEY_ID and
+# CI_ARTIFACTS_R2_SECRET_ACCESS_KEY environment. Node inherits that job environment.
+# This snippet adds no secret reference, credential reader, grant or permission.
+# Do not copy a broader key or add a new secret binding to activate it.
+# Replace only the recovery-upload step; retain all gates, migration commands,
+# serialization and normal success requirements before promotion/live proof.
+steps:
+  - name: Preserve D1 recovery evidence, including on failure
+    if: always() && steps.migrate_d1.outcome != 'skipped'
+    env:
+      VERIFIED_SHA: ${sha}
+      D1_RECOVERY_REQUIRED: \${{ steps.migrate_d1.outputs.recovery_required || 'false' }}
+    working-directory: apps/web
+    run: pnpm exec narduk-app db preserve-recovery --checkout ../..
+`
+}
+
 /** Inert onboarding files, owned by the app after one-shot generation. */
 export function createMigrationWorkflowFiles(visibility: AppVisibility): GeneratedFile[] {
   const deployRunner =
@@ -102,6 +123,7 @@ steps:
     run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" \${VERSION_ID:+--version-id "$VERSION_ID"} --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json
     working-directory: apps/web
   - name: Apply compatible D1 migrations and require no drift
+    id: migrate_d1
     if: steps.eligible.outputs.superseded != 'true'
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.D1_MIGRATE_API_TOKEN }}
@@ -203,6 +225,7 @@ ${setup()}      - name: Download SQL from this exact successful CI run and attem
           name: d1-migrations-\${{ github.event.workflow_run.run_attempt }}
           path: \${{ runner.temp }}/d1-bundle
       - name: Migrate declared preview databases with trusted tooling
+        id: migrate_d1
         env:
           CLOUDFLARE_API_TOKEN: \${{ secrets.D1_MIGRATE_API_TOKEN }}
           VERIFIED_SHA: \${{ github.event.workflow_run.head_sha }}
@@ -224,6 +247,14 @@ ${setup()}      - name: Download SQL from this exact successful CI run and attem
 # Run the app's preview health/smoke checks only AFTER this job succeeds.
 # An uploaded preview URL alone is not evidence that its schema is ready.
 `,
+    },
+    {
+      path: 'docs/deployment/promote-d1-r2.steps.yml',
+      contents: recoveryStoreOptIn('\${{ needs.gate.outputs.sha }}'),
+    },
+    {
+      path: 'docs/deployment/preview-d1-r2.steps.yml',
+      contents: recoveryStoreOptIn('\${{ github.event.workflow_run.head_sha }}'),
     },
   ]
 }
