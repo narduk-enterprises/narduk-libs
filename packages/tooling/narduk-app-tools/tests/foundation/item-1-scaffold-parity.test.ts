@@ -195,7 +195,11 @@ describe('item 1 -- scaffold parity', () => {
       bindings: { r2: [], ...extra },
     })
 
-    writeJson(root, 'Config/cloudflare-app.json', manifest('apps/facility/wrangler.jsonc', { kv: ['CACHE'] }))
+    writeJson(
+      root,
+      'Config/cloudflare-app.json',
+      manifest('apps/facility/wrangler.jsonc', { kv: ['CACHE'] }),
+    )
     const passing = sub12(await run(root))
     expect(passing.status).toBe('pass')
     expect(passing.evidence).toBe('apps/facility/wrangler.jsonc')
