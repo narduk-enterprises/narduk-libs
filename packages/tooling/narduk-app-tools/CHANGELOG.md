@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.49.1
+
+### Patch Changes
+
+- ad0e581: Refresh the shared capability catalog: narduk-notify now lists Web
+  Push (VAPID, encrypted payloads).
+
 ## 0.49.0
 
 ### Minor Changes
