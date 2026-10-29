@@ -212,9 +212,19 @@ describe('item 1 -- scaffold parity', () => {
     expect(failing.detail).toContain('CACHE')
     rmSync(`${root}/wrangler.json`, { force: true })
 
-    // A path that escapes the checkout is ignored, not followed.
-    writeJson(root, 'Config/cloudflare-app.json', manifest('../apps/facility/wrangler.jsonc', {}))
-    expect(sub12(await run(root)).status).toBe('unknown')
+    // A path that escapes the checkout, or names no file, is ignored: the root
+    // candidate decides.
+    writeJson(root, 'wrangler.json', {})
+    for (const declared of [
+      '../apps/facility/wrangler.jsonc',
+      `${root}/apps/facility/wrangler.jsonc`,
+      'apps/gone/wrangler.jsonc',
+    ]) {
+      writeJson(root, 'Config/cloudflare-app.json', manifest(declared, {}))
+      const fallback = sub12(await run(root))
+      expect(fallback.status).toBe('not-applicable')
+      expect(fallback.evidence).toBe('wrangler.json')
+    }
   })
 
   it('1.2 falls back to the root wrangler config when the web app has none of its own', async () => {
