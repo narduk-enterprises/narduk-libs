@@ -64,6 +64,7 @@
       "node-forge": "1.4.0",
       "defu": "6.1.7",
       "devalue": "5.9.3",
+      "seroval": "1.6.8",
       "@eslint/config-inspector>h3": "1.15.11",
       "@stylistic/eslint-plugin>picomatch": "4.0.4",
       "vite": "7.3.7",
