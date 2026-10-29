@@ -27,6 +27,7 @@ overrides:
   node-forge: 1.4.0
   defu: 6.1.7
   devalue: 5.9.3
+  seroval: 1.6.8
   '@eslint/config-inspector>h3': 1.15.11
   '@stylistic/eslint-plugin>picomatch': 4.0.4
   vite: 7.3.7
@@ -9165,8 +9166,8 @@ packages:
     resolution: {integrity: sha512-YAy8Od6KV+uuwUuU50np8fGB/Aues6Y0nAhA9y/hId74PlKUcme4pXcBD46NWKr1Q4osN/iseZ17YqO1XfmI8g==}
     engines: {node: '>=20.0.0'}
 
-  seroval@1.6.7:
-    resolution: {integrity: sha512-AeDcLh0yO2SFm9W71essgnSzLV9DI8ZH0x0knXn2DMnUZj728mpLbxjlbB6IqKCmqh8JA3cEqRyGoNkt584JcQ==}
+  seroval@1.6.8:
+    resolution: {integrity: sha512-HlSgSAkTk4EqHcje1ptJjfZi1YDv5KbhVJ/d3P7T/nAXua2VmDu+AKDX5VTdFfZf48nDkWB2TKYt0DrCSa+3wg==}
     engines: {node: '>=10'}
 
   serve-placeholder@2.0.2:
@@ -12823,7 +12824,7 @@ snapshots:
       pkg-types: 2.3.3
       postcss: 8.5.28
       rolldown-string: 0.3.1(rolldown@1.2.14)
-      seroval: 1.6.7
+      seroval: 1.6.8
       std-env: 4.2.0
       ufo: 1.6.4
       unenv: 2.0.0-rc.24
@@ -12886,7 +12887,7 @@ snapshots:
       pkg-types: 2.3.3
       postcss: 8.5.28
       rolldown-string: 0.3.1(rolldown@1.2.14)
-      seroval: 1.6.7
+      seroval: 1.6.8
       std-env: 4.2.0
       ufo: 1.6.4
       unenv: 2.0.0-rc.24
@@ -12949,7 +12950,7 @@ snapshots:
       pkg-types: 2.3.3
       postcss: 8.5.28
       rolldown-string: 0.3.1(rolldown@1.2.14)
-      seroval: 1.6.7
+      seroval: 1.6.8
       std-env: 4.2.0
       ufo: 1.6.4
       unenv: 2.0.0-rc.24
@@ -19700,7 +19701,7 @@ snapshots:
 
   serialize-javascript@7.0.7: {}
 
-  seroval@1.6.7: {}
+  seroval@1.6.8: {}
 
   serve-placeholder@2.0.2:
     dependencies:
