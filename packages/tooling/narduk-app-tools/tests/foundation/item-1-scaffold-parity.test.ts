@@ -179,6 +179,54 @@ describe('item 1 -- scaffold parity', () => {
     expect(failing.detail).not.toContain('STATIONMAP_URL')
   })
 
+  it('1.2 reads the wrangler config the manifest declares in worker.wranglerConfig', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    // Monorepo layout: the app's Worker lives outside every known candidate path.
+    rmSync(`${root}/wrangler.json`, { force: true })
+    writeJson(root, 'apps/facility/wrangler.jsonc', {
+      kv_namespaces: [{ binding: 'CACHE', id: 'x' }],
+    })
+    const manifest = (wranglerConfig: string, extra: Record<string, unknown>) => ({
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      worker: { nitroPreset: 'cloudflare_module', wranglerConfig },
+      access: { exposureClass: 'public' },
+      bindings: { r2: [], ...extra },
+    })
+
+    writeJson(
+      root,
+      'Config/cloudflare-app.json',
+      manifest('apps/facility/wrangler.jsonc', { kv: ['CACHE'] }),
+    )
+    const passing = sub12(await run(root))
+    expect(passing.status).toBe('pass')
+    expect(passing.evidence).toBe('apps/facility/wrangler.jsonc')
+
+    // The declared config beats a root candidate, so its unmirrored binding fails.
+    writeJson(root, 'wrangler.json', {})
+    writeJson(root, 'Config/cloudflare-app.json', manifest('./apps/facility/wrangler.jsonc', {}))
+    const failing = sub12(await run(root))
+    expect(failing.status).toBe('fail')
+    expect(failing.detail).toContain('CACHE')
+    rmSync(`${root}/wrangler.json`, { force: true })
+
+    // A path that escapes the checkout, or names no file, is ignored: the root
+    // candidate decides.
+    writeJson(root, 'wrangler.json', {})
+    for (const declared of [
+      '../apps/facility/wrangler.jsonc',
+      `${root}/apps/facility/wrangler.jsonc`,
+      'apps/gone/wrangler.jsonc',
+    ]) {
+      writeJson(root, 'Config/cloudflare-app.json', manifest(declared, {}))
+      const fallback = sub12(await run(root))
+      expect(fallback.status).toBe('not-applicable')
+      expect(fallback.evidence).toBe('wrangler.json')
+    }
+  })
+
   it('1.2 falls back to the root wrangler config when the web app has none of its own', async () => {
     const root = makeTempRepo()
     tempDirs.push(root)
