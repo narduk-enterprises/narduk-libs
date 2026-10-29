@@ -1,5 +1,20 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.31
+
+### Patch Changes
+
+- c5212f3: Require the observed GitHub web-flow committer identity as well as
+  Dependabot author identity and verified signatures before merging dependency
+  updates.
+- 1cf34c4: Pick up `@narduk-enterprises/narduk-auth` with the portable passkey
+  ceremony module.
+- 5ead2ce: Allow verified standalone Dependabot minor and patch updates to merge
+  after exact-head CI, while keeping weekly version groups explicitly separate
+  from security updates.
+- Updated dependencies [f86581f]
+  - @narduk-enterprises/narduk-app-tools@0.49.2
+
 ## 0.23.30
 
 ### Patch Changes
