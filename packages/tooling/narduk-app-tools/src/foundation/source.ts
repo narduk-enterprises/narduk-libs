@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser'
 
@@ -233,7 +233,27 @@ export function mergedDeps(packages: FoundPackage[]): Record<string, string> {
 }
 
 /**
+ * The wrangler config `Config/cloudflare-app.json` names in `worker.wranglerConfig`,
+ * when it is a relative path inside the checkout. The same guard `db create`
+ * applies to that field.
+ */
+function declaredWranglerConfig(repo: AppRepo): string | null {
+  const manifest = parseJson(repo.read(APP_CONFIG_PATHS['cloudflare-app.json']))
+  const worker = isRecord(manifest) ? manifest.worker : null
+  const declared = isRecord(worker) ? worker.wranglerConfig : null
+  if (typeof declared !== 'string') return null
+  const rel = declared.trim().replace(/^\.\//, '')
+  if (rel === '' || isAbsolute(rel) || rel.split(/[\\/]/).includes('..')) return null
+  return rel
+}
+
+/**
  * Locate this app's own wrangler config.
+ *
+ * The config the manifest declares (`worker.wranglerConfig`) wins when it
+ * exists: a monorepo keeps its app outside the known candidate paths
+ * (pacc-trac's `apps/facility/wrangler.jsonc`), and with nothing found 1.2
+ * read "no wrangler config found at a known path" for a manifest that names it.
  *
  * The app is the Nuxt app: the directory holding the first `nuxt.config.*` at a
  * known path (the same resolution `detectNuxt` uses). Its wrangler config wins
@@ -245,6 +265,8 @@ export function mergedDeps(packages: FoundPackage[]): Record<string, string> {
  * path decides, as before.
  */
 export function findWranglerConfig(repo: AppRepo): string | null {
+  const declared = declaredWranglerConfig(repo)
+  if (declared && repo.read(declared) !== null) return declared
   const nuxtConfig = NUXT_CONFIG_CANDIDATES.find((rel) => repo.exists(rel))
   if (nuxtConfig) {
     const slash = nuxtConfig.lastIndexOf('/')
