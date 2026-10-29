@@ -1,6 +1,14 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -983,6 +991,27 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         workflow,
         ...extra,
       ])
+
+    it('requires recovery evidence before the first pending migration write, including a failed apply', () => {
+      const t = setup()
+      const output = join(t.f.root, 'step-output')
+      const pending: MigrationExecutor = (_args, _cwd, json) => {
+        if (json) return JSON.stringify([{ success: true, results: [] }])
+        expect(readFileSync(output, 'utf8')).toBe('recovery_required=true\n')
+        throw reached
+      }
+      withEnv({ ...t.env(), CLOUDFLARE_API_TOKEN: 'fixture-token', GITHUB_OUTPUT: output }, () => {
+        expect(() =>
+          runDeploymentMigrations({ ...args(t), cwd: t.f.root }, pending, { get: t.green }),
+        ).toThrow(reached)
+        expect(readFileSync(output, 'utf8')).toBe('recovery_required=true\n')
+        rmSync(output)
+        expect(
+          runDeploymentMigrations({ ...args(t), cwd: t.f.root, check: true }, pending),
+        ).toMatchObject([{ apply: 1 }])
+        expect(existsSync(output)).toBe(false)
+      })
+    })
 
     it('a write in push context reaches the executor only when the gate is green', () => {
       const t = setup()

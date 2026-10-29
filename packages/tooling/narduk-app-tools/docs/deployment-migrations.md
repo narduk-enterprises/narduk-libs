@@ -199,10 +199,62 @@ The app's promote workflow must follow these steps in one serialized job:
    production left and the `narduk-app deploy rollback` command; the workflow
    does not run it. A migration failure blocks the promotion and triggers
    nothing else.
-6. Upload `.narduk/recovery/d1` with `if: always()`, hidden files included and
-   restricted artifact access. It contains schema/ledger metadata and a Time
-   Travel bookmark, not application records or credentials. Missing evidence on
-   a no-op run is normal; a pending migration requires successful capture.
+6. Keep the default always-run GitHub recovery-artifact upload, with hidden
+   files included and restricted artifact access, unless the same trusted job
+   already has an approved materialized CI artifact-store route. Generic
+   generated jobs have no such route. The generator preserves these working
+   defaults and emits separate, explicitly opt-in `promote-d1-r2.steps.yml` and
+   `preview-d1-r2.steps.yml` replacements under `docs/deployment/`.
+
+   Where that existing route is proven, replace only the recovery-upload step
+   with the matching optional snippet. It runs:
+
+   ```sh
+   narduk-app db preserve-recovery --checkout ../..
+   ```
+
+   Run from `apps/web`, with `VERIFIED_SHA` set to the gate's exact commit and
+   `D1_RECOVERY_REQUIRED` set from the migrate step's `recovery_required`
+   output. `db migrate-deployment` writes that output before any pending
+   apply/adoption can touch D1. Preserve even after a migration failure;
+   successful preservation cannot turn that migration failure green. Do not use
+   `continue-on-error`.
+
+   The opt-in avoids GitHub recovery-artifact quota failures after a migration
+   succeeds. The command archives every JSON file in both
+   `apps/web/.narduk/recovery/d1` and `.narduk/recovery/d1`, preserving paths
+   and bytes with a SHA-256 manifest. These contain schema/ledger metadata and a
+   Time Travel bookmark, not application records or credentials. A pending apply
+   with missing evidence is refused; a no-op with no files needs no credential.
+
+   Activate the optional replacement only where the trusted job already has an
+   approved, materialized `CI_ARTIFACTS_R2_ACCOUNT_ID`,
+   `CI_ARTIFACTS_R2_ACCESS_KEY_ID` and `CI_ARTIFACTS_R2_SECRET_ACCESS_KEY`
+   route. The generator adds no secret references, repository grants, credential
+   consumers or permissions. These variables reach the command by inheritance
+   from the job's existing environment; the snippet does not inject them.
+   Missing delivery is a readiness blocker: retain the default upload, and do
+   not copy a broader key or grant a new job access to activate the optional
+   replacement.
+
+   The existing private `narduk-ci-artifacts` bucket stores the archive under
+   `proof/<owner>/<repo>/d1-recovery-<sha>-<run>-<attempt>.tar.gz`, with its
+   existing 30-day lifecycle. A conditional PUT refuses overwrite; authenticated
+   GET must match the complete archive byte-for-byte. The command rejects
+   symlinks, unexpected files, more than 64 files, more than 16 MiB of source
+   evidence, or more than 20 MiB of archive data. It leaves every original file
+   in place. curl's standard AWS SigV4 receives credentials through stdin, never
+   arguments, URLs or logs, reads no curlrc and follows no redirects. Only the
+   object key, size, file count and SHA-256 reach the receipt and job summary.
+
+   To recover, use the existing approved CI-store read route, verify the receipt
+   SHA-256, extract into a new private directory, and check manifest identity
+   and each file's hash. A database restore remains a separate operator action.
+   An explicit `narduk-app db preserve-recovery --probe` verifies a fixed
+   34-byte payload through the same transport under the existing one-day
+   `probe/` prefix. Its `probe-verified` receipt proves storage only; it never
+   replaces required real capture or claims an earlier failed archive was
+   retained.
 
 **Rollback mode is outside certification.** agent-infrastructure
 docs/standards/NARDUK-APP-COMPLIANCE.md §3.1 no longer requires a particular

@@ -46,7 +46,22 @@ describe('D1 workflow trust and failure boundaries', () => {
       expect(steps[2].env.CLOUDFLARE_API_TOKEN).not.toBe(steps[3].env.CLOUDFLARE_API_TOKEN)
       expect(steps[3].run).toContain('migrate-deployment --target production --sha "$VERIFIED_SHA"')
       expect(steps[3].run).toContain('migrate-deployment --target production --check')
+      expect(steps[3].id).toBe('migrate_d1')
+      // Existing jobs have no generic approved R2 delivery. Keep working defaults.
       expect(steps[4].if).toBe('always()')
+      expect(steps[4].uses).toContain('actions/upload-artifact@')
+      expect(steps[4].with.path).toBe('.narduk/recovery/d1')
+      expect(steps[4].env).toBeUndefined()
+      const productionOptIn = byPath.get('docs/deployment/promote-d1-r2.steps.yml').steps[0]
+      expect(productionOptIn.if).toBe("always() && steps.migrate_d1.outcome != 'skipped'")
+      expect(productionOptIn.run).toBe('pnpm exec narduk-app db preserve-recovery --checkout ../..')
+      expect(productionOptIn.env).toEqual({
+        VERIFIED_SHA: '${{ needs.gate.outputs.sha }}',
+        D1_RECOVERY_REQUIRED: "${{ steps.migrate_d1.outputs.recovery_required || 'false' }}",
+      })
+      expect(productionOptIn.uses).toBeUndefined()
+      expect(productionOptIn['continue-on-error']).toBeUndefined()
+      expect(JSON.stringify(productionOptIn)).not.toContain('secrets.')
       const bundle = byPath.get('docs/deployment/ci-d1-bundle.job.yml').jobs['d1-bundle']
       expect(JSON.stringify(bundle)).not.toMatch(/D1_MIGRATE_API_TOKEN|CLOUDFLARE_API_TOKEN/u)
       expect(bundle.steps[0].with.ref).toBe('${{ github.event.pull_request.head.sha }}')
@@ -67,6 +82,21 @@ describe('D1 workflow trust and failure boundaries', () => {
       )
       expect(migrate.run).toContain('--bundle "$SQL_BUNDLE"')
       expect(migrate.run).toContain('--check')
+      expect(migrate.id).toBe('migrate_d1')
+      const defaultPreserve = preview.jobs.migrate.steps.at(-1)
+      expect(defaultPreserve.if).toBe('always()')
+      expect(defaultPreserve.uses).toContain('actions/upload-artifact@')
+      expect(defaultPreserve.env).toBeUndefined()
+      const previewOptIn = byPath.get('docs/deployment/preview-d1-r2.steps.yml').steps[0]
+      expect(previewOptIn.if).toBe("always() && steps.migrate_d1.outcome != 'skipped'")
+      expect(previewOptIn.run).toBe('pnpm exec narduk-app db preserve-recovery --checkout ../..')
+      expect(previewOptIn.env).toEqual({
+        VERIFIED_SHA: '${{ github.event.workflow_run.head_sha }}',
+        D1_RECOVERY_REQUIRED: "${{ steps.migrate_d1.outputs.recovery_required || 'false' }}",
+      })
+      expect(previewOptIn.uses).toBeUndefined()
+      expect(previewOptIn['continue-on-error']).toBeUndefined()
+      expect(JSON.stringify(previewOptIn)).not.toContain('secrets.')
       expect(preview.jobs.migrate.if).toContain('head_repository.full_name == github.repository')
       expect(preview.jobs.migrate.if).toContain("conclusion == 'success'")
       // Every job that runs narduk-app resolves the app's config from the
