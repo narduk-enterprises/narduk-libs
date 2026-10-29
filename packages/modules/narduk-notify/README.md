@@ -1,12 +1,12 @@
 # @narduk-enterprises/narduk-notify
 
 Notification delivery for Narduk products: APNs with token auth (alert,
-background and Live Activity pushes), email through Resend, per-user
-preferences, and a delivery audit log on D1.
+background and Live Activity pushes), Web Push (VAPID, encrypted payloads),
+email through Resend, per-user preferences, and a delivery audit log on D1.
 
 It has no runtime dependencies. It uses the host's `fetch`, Web Crypto and D1
-binding, so the root entry runs in Workers and in Node. Web Push and SMS are not
-in it yet; SMS is mybo.at Phase 7.
+binding, so the root entry runs in Workers and in Node. SMS is not in it yet;
+SMS is mybo.at Phase 7.
 
 ## Install
 
@@ -16,11 +16,11 @@ pnpm add @narduk-enterprises/narduk-notify
 
 ## Exports
 
-| Subpath          | What it holds                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------- |
-| `.`              | APNs signer, request builder and client; Resend client; preferences; audit; `createNotifier` |
-| `./node`         | `createNodeHttp2Transport`, the HTTP/2 transport APNs needs in Node                          |
-| `./migrations/*` | `0001_notify.sql`, for the app's D1 migration runner                                         |
+| Subpath          | What it holds                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| `.`              | APNs signer, request builder and client; Web Push; Resend client; preferences; audit; `createNotifier` |
+| `./node`         | `createNodeHttp2Transport`, the HTTP/2 transport APNs needs in Node                                    |
+| `./migrations/*` | `0001_notify.sql`, for the app's D1 migration runner                                                   |
 
 `node:http2` is only imported by `./node`, so a Worker bundle never pulls it in.
 
@@ -112,6 +112,95 @@ one session per origin, as Apple recommends, and replaces it after close, GOAWAY
 or a request timeout (a silent peer is treated as half-open). `timeoutMs` is an
 idle timeout per request. Node's global `fetch` does not negotiate HTTP/2 by
 default. `createFetchApnsTransport(fetch)` adapts any `fetch` that does.
+
+## Web Push
+
+Standards Web Push for Home Screen web apps on iPhone and iPad (iOS and iPadOS
+16.4+), Safari, Chrome and Firefox on Mac, and any other browser. VAPID
+(RFC 8292) authenticates the sender and the payload is encrypted with
+`aes128gcm` (RFC 8291). Web Crypto only: no `web-push` package, no Node-only
+API.
+
+```ts
+import {
+  generateVapidKeys,
+  sendWebPush,
+  type WebPushSubscription,
+} from '@narduk-enterprises/narduk-notify'
+
+// Once, offline. Keep privateKey in a secret binding; ship publicKey to the client.
+const keys = await generateVapidKeys() // { publicKey, privateKey }, both base64url
+
+// In the browser: registration.pushManager.subscribe({
+//   userVisibleOnly: true,
+//   applicationServerKey: publicKey,
+// }), then store subscription.toJSON() server-side.
+const subscription: WebPushSubscription = {
+  endpoint: 'https://web.push.apple.com/…',
+  keys: { p256dh: '…', auth: '…' },
+}
+
+const result = await sendWebPush(
+  subscription,
+  {
+    payload: JSON.stringify({
+      title: 'Booster bundle in stock',
+      url: '/drops/42',
+    }),
+    ttlSeconds: 3600, // required: how long the push service may hold it
+    urgency: 'high', // optional: very-low | low | normal | high
+    topic: 'drop-42', // optional: replaces a queued message with the same topic
+  },
+  {
+    subject: 'mailto:ops@example.com', // or an https: URL
+    publicKey: env.VAPID_PUBLIC_KEY,
+    privateKey: env.VAPID_PRIVATE_KEY,
+  },
+)
+```
+
+- **Results, not throws.** `sendWebPush` resolves to
+  `{ ok: true, status, location }` or
+  `{ ok: false, status, reason, retryAfterSeconds }`. It throws `NotifyError`
+  only for caller mistakes: a bad TTL, topic or urgency, a malformed
+  subscription key, or a malformed VAPID key or subject.
+- **Result handling.**
+  - `gone` (404, 410): the subscription is dead. **Delete it.**
+  - `rate_limited` (429) and `server_error` (5xx): retry after
+    `retryAfterSeconds` (from `Retry-After`, seconds or an HTTP date; `null`
+    when absent).
+  - `unauthorized` (401, 403): the VAPID key or subject was refused. Check the
+    key pair, and that the subscription was created with this public key as its
+    `applicationServerKey`.
+  - `payload_too_large`: over 3993 bytes of plaintext (a push service takes at
+    most 4096 bytes of body), or a 413. Nothing is sent for the local check.
+  - `bad_request` (400 and any other unexpected status, including a redirect,
+    which is never followed), `network_error` (fetch threw, `status` is `null`).
+  - `endpoint_not_allowed`: refused locally; see below.
+- **Endpoint allowlist.** A subscription endpoint comes from a client, so
+  `sendWebPush` refuses, without a request, any endpoint that is not `https:`,
+  has a port or credentials, is an IP literal, or whose host is not on the list.
+  `DEFAULT_WEB_PUSH_HOSTS` holds `fcm.googleapis.com`,
+  `updates.push.services.mozilla.com`, `web.push.apple.com`,
+  `*.notify.windows.com` and `*.push.apple.com`. An entry is an exact host or
+  `*.` plus a suffix (which matches subdomains, not the bare domain). Pass
+  `allowedHosts` to replace the list. `isAllowedPushEndpoint` checks a
+  subscription at save time with the same rules.
+- **VAPID token.** ES256 JWT with `aud` (the endpoint's origin), `exp` (12 hours
+  out; RFC 8292 caps it at 24) and `sub`, sent as
+  `Authorization: vapid t=<jwt>, k=<public key>`. It is signed once per origin
+  and reused until an hour before it expires. `createVapidAuthorization` builds
+  the header on its own.
+- **Encryption.** `encryptWebPushPayload` returns the RFC 8188 header and one
+  record, with a fresh salt and sender key per message. No padding is added. An
+  empty `payload` sends a bare wake-up (`Content-Length: 0`, no
+  `Content-Encoding`); your service worker then fetches what to show.
+- **iOS and iPadOS.** Push works only for a web app **added to the Home Screen**
+  (with a web app manifest, `display: standalone`), and
+  `Notification.requestPermission()` must run from a user gesture inside that
+  installed app. Safari tabs on iOS cannot subscribe. Every push must show a
+  notification (`userVisibleOnly: true`); Apple revokes a subscription that
+  pushes silently.
 
 ## Email (Resend)
 
