@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.49.3
+
+### Patch Changes
+
+- db4433a: Add complete D1 recovery preservation through an existing approved CI
+  artifact route with authenticated readback. Offer explicit opt-in generator
+  snippets while preserving default uploads and credential exposure.
+
 ## 0.49.2
 
 ### Patch Changes
