@@ -41,6 +41,16 @@ describe('Web Push payload encryption (RFC 8291 aes128gcm)', () => {
     )
   })
 
+  it('decrypts the RFC 8291 body with the receiver private key', async () => {
+    const receiverPair = await importEcdhPair(UA_PUBLIC, UA_PRIVATE)
+    const decrypted = await decryptWebPush(b64(RFC_BODY), {
+      p256dh: UA_PUBLIC,
+      auth: AUTH_SECRET,
+      privateKey: receiverPair.privateKey,
+    })
+    expect(new TextDecoder().decode(decrypted.plaintext)).toBe(PLAINTEXT)
+  })
+
   it('round-trips through an independent receiver with a fresh salt and sender key each time', async () => {
     const receiver = await generateReceiver()
     const keys = { p256dh: receiver.p256dh, auth: receiver.auth }

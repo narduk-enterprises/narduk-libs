@@ -103,7 +103,7 @@ function base64UrlDecode(
   const trimmed = value.trim()
   // Browsers emit unpadded base64url; tolerate padding and the standard alphabet.
   const normalized = trimmed.replace(/=+$/u, '').replaceAll('+', '-').replaceAll('/', '_')
-  if (!/^[A-Za-z0-9_-]+$/u.test(normalized) || normalized.length % 4 === 1) {
+  if (!/^[\w-]+$/u.test(normalized) || normalized.length % 4 === 1) {
     throw new NotifyError('invalid_credentials', `${name} is not base64url`)
   }
   const binary = atob(normalized.replaceAll('-', '+').replaceAll('_', '/'))
@@ -250,7 +250,7 @@ export async function generateVapidKeys(): Promise<{ privateKey: string; publicK
 }
 
 function validateSubject(subject: string): void {
-  if (!/^(?:mailto:[^\s@]+@[^\s@]+|https:\/\/[^\s/]+\S*)$/u.test(subject)) {
+  if (!/^(?:mailto:[^\s@]+@[^\s@]+|https:\/\/[^\s/]\S*)$/u.test(subject)) {
     throw new NotifyError('invalid_credentials', 'VAPID subject must be a mailto: or https: URL')
   }
 }
@@ -462,7 +462,7 @@ function validateMessage(message: WebPushMessage): void {
   if (urgency !== undefined && !['very-low', 'low', 'normal', 'high'].includes(urgency)) {
     throw new NotifyError('invalid_notification', 'urgency must be very-low, low, normal or high')
   }
-  if (topic !== undefined && !/^[A-Za-z0-9_-]{1,32}$/u.test(topic)) {
+  if (topic !== undefined && !/^[\w-]{1,32}$/u.test(topic)) {
     throw new NotifyError(
       'invalid_notification',
       'topic must be 1 to 32 characters of the base64url alphabet',
