@@ -1006,6 +1006,9 @@ async function readStoredArtifact(
   if (!stored) return undefined
   try {
     const bytes = await readBoundedBody(stored, maxBytes)
+    // The only hash of a stored artifact: `load` does not repeat it. A marked
+    // entry is hashed too, since the mark vouches for the schema walk and not
+    // for the bytes.
     if ((await sha256Hex(bytes)) === sha256) {
       return { bytes, trusted: mark !== undefined && stored.headers.get(VALIDATED_HEADER) === mark }
     }
@@ -1045,6 +1048,19 @@ function acceptArtifact<T>(
   if (trusted) return { data: decoded as T, mayMark: false }
   const data = applySchema(url, decoded, schema)
   return { data, mayMark: marking && structurallyUnchanged(decoded, data) }
+}
+
+async function assertArtifactChecksum(
+  bytes: Uint8Array<ArrayBuffer>,
+  sha256: string,
+  artifactUrl: string,
+): Promise<void> {
+  if ((await sha256Hex(bytes)) === sha256) return
+  throw new NardukDataError(
+    `narduk-data artifact ${artifactUrl} does not match the SHA-256 in its immutable manifest.`,
+    'checksum',
+    artifactUrl,
+  )
 }
 
 function canRevalidateInBackground(
@@ -1272,14 +1288,9 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       )
       loadSource = 'upstream'
     }
-    const observed = await sha256Hex(bytes)
-    if (observed !== sha256) {
-      throw new NardukDataError(
-        `narduk-data artifact ${artifactUrl} does not match the SHA-256 in its immutable manifest.`,
-        'checksum',
-        artifactUrl,
-      )
-    }
+    // A stored artifact was hashed when it was read; only upstream bytes are new
+    // to this check (riverstatus#669).
+    if (!artifactFromStore) await assertArtifactChecksum(bytes, sha256, artifactUrl)
 
     const decoded = await decodeEncoding(
       artifactUrl,

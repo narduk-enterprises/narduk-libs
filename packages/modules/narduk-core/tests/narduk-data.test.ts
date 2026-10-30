@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   createNardukDataClient,
@@ -1775,6 +1775,30 @@ describe('trustValidatedStoreHits', () => {
       expect(stripping.state.walks).toBe(1)
       expect(result.data).toEqual({ stations: ['41008'] })
       expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBeNull()
+    }
+  })
+
+  it('hashes a stored artifact once, marked or not, and an upstream read once', async () => {
+    const { base, upstream } = await setup()
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
+    const { context, done } = settle()
+    const digest = vi.spyOn(crypto.subtle, 'digest')
+    const hashesFor = async (client: ReturnType<typeof createNardukDataClient>) => {
+      digest.mockClear()
+      await client.read(productOf(), context)
+      await done()
+      return digest.mock.calls.length
+    }
+    try {
+      expect(await hashesFor(createNardukDataClient(options))).toBe(1)
+      expect(upstream.calls).toHaveLength(2)
+      // An entry another build (or nobody) marked, then the one this build marked.
+      expect(await hashesFor(createNardukDataClient(base))).toBe(1)
+      expect(await hashesFor(createNardukDataClient(options))).toBe(1)
+      expect(await hashesFor(createNardukDataClient(options))).toBe(1)
+      expect(upstream.calls).toHaveLength(2)
+    } finally {
+      digest.mockRestore()
     }
   })
 

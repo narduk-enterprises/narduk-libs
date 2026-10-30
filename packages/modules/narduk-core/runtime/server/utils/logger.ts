@@ -2,7 +2,7 @@ import { resolveLogLevel as resolveSharedLevel } from '@narduk-enterprises/nardu
 import { useLogger as useSharedLogger } from '@narduk-enterprises/narduk-logging/h3'
 
 import { readRuntimeString } from './runtime-env'
-import { readWorkerRuntimeEnv } from './worker-env'
+import { readWorkerRuntimeEnvValue } from './worker-env'
 
 import type { Logger as SharedLogger } from '@narduk-enterprises/narduk-logging'
 import type { RequestLoggingOptions } from '@narduk-enterprises/narduk-logging/h3'
@@ -92,7 +92,8 @@ export function resolveLoggingOptions(event?: H3Event): RequestLoggingOptions {
   const publicConfig = (config.public ?? {}) as Record<string, unknown>
   const legacy = event ? resolveLogLevel(event) : resolveSharedLevel(config.logLevel, 'warn')
   const configured = resolveSharedLevel(settings.level, legacy)
-  const override = readWorkerRuntimeEnv(event).LOG_LEVEL
+  // One key, not a copy of every binding: this runs for every request.
+  const override = readWorkerRuntimeEnvValue(event, 'LOG_LEVEL')
   const buildVersion = publicConfig.buildVersion
   return {
     ...settings,
