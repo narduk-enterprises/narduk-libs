@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
-import { createContext, runInContext } from 'node:vm'
 import { gzipSync } from 'node:zlib'
 
 export type AssetKind = 'css' | 'font' | 'image'
@@ -28,7 +27,7 @@ export interface PerformanceBudgetViolation {
   budgetBytes: number
   kind: AssetKind
   message: string
-  metric: 'gzip' | 'missing' | 'raw' | 'total'
+  metric: 'gzip' | 'missing' | 'raw' | 'total' | 'unreadable'
   offenders?: CssRuleOffender[]
   path: string
   sizeBytes: number
@@ -85,38 +84,87 @@ function relativeAssetPath(appDir: string, path: string): string {
  * Nuxt's `features.inlineStyles` moves CSS into the HTML. The client build then
  * emits no .css for it, and the SSR build keeps each inlined bundle as a
  * `<name>-styles.<hash>.mjs` chunk whose default export is an array of CSS
- * strings. The chunk imports the Nitro runtime, so it is never loaded: its
- * imports are dropped and the rest is evaluated in an empty context, with
- * every imported binding (the asset URL helper spliced into `url(...)`)
- * stubbed as identity. The chunk is the app's own build output, already
- * trusted to run in its Worker.
+ * strings, with the asset URL helper spliced into `url(...)`:
+ * `const r=["a{background:url("+a("/_fonts/x.woff2")+")}"];export{r as default}`.
+ * The chunk imports the Nitro runtime, so it is parsed, never loaded or
+ * evaluated: string literals and single-literal calls (taken as their
+ * argument) joined by `+`. Any other shape throws, and the check reports the
+ * chunk as unreadable rather than passing it.
  */
-const INLINE_STYLE_CHUNK_PATTERN = /-styles(?:-\d+)?(?:\.[\w-]+)?\.mjs$/u
+const INLINE_STYLE_CHUNK_PATTERN = /-styles(?:-\d+)?\.[\w-]{8}\.mjs$/u
+const STRING_ESCAPES: Record<string, string> = {
+  '0': '\0',
+  b: '\b',
+  f: '\f',
+  n: '\n',
+  r: '\r',
+  t: '\t',
+  v: '\v',
+}
 
 function inlineStyleCss(source: string): string {
-  const imported: string[] = []
-  let body = source.replaceAll(
-    /import\s*\{([^}]*)\}\s*from\s*(['"])[^'"]*\2\s*;?/gu,
-    (_match, names: string) => {
-      for (const spec of names.split(',')) {
-        const local = spec
-          .split(/\s+as\s+/u)
-          .pop()
-          ?.trim()
-        if (local) imported.push(local)
+  const exported = /export\s*\{\s*([\w$]+)\s+as\s+default\s*\}/u.exec(source)?.[1]
+  const head = exported
+    ? new RegExp(`(?:const|let|var)\\s+${exported.replaceAll('$', '\\$')}\\s*=\\s*\\[`, 'u')
+    : /export\s+default\s*\[/u
+  const opening = head.exec(source)
+  if (!opening) throw new Error('no default-exported CSS array')
+  let index = opening.index + opening[0].length
+  const skipSpace = () => {
+    while (/\s/u.test(source[index] ?? '')) index += 1
+  }
+  const literal = (): string => {
+    const quote = source[index]
+    if (quote !== '"' && quote !== "'" && quote !== '`')
+      throw new Error(`expected a string at ${index}`)
+    let value = ''
+    for (index += 1; source[index] !== quote; index += 1) {
+      const char = source[index]
+      if (char === undefined) throw new Error('unterminated string')
+      if (quote === '`' && char === '$' && source[index + 1] === '{')
+        throw new Error(`template substitution at ${index}`)
+      if (char !== '\\') {
+        value += char
+        continue
       }
-      return ''
-    },
-  )
-  body = body.replaceAll(/import\s*(['"])[^'"]*\1\s*;?/gu, '')
-  const exported = /export\s*\{\s*([\w$]+)\s+as\s+default\s*\}\s*;?/u.exec(body)
-  const expression = exported
-    ? `${body.replace(exported[0], '')}\n;${exported[1]}`
-    : body.replace(/export\s+default\s+/u, ';(') + ')'
-  const context = createContext({})
-  for (const name of imported) context[name] = runInContext('(value) => value', context)
-  const value: unknown = runInContext(expression, context, { timeout: 1000 })
-  return Array.isArray(value) ? value.filter((css) => typeof css === 'string').join('') : ''
+      index += 1
+      const escaped = source[index] ?? ''
+      const hex = /^x([\da-f]{2})|^u([\da-f]{4})|^u\{([\da-f]+)\}/iu.exec(source.slice(index))
+      if (hex) {
+        value += String.fromCodePoint(Number.parseInt(hex[1] ?? hex[2] ?? hex[3] ?? '', 16))
+        index += hex[0].length - 1
+      } else if (escaped === '\r' && source[index + 1] === '\n') index += 1
+      else if (escaped !== '\n' && escaped !== '\r') value += STRING_ESCAPES[escaped] ?? escaped
+    }
+    index += 1
+    return value
+  }
+  const operand = (): string => {
+    const call = /^[\w$]+\s*\(\s*/u.exec(source.slice(index))
+    if (!call) return literal()
+    index += call[0].length
+    const value = literal()
+    skipSpace()
+    if (source[index] !== ')') throw new Error(`expected ) at ${index}`)
+    index += 1
+    return value
+  }
+  let css = ''
+  for (;;) {
+    skipSpace()
+    if (source[index] === ']') return css
+    css += operand()
+    skipSpace()
+    while (source[index] === '+') {
+      index += 1
+      skipSpace()
+      css += operand()
+      skipSpace()
+    }
+    if (source[index] === ',') index += 1
+    else if (source[index] !== ']')
+      throw new Error(`unexpected ${source[index] ?? 'end'} at ${index}`)
+  }
 }
 
 function cssOffenders(source: string): CssRuleOffender[] {
@@ -165,9 +213,14 @@ export function runPerformanceBudgetCheck(
   const cssSources = outputFiles
     .filter((path) => extension(path) === '.css')
     .map((path) => ({ path, read: () => readFileSync(path, 'utf8') }))
-  const inlineChunks = walkFiles(join(normalized.appDir, '.output', 'server')).filter((path) =>
-    INLINE_STYLE_CHUNK_PATTERN.test(basename(path)),
-  )
+  // Without client CSS the stylesheet may be inlined; Nuxt's default (Vue
+  // component styles only) keeps its client CSS and is not read twice.
+  const inlineChunks =
+    cssSources.length > 0
+      ? []
+      : walkFiles(join(normalized.appDir, '.output', 'server', 'chunks', 'build')).filter((path) =>
+          INLINE_STYLE_CHUNK_PATTERN.test(basename(path)),
+        )
   for (const path of inlineChunks)
     cssSources.push({ path, read: () => inlineStyleCss(readFileSync(path, 'utf8')) })
   const fontFiles = outputFiles.filter(
@@ -189,7 +242,7 @@ export function runPerformanceBudgetCheck(
     violations.push({
       budgetBytes: 0,
       kind: 'css',
-      message: 'No built CSS files found; run the app build first.',
+      message: 'No built CSS files or inline-style chunks found; run the app build first.',
       metric: 'missing',
       path: relative(process.cwd(), output),
       sizeBytes: 0,
@@ -198,7 +251,20 @@ export function runPerformanceBudgetCheck(
   if (fontFiles.length === 0)
     warnings.push(`No built font files found under ${relative(process.cwd(), output)}`)
   for (const { path, read } of cssSources) {
-    const css = read()
+    let css: string
+    try {
+      css = read()
+    } catch (error) {
+      violations.push({
+        budgetBytes: budgets.cssBytes,
+        kind: 'css',
+        message: `Inline-style chunk could not be read: ${error instanceof Error ? error.message : String(error)}.`,
+        metric: 'unreadable',
+        path: relativeAssetPath(normalized.appDir, path),
+        sizeBytes: 0,
+      })
+      continue
+    }
     const sizeBytes = gzipSync(css).byteLength
     if (sizeBytes > budgets.cssBytes) {
       violations.push({

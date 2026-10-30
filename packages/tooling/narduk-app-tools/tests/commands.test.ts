@@ -258,6 +258,31 @@ describe('app-local command planning', () => {
     ])
   })
 
+  it('parses inline-style chunk shapes and fails a chunk it cannot read', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-budget-'))
+    tempDirs.push(root)
+    mkdirSync(join(root, '.output', 'public'), { recursive: true })
+    const build = join(root, '.output', 'server', 'chunks', 'build')
+    mkdirSync(build, { recursive: true })
+    const check = () => runPerformanceBudgetCheck({ appDir: root, cssBudgetKb: 1 })
+    expect(check().violations.map((v) => v.metric)).toEqual(['missing'])
+    // A Nitro route named like a style chunk is not one.
+    writeFileSync(join(build, 'site-styles.get.mjs'), 'export default 1')
+    expect(check().checked.inlineCssChunks).toBe(0)
+    writeFileSync(
+      join(build, 'entry-styles-1.Ab-9xY_z.mjs'),
+      `export default['@import"x.css";a{b:c}',"d{content:'\\u00e9'}"]`,
+    )
+    expect(check()).toMatchObject({ checked: { inlineCssChunks: 1 }, violations: [] })
+    writeFileSync(join(build, 'page-styles.12345678.mjs'), 'const r=[x];export{r as default};')
+    expect(check().violations.map((v) => [v.metric, v.path])).toEqual([
+      ['unreadable', '.output/server/chunks/build/page-styles.12345678.mjs'],
+    ])
+    // Client CSS present: Nuxt's default component inlining is not read twice.
+    writeFileSync(join(root, '.output', 'public', 'app.css'), 'a{}')
+    expect(check()).toMatchObject({ checked: { cssFiles: 1, inlineCssChunks: 0 }, violations: [] })
+  })
+
   it('reads commented Wrangler JSONC and prefers it over legacy JSON', () => {
     const root = mkdtempSync(join(tmpdir(), 'narduk-app-jsonc-'))
     tempDirs.push(root)

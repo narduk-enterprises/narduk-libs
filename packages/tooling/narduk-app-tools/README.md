@@ -10,9 +10,10 @@ summary, the same way `foundation:check --json` does. A missing
 `Config/social-previews.json` is a failed check (`ok: false`, exit 1) with that
 verdict, not an `ENOENT` throw. `performance-budget` accepts `--json [path]` the
 same way. With Nuxt's `features.inlineStyles`, the client build emits no CSS
-file; the check then measures the CSS the SSR `*-styles.*.mjs` chunks inline
-into the HTML against the same CSS budget. New app scaffolds wire these into
-builds and browser CI. Existing apps adopt them using the
+file; the check then parses the CSS that the SSR `*-styles.<hash>.mjs` chunks
+inline into the HTML, without loading them, and measures it against the same CSS
+budget. A chunk it cannot parse is a violation. New app scaffolds wire these
+into builds and browser CI. Existing apps adopt them using the
 [social preview guide](docs/social-previews.md).
 
 `narduk-app <command> --help` and `-h` print the command list and exit 0.
