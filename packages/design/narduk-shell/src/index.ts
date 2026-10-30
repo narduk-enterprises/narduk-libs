@@ -439,6 +439,12 @@ export type { NeRelativeTimeProps } from './runtime/components/ne-relative-time-
 export type { NeStickyActionBarProps } from './runtime/components/ne-sticky-action-bar-types'
 /** NeBottomTabBar's shapes and its pure lit-tab rule (README § NeBottomTabBar). */
 export { resolveBottomTabs } from './runtime/components/ne-bottom-tab-bar-types'
+/** NeSegmented's shapes (README § NeSegmented). */
+export type {
+  NeSegmentedProps,
+  NeSegmentOption,
+  NeSegmentValue,
+} from './runtime/components/ne-segmented-types'
 export type {
   NeBottomTabBarProps,
   NeBottomTabItem,

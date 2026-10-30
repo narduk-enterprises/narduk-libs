@@ -171,6 +171,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'The phone tab bar: one lit tab (exact, longest prefix, fallback), honest aria-current, safe-area padding and a spacer.',
   ),
   shell(
+    'NeSegmented',
+    'Segmented control',
+    'One choice among a few: a radiogroup with roving focus, disabled kept visible with its reason, 44px on a phone.',
+  ),
+  shell(
     'NeTabs',
     'Tabs',
     'A tab strip with roving focus and the active tab kept in view; optionally kept in the URL as ?tab=.',
