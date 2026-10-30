@@ -1,5 +1,29 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.49.6
+
+### Patch Changes
+
+- c9c24ba: narduk-shell adds `NeBottomTabBar`, the phone's bottom navigation.
+  Exactly one tab is lit: an exact path wins, then the longest prefix, then an
+  optional `fallback`. `aria-current` is honest, safe-area padding is included,
+  and a spacer plus `--ne-bottom-bar-h` keep content clear of the bar.
+  `resolveBottomTabs` exposes the same lit-tab rule as a pure function. It
+  replaces the hand-rolled tab bars in buoys, float-forecast, music, mybo-at-v2,
+  riverstatus and operator-portal. When a page also has a `NeStickyActionBar`,
+  that bar now sits above the tab bar (`--ne-bottom-nav-h`), and
+  `--ne-bottom-bar-h` is the two heights summed; pages with only a sticky bar
+  are unchanged. eslint-config and narduk-app-tools register the new shared
+  component name.
+- 2f1c822: narduk-shell adds `NeSegmented`, a control for picking one of a few
+  options. It is a radiogroup with roving focus and keyboard support: arrow
+  keys, Home and End move the choice and skip disabled segments. Disabled
+  segments stay visible and show their reason. It has `track` and `chips`
+  variants and `fill`, `scroll` and `wrap` layouts, and its tap targets are 44px
+  on a phone. It replaces the hand-rolled segmented controls in
+  austin-rising-runners, stonx and narduk-farm. eslint-config and
+  narduk-app-tools register the new shared component name.
+
 ## 0.49.5
 
 ### Patch Changes
