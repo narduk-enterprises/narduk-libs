@@ -163,7 +163,13 @@ describe('named profiles', () => {
       }),
     ).toMatchObject({ cacheControl: 'private, max-age=30', cdnCacheControl: null })
     expect(
-      await cacheHeaders({ maxAge: 0, noStore: true, sMaxAge: 0, sMaxAgeInCacheControl: true, swr: 0 }),
+      await cacheHeaders({
+        maxAge: 0,
+        noStore: true,
+        sMaxAge: 0,
+        sMaxAgeInCacheControl: true,
+        swr: 0,
+      }),
     ).toMatchObject({ cacheControl: NO_STORE })
   })
 

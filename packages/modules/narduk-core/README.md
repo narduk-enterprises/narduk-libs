@@ -2004,8 +2004,8 @@ export default definePublishedDataHandler(
   `statusCode` (a failed fetch, a schema error whose message dumps every field)
   is logged through the request logger and answered with `fallbackMessage`. A
   deliberate `createError({ statusCode: 404 })` passes through unchanged.
-- **A route can own its 503 body.** Pass `unavailableBody(error, event)` and
-  the failed read answers a 503 with whatever it returns, `private, no-store`,
+- **A route can own its 503 body.** Pass `unavailableBody(error, event)` and the
+  failed read answers a 503 with whatever it returns, `private, no-store`,
   instead of the h3 error. Use it where a contract publishes its own envelope
   (riverstatus returns `{ error: { code: 'RIVER_DATA_UNAVAILABLE' } }`). The
   error is still logged; it is passed in so the body can be chosen by kind, and
@@ -2016,8 +2016,8 @@ export default definePublishedDataHandler(
 - **Keep `s-maxage` where a contract needs it.** The `profile` is any
   [`setCacheProfile`](#edge-cache-setcacheprofile) input, so an inline profile
   with `sMaxAgeInCacheControl: true` writes `s-maxage` on `Cache-Control` next
-  to `CDN-Cache-Control` (see
-  [Why no `s-maxage`](#why-no-s-maxage)). The default profiles do not.
+  to `CDN-Cache-Control` (see [Why no `s-maxage`](#why-no-s-maxage)). The
+  default profiles do not.
 - **Rate limiting is opt-in.** Pass `rateLimit` (the
   [`defineRateLimitedHandler`](#per-route-rate-limits-defineratelimitedhandler)
   options) to put a limit in front of the read; without it none is applied. On a
@@ -2031,16 +2031,16 @@ the visitor's Cloudflare-resolved position, or `null` outside the edge. It reads
 the Workers request `cf` object first and the `cf-ip*` headers second. Import it
 from `@narduk-enterprises/narduk-core/server/utils/approximateLocation`.
 
-Pass `{ includeCityRegion: true }` for a route that needs the parts and not
-only the joined `label` (lakestat-us returns `city` and `regionCode`):
+Pass `{ includeCityRegion: true }` for a route that needs the parts and not only
+the joined `label` (lakestat-us returns `city` and `regionCode`):
 
 ```ts
 readApproximateLocation(event, { includeCityRegion: true })
 // { city: 'Austin', regionCode: 'TX', label: 'Austin, TX', lat, lon, source: 'ip' }
 ```
 
-`city` and `regionCode` are set only when Cloudflare provided a non-blank
-value, so a missing one is absent and never an empty string. The `cf-ip*` header
+`city` and `regionCode` are set only when Cloudflare provided a non-blank value,
+so a missing one is absent and never an empty string. The `cf-ip*` header
 fallback carries a city but only a region name, so it never sets `regionCode`.
 Without the option the result has the same four fields as before. The helper
 does not range-check coordinates; an app that must reject out-of-range values

@@ -252,7 +252,8 @@ function formatCacheControl(profile: CacheProfile): string {
   if (profile.noStore) return 'private, no-store'
 
   const directives = [profile.private ? 'private' : 'public', `max-age=${profile.maxAge}`]
-  if (profile.sMaxAgeInCacheControl && !profile.private) directives.push(`s-maxage=${profile.sMaxAge}`)
+  if (profile.sMaxAgeInCacheControl && !profile.private)
+    directives.push(`s-maxage=${profile.sMaxAge}`)
   if (profile.swr > 0) directives.push(`stale-while-revalidate=${profile.swr}`)
   return directives.join(', ')
 }

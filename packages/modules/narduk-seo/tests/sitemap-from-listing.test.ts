@@ -114,16 +114,13 @@ describe('sitemapUrlsFromListing', () => {
 
   it('drops items the omit filter accepts, before any builder runs', () => {
     const seen: string[] = []
-    const rows = sitemapUrlsFromListing(
-      [...listings, { slug: 'hidden', featured: true }],
-      {
-        omit: (item) => item.slug === 'beta' || item.slug === 'hidden',
-        loc: (item) => {
-          seen.push(item.slug)
-          return `/buoys/${item.slug}`
-        },
+    const rows = sitemapUrlsFromListing([...listings, { slug: 'hidden', featured: true }], {
+      omit: (item) => item.slug === 'beta' || item.slug === 'hidden',
+      loc: (item) => {
+        seen.push(item.slug)
+        return `/buoys/${item.slug}`
       },
-    )
+    })
 
     expect(rows).toEqual([{ loc: ALPHA }, { loc: '/buoys/gamma' }])
     expect(seen).toEqual(['alpha', 'gamma'])
@@ -131,26 +128,22 @@ describe('sitemapUrlsFromListing', () => {
 
   it('passes omit the position in the input listing and lets an omitted item leave its loc free', () => {
     const indexes: number[] = []
-    const rows = sitemapUrlsFromListing(
-      [
-        { slug: 'same', featured: true },
-        { slug: 'same' },
-      ],
-      {
-        omit: (item, index) => {
-          indexes.push(index)
-          return item.featured === true
-        },
-        loc: (item) => `/buoys/${item.slug}`,
+    const rows = sitemapUrlsFromListing([{ slug: 'same', featured: true }, { slug: 'same' }], {
+      omit: (item, index) => {
+        indexes.push(index)
+        return item.featured === true
       },
-    )
+      loc: (item) => `/buoys/${item.slug}`,
+    })
 
     expect(indexes).toEqual([0, 1])
     expect(rows).toEqual([{ loc: '/buoys/same' }])
   })
 
   it('keeps every item when omit is not passed', () => {
-    expect(sitemapUrlsFromListing(listings, { loc: (item) => `/buoys/${item.slug}` })).toHaveLength(3)
+    expect(sitemapUrlsFromListing(listings, { loc: (item) => `/buoys/${item.slug}` })).toHaveLength(
+      3,
+    )
   })
 
   it('returns an empty list for an empty or missing listing', () => {

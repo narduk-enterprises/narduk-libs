@@ -132,10 +132,9 @@ describe('readApproximateLocation', () => {
       ),
     ).toEqual({ label: 'US', lat: 30.2672, lon: -97.7431, source: 'ip' })
     expect(
-      readApproximateLocation(
-        eventWithRequestCf({ ...cf, city: '  ', regionCode: '' }),
-        { includeCityRegion: true },
-      ),
+      readApproximateLocation(eventWithRequestCf({ ...cf, city: '  ', regionCode: '' }), {
+        includeCityRegion: true,
+      }),
     ).not.toHaveProperty('city')
   })
 

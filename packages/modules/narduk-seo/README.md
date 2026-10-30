@@ -260,15 +260,15 @@ header and robots meta on any request host other than the canonical site host,
 such as a route-free `workers.dev` preview alias of the same Worker version. The
 canonical host stays indexable.
 
-The guard is on for a `production` target and for a build whose target cannot
-be detected: no `NARDUK_DEPLOY_TARGET` (or its `NUXT_PUBLIC_` forms) and no
+The guard is on for a `production` target and for a build whose target cannot be
+detected: no `NARDUK_DEPLOY_TARGET` (or its `NUXT_PUBLIC_` forms) and no
 `WORKERS_CI_BRANCH` / `CF_PAGES_BRANCH`, such as a deploy-upload build or a CI
 `build:ci`. Before, that build left the guard off and served `index, follow` on
 a preview host. The guard only ever noindexes a request host that differs from
 the canonical site host, and it fails open when `runtimeConfig.public.siteUrl`
-is missing or local, so an unlabelled build cannot noindex the real site as
-long as `siteUrl` is the production origin. It is still off unless the app opts
-in, and a `staging` or `preview` target keeps the build-time noindex instead. To
+is missing or local, so an unlabelled build cannot noindex the real site as long
+as `siteUrl` is the production origin. It is still off unless the app opts in,
+and a `staging` or `preview` target keeps the build-time noindex instead. To
 keep it off for one build, set `NARDUK_DEPLOY_TARGET` to a non-production
 target. The missing-`siteUrl` warning is printed for an explicit `production`
 target only.

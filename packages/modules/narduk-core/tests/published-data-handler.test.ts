@@ -161,7 +161,7 @@ describe('definePublishedDataHandler', () => {
     expect(error?.message).toBe(DEFAULT_PUBLISHED_DATA_FALLBACK_MESSAGE)
   })
 
-  it('answers a failed read with the route\'s own 503 body when unavailableBody is passed', async () => {
+  it("answers a failed read with the route's own 503 body when unavailableBody is passed", async () => {
     const failure = new Error(SECRET)
     const received: unknown[] = []
     const { body, error, headers, status } = await serveOnce(
@@ -175,7 +175,7 @@ describe('definePublishedDataHandler', () => {
           fallbackMessage: 'ignored when unavailableBody is passed',
           unavailableBody: (thrown, event) => {
             received.push(thrown)
-            setResponseHeader(event, 'Retry-After', '30')
+            setResponseHeader(event, 'Retry-After', 30)
             return { error: { code: 'RIVER_DATA_UNAVAILABLE' } }
           },
         },

@@ -421,6 +421,22 @@ function shouldEnableHostAwareIndexing(options: NardukSeoModuleOptions): boolean
   return target === 'production' || target === ''
 }
 
+// narduk-libs#1480: a `siteUrl` that fell back to localhost (a Workers Builds
+// `main` build does not export SITE_URL) is no canonical host. The runtime
+// guard fails open on it, so production stays indexable, but the guard then
+// cannot tell a preview alias from the real host either. Quiet on an
+// undetectable target: a local build has no SITE_URL, and warning on every one
+// of those would bury the production case.
+function warnOnLocalSiteUrl(options: NardukSeoModuleOptions, configuredSiteUrl: unknown): void {
+  if (readDeploymentTarget(options) !== 'production') return
+  if (!isLocalIndexingHost(configuredSiteUrl)) return
+
+  useLogger(PACKAGE_NAME).warn(
+    `nardukSeo.hostAwareIndexing is on for a production build but runtimeConfig.public.siteUrl is "${String(configuredSiteUrl)}". ` +
+      'Set it to the canonical https origin (for example from SITE_URL); until then every host is treated as canonical and non-canonical aliases such as workers.dev are not marked noindex.',
+  )
+}
+
 function applyNonProductionSeoSafety(
   nuxtOptions: MutableNuxtOptionsRecord,
   options: NardukSeoModuleOptions,
@@ -755,19 +771,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     }
     if (hostAwareIndexing) {
       addPlugin(resolver.resolve('../app/plugins/hostAwareIndexing'))
-      // narduk-libs#1480: a `siteUrl` that fell back to localhost (a Workers
-      // Builds `main` build does not export SITE_URL) is no canonical host.
-      // The runtime guard fails open on it, so production stays indexable, but
-      // the guard then cannot tell a preview alias from the real host either.
-      const configuredSiteUrl = publicRuntimeConfig.siteUrl
-      // Quiet on an undetectable target: a local build has no SITE_URL, and
-      // warning on every one of those would bury the production case.
-      if (readDeploymentTarget(options) === 'production' && isLocalIndexingHost(configuredSiteUrl)) {
-        useLogger(PACKAGE_NAME).warn(
-          `nardukSeo.hostAwareIndexing is on for a production build but runtimeConfig.public.siteUrl is "${String(configuredSiteUrl)}". ` +
-            'Set it to the canonical https origin (for example from SITE_URL); until then every host is treated as canonical and non-canonical aliases such as workers.dev are not marked noindex.',
-        )
-      }
+      warnOnLocalSiteUrl(options, publicRuntimeConfig.siteUrl)
     }
 
     if (options.seoModule) {
