@@ -58,6 +58,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeRelativeTime',
       'NeSearchInput',
       'NeSectionHeader',
+      'NeSegmented',
       'NeSettingsPage',
       'NeShowMore',
       'NeSkipLink',

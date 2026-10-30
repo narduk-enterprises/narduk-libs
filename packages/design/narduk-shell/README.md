@@ -5537,6 +5537,49 @@ Slot `#item="{ item, state }"` replaces a tab's icon and label; the link, its
 `aria-current` and its tap target stay the component's. `state` is `page`,
 `section`, `fallback` or `none`. No events.
 
+### NeSegmented
+
+One choice among a few: a range (1D / 1W / 1M), a unit, a map layer, 2D / 3D.
+It is a filter or a setting, not navigation; for navigation use `NeTabs` or
+`NeBottomTabBar`. Five apps had hand-rolled one.
+
+- **A radiogroup.** `role="radiogroup"`, named by `labelledby` (preferred) or
+  `label`. Each segment is a `role="radio"` button with `aria-checked`.
+- **Roving focus.** There is one Tab stop: the chosen segment, or the first
+  enabled one when `modelValue` is `null`. Arrow keys move the choice, wrap and
+  skip disabled segments. Home and End jump to the ends.
+- **Disabled segments stay visible**, with `disabledReason` as their title.
+- **Tap targets** are 2.75rem tall on a phone or under a coarse pointer, and
+  2.25rem under a desktop pointer. Choosing a segment never moves one.
+
+```vue
+<script setup lang="ts">
+const range = ref<'1d' | '1w' | '1m' | null>('1w')
+const ranges = [
+  { value: '1d', label: '1D' },
+  { value: '1w', label: '1W' },
+  { value: '1m', label: '1M', disabled: true, disabledReason: 'Not enough history' },
+] as const
+</script>
+
+<template>
+  <NeSegmented v-model="range" :options="ranges" label="Range" mono />
+</template>
+```
+
+| Prop         | Type                          | Default | What it does                                                                     |
+| ------------ | ----------------------------- | ------- | -------------------------------------------------------------------------------- |
+| `modelValue` | `T \| null`                   | —       | The chosen value; `null` lights no segment.                                      |
+| `options`    | `NeSegmentOption<T>[]`        | —       | `{ value, label, count?, disabled?, disabledReason? }`.                          |
+| `label`      | `string`                      | —       | Accessible name when no visible heading names the group.                         |
+| `labelledby` | `string`                      | —       | Id of the visible heading that names the group.                                  |
+| `variant`    | `'track' \| 'chips'`          | `track` | Joined tray with the choice raised, or separate pills with the choice in ink.    |
+| `layout`     | `'fill' \| 'scroll' \| 'wrap'` | `fill`  | Share the width, keep size and scroll sideways, or wrap onto more rows.          |
+| `mono`       | `boolean`                     | `false` | Tabular mono, for figures such as speeds or years.                               |
+
+Event `update:modelValue`. Slot `#option="{ option, checked }"` replaces a
+segment's label and count.
+
 ### NeTabs / useRouteTab()
 
 A tab strip whose state can live in the URL. Hold the selection with `v-model`,
