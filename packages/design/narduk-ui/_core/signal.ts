@@ -138,6 +138,14 @@ export interface SignalAgeLimits {
    * anything further ahead reads "void".
    */
   readonly futureToleranceMinutes?: number;
+  /**
+   * Make every limit an inclusive upper bound: Live through exactly `live`
+   * minutes, Aging through exactly `aging`, and "void" only once the age is
+   * past `stale`. For a product whose rule reads "60 minutes or less", where
+   * a whole-minute age of 60 must still be Live. Default `false`, the
+   * exclusive bounds described above.
+   */
+  readonly inclusive?: boolean;
 }
 
 /**
@@ -168,9 +176,12 @@ export function classifySignalByAge(
 
   const age = (nowTime - time) / 60_000;
   if (age < -tolerance) return "void";
-  if (age < limits.live) return "live";
-  if (age < limits.aging) return "aging";
-  if (limits.stale !== undefined && age >= limits.stale) return "void";
+  const within = limits.inclusive
+    ? (limit: number) => age <= limit
+    : (limit: number) => age < limit;
+  if (within(limits.live)) return "live";
+  if (within(limits.aging)) return "aging";
+  if (limits.stale !== undefined && !within(limits.stale)) return "void";
   return "stale";
 }
 

@@ -207,8 +207,10 @@ none is set, it falls back to the build branch (narduk-libs#999): a Workers
 Builds `WORKERS_CI_BRANCH` (or Cloudflare Pages `CF_PAGES_BRANCH`) of `main` is
 `production`, and any other branch is `preview`, so a branch build is noindexed
 and a `main` build gets `hostAwareIndexing`. A build with no explicit variable
-and no branch variable, such as a local `nuxt build`, keeps an unset target
-exactly as before: indexable, with host-aware indexing off.
+and no branch variable, such as a local `nuxt build`, keeps an unset target: the
+site stays indexable and nothing is noindexed at build time, but an app that
+sets `hostAwareIndexing` gets the host-aware guard (see
+[Host-aware indexing](#host-aware-indexing)).
 
 **If production deploys from a branch other than `main`** (for example `master`)
 and the app sets no `NARDUK_DEPLOY_TARGET`, its production build would now be
@@ -259,6 +261,24 @@ A production build that sets `nardukSeo: { hostAwareIndexing: true }` (or
 header and robots meta on any request host other than the canonical site host,
 such as a route-free `workers.dev` preview alias of the same Worker version. The
 canonical host stays indexable.
+
+The guard is on for a `production` target and for a build whose target cannot be
+detected: no `NARDUK_DEPLOY_TARGET` (or its `NUXT_PUBLIC_` forms) and no
+`WORKERS_CI_BRANCH` / `CF_PAGES_BRANCH`, such as a deploy-upload build or a CI
+`build:ci`. Before, that build left the guard off and served `index, follow` on
+a preview host. The guard only ever noindexes a request host that differs from
+the canonical site host, and it fails open when `runtimeConfig.public.siteUrl`
+is missing or local, so an unlabelled build cannot noindex the real site as long
+as `siteUrl` is the production origin. It is still off unless the app opts in,
+and a `staging` or `preview` target keeps the build-time noindex instead. To opt
+out, leave `hostAwareIndexing` off. On such a build a request host of
+`localhost` is non-canonical when `siteUrl` is a real origin, so a local
+`preview` or an e2e run of an opted-in app serves `noindex`, so an e2e assertion
+of `index` there has to allow for it. The missing-`siteUrl` warning is printed
+for an explicit `production` target only. The guard has no alias list: if
+`siteUrl` is the apex and real traffic reaches the same Worker on `www.` without
+a redirect, that traffic is noindexed, on an unlabelled build as on a
+`production` one.
 
 The primitives behind that guard are exported from
 `@narduk-enterprises/narduk-seo/shared/hostAwareIndexing`:
@@ -605,14 +625,16 @@ entity data so they cannot drift apart.
    as the fallback. `useOgImageData()` and the admin OG route previews below let
    an operator review the generated cards.
 3. **Sitemap** —
-   `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority? })`
+   `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority?, omit? })`
    from `@narduk-enterprises/narduk-seo/shared/sitemapFromListing` turns the
    same listing into `@nuxtjs/sitemap` rows. It is pure (no Nuxt or Nitro
    imports), keeps input order, skips items whose `loc` builder returns a blank
    value, keeps the first row for a repeated `loc`, and normalises `lastmod` (a
    `Date` or epoch milliseconds becomes an ISO string; a missing or unparseable
    value is omitted). `changefreq` and `priority` take a constant or a per-item
-   builder.
+   builder. `omit(item, index)` drops a retired, draft or noindex entity the
+   listing still carries: it runs before every other builder, so none of them
+   sees the item, and `index` is the item's position in the input listing.
 
 ```ts
 // server/api/__sitemap__/buoys.ts

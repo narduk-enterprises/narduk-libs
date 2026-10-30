@@ -1,4 +1,4 @@
-import { createError, defineEventHandler } from 'h3'
+import { createError, defineEventHandler, setResponseStatus } from 'h3'
 
 import { setCacheProfile } from './cacheProfile'
 import { useLogger } from './logger'
@@ -12,10 +12,11 @@ import type { EventHandler, EventHandlerRequest, H3Event } from 'h3'
 export const DEFAULT_PUBLISHED_DATA_FALLBACK_MESSAGE =
   'This data is temporarily unavailable. Please try again shortly.'
 
-export interface PublishedDataHandlerOptions {
+export interface PublishedDataHandlerOptions<Unavailable = never> {
   /**
    * Operator-safe copy for the 503 a failed read returns. The real error is
-   * logged server-side and never reaches the response body.
+   * logged server-side and never reaches the response body. Ignored when
+   * `unavailableBody` is passed.
    */
   fallbackMessage?: string
   /**
@@ -38,6 +39,18 @@ export interface PublishedDataHandlerOptions {
   rateLimit?: RateLimitedHandlerOptions
   /** `Cache-Tag` values for purge-by-tag, passed to `setCacheProfile`. */
   tags?: readonly string[]
+  /**
+   * Builds the whole body of the 503 a failed read returns, for a route whose
+   * contract publishes its own error envelope (`{ error: { code: 'DATA_UNAVAILABLE' } }`)
+   * instead of the h3 error shape. The response is a 503 marked `private,
+   * no-store`, with the returned value as its body and no other header
+   * changes; the function may set its own, `Retry-After` for one. The real
+   * error is still logged and is passed in only so the body can be chosen by
+   * kind: never put its message in the body. A deliberate `statusCode` error
+   * still passes through unchanged, and `fallbackMessage` is ignored. Off by
+   * default, which keeps the h3 error.
+   */
+  unavailableBody?: (error: unknown, event: H3Event) => Unavailable
   /** Request headers the response varies on, passed to `setCacheProfile`. */
   vary?: readonly string[]
 }
@@ -97,20 +110,28 @@ function logFailure(event: H3Event, error: unknown): void {
 export function definePublishedDataHandler<
   Request extends EventHandlerRequest = EventHandlerRequest,
   Response = unknown,
+  Unavailable = never,
 >(
   handler: EventHandler<Request, Response>,
-  options: PublishedDataHandlerOptions,
-): EventHandler<Request, Promise<Response>> {
-  const { fallbackMessage, profile, rateLimit, tags, vary } = options
+  options: PublishedDataHandlerOptions<Unavailable>,
+): EventHandler<Request, Promise<Response | Unavailable>> {
+  const { fallbackMessage, profile, rateLimit, tags, unavailableBody, vary } = options
 
-  const served = defineEventHandler<Request, Promise<Response>>(
-    async (event): Promise<Response> => {
+  const served = defineEventHandler<Request, Promise<Response | Unavailable>>(
+    async (event): Promise<Response | Unavailable> => {
       let result: Response
       try {
         result = await handler(event)
       } catch (error) {
         if (carriesStatus(error)) throw error
         logFailure(event, error)
+        if (unavailableBody) {
+          const body = unavailableBody(error, event)
+          setResponseStatus(event, 503, 'Service Unavailable')
+          // Status first: setCacheProfile downgrades an error status to none.
+          setCacheProfile(event, 'none')
+          return body
+        }
         throw createError({
           statusCode: 503,
           statusMessage: 'Service Unavailable',

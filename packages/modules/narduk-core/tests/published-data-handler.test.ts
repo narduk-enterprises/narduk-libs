@@ -161,6 +161,79 @@ describe('definePublishedDataHandler', () => {
     expect(error?.message).toBe(DEFAULT_PUBLISHED_DATA_FALLBACK_MESSAGE)
   })
 
+  it("answers a failed read with the route's own 503 body when unavailableBody is passed", async () => {
+    const failure = new Error(SECRET)
+    const received: unknown[] = []
+    const { body, error, headers, status } = await serveOnce(
+      definePublishedDataHandler(
+        () => {
+          throw failure
+        },
+        {
+          profile: 'live',
+          tags: ['published-data'],
+          fallbackMessage: 'ignored when unavailableBody is passed',
+          unavailableBody: (thrown, event) => {
+            received.push(thrown)
+            setResponseHeader(event, 'Retry-After', 30)
+            return { error: { code: 'RIVER_DATA_UNAVAILABLE' } }
+          },
+        },
+      ),
+    )
+
+    expect(status).toBe(503)
+    expect(JSON.parse(body)).toEqual({ error: { code: 'RIVER_DATA_UNAVAILABLE' } })
+    expect(body).not.toContain('ignored')
+    expect(error).toBeUndefined()
+    expect(received).toEqual([failure])
+    expect(headers.get('retry-after')).toBe('30')
+    expect(headers.get(CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get('cdn-cache-control')).toBeNull()
+    expect(headers.get('cache-tag')).toBeNull()
+    expect(logged).toEqual([{ message: 'Published data read failed', data: { error: failure } }])
+  })
+
+  it('still passes a deliberate HTTP error through when unavailableBody is passed', async () => {
+    const { error, status } = await serveOnce(
+      definePublishedDataHandler(
+        () => {
+          throw createError({ statusCode: 404, statusMessage: 'Not Found' })
+        },
+        { profile: 'live', unavailableBody: () => ({ unavailable: true }) },
+      ),
+    )
+
+    expect(status).toBe(404)
+    expect(error?.statusCode).toBe(404)
+  })
+
+  it('leaves a successful response alone when unavailableBody is passed', async () => {
+    const { body, headers, status } = await serveOnce(
+      definePublishedDataHandler(() => Promise.resolve({ stations: 3 }), {
+        profile: 'live',
+        unavailableBody: () => ({ unavailable: true }),
+      }),
+    )
+
+    expect(status).toBe(200)
+    expect(JSON.parse(body)).toEqual({ stations: 3 })
+    expect(headers.get(CACHE_CONTROL)).toBe(LIVE_CACHE_CONTROL)
+  })
+
+  it('keeps s-maxage next to CDN-Cache-Control for a profile that asks for it', async () => {
+    const { headers } = await serveOnce(
+      definePublishedDataHandler(() => Promise.resolve({ stations: 3 }), {
+        profile: { maxAge: 60, sMaxAge: 300, sMaxAgeInCacheControl: true, swr: 900 },
+      }),
+    )
+
+    expect(headers.get(CACHE_CONTROL)).toBe(
+      'public, max-age=60, s-maxage=300, stale-while-revalidate=900',
+    )
+    expect(headers.get('cdn-cache-control')).toBe('public, max-age=300, stale-while-revalidate=900')
+  })
+
   it('passes a deliberate HTTP error through unchanged and uncacheable', async () => {
     const { error, headers, status } = await serveOnce(
       definePublishedDataHandler(

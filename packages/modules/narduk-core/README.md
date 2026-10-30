@@ -2004,11 +2004,48 @@ export default definePublishedDataHandler(
   `statusCode` (a failed fetch, a schema error whose message dumps every field)
   is logged through the request logger and answered with `fallbackMessage`. A
   deliberate `createError({ statusCode: 404 })` passes through unchanged.
+- **A route can own its 503 body.** Pass `unavailableBody(error, event)` and the
+  failed read answers a 503 with whatever it returns, `private, no-store`,
+  instead of the h3 error. Use it where a contract publishes its own envelope
+  (riverstatus returns `{ error: { code: 'RIVER_DATA_UNAVAILABLE' } }`). The
+  error is still logged; it is passed in so the body can be chosen by kind, and
+  its message must stay out of the body. The function may set its own headers
+  (`Retry-After`). `fallbackMessage` is ignored when it is passed, and a
+  deliberate `createError({ statusCode })` still passes through. Without it the
+  h3 error stays.
+- **Keep `s-maxage` where a contract needs it.** The `profile` is any
+  [`setCacheProfile`](#edge-cache-setcacheprofile) input, so an inline profile
+  with `sMaxAgeInCacheControl: true` writes `s-maxage` on `Cache-Control` next
+  to `CDN-Cache-Control` (see [Why no `s-maxage`](#why-no-s-maxage)). The
+  default profiles do not.
 - **Rate limiting is opt-in.** Pass `rateLimit` (the
   [`defineRateLimitedHandler`](#per-route-rate-limits-defineratelimitedhandler)
   options) to put a limit in front of the read; without it none is applied. On a
   shared-cacheable route pass `headers: 'none'` with it, because the
   `RateLimit-*` family is per caller.
+
+## Approximate visitor location: `readApproximateLocation`
+
+`readApproximateLocation(event)` returns `{ label, lat, lon, source: 'ip' }` for
+the visitor's Cloudflare-resolved position, or `null` outside the edge. It reads
+the Workers request `cf` object first and the `cf-ip*` headers second. Import it
+from `@narduk-enterprises/narduk-core/server/utils/approximateLocation`.
+
+Pass `{ includeCityRegion: true }` for a route that needs the parts and not only
+the joined `label` (lakestat-us returns `city` and `regionCode`):
+
+```ts
+readApproximateLocation(event, { includeCityRegion: true })
+// { city: 'Austin', regionCode: 'TX', label: 'Austin, TX', lat, lon, source: 'ip' }
+```
+
+`city` and `regionCode` are set only when Cloudflare provided a non-blank value,
+so a missing one is absent and never an empty string. `regionCode` comes from
+the Workers `cf` object, or from the `cf-region-code` header on the `cf-ip*`
+fallback. Without the option the result has the same four fields as before, and
+the fallback's `label` still reads the region name. The helper does not
+range-check coordinates; an app that must reject out-of-range values does so on
+the result.
 
 ## Edge cache: setCacheProfile
 
@@ -2062,6 +2099,29 @@ both. Header precedence at Cloudflare is `cloudflare-cdn-cache-control` >
 `cdn-cache-control` > `Cache-Control`; the helper uses the middle one because
 Cloudflare respects it _and_ passes it downstream, so the edge TTL stays visible
 when you are debugging a response.
+
+A route whose contract or cache layer is keyed on `s-maxage` (lakestat-us reads
+its Workers Cache TTL from it) opts in per profile with
+`sMaxAgeInCacheControl: true`, inline or through
+`runtimeConfig.cache.profiles.<name>`:
+
+```ts
+setCacheProfile(event, {
+  maxAge: 60,
+  sMaxAge: 300,
+  swr: 900,
+  sMaxAgeInCacheControl: true,
+})
+// Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=900
+// CDN-Cache-Control: public, max-age=300, stale-while-revalidate=900
+```
+
+`CDN-Cache-Control` is still sent and Cloudflare prefers it over
+`Cache-Control`, so its stale window survives; a cache that reads only
+`Cache-Control` gets `s-maxage` and loses `stale-while-revalidate`. Nothing
+changes unless a profile sets the flag, and a `private` or `noStore` profile
+never writes `s-maxage`. `definePublishedDataHandler` takes the same inline
+profile.
 
 ### This needs Workers Cache turned on
 

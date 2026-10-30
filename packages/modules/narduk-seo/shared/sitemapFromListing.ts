@@ -19,6 +19,15 @@ export interface SitemapUrlsFromListingOptions<T> {
    * an absolute URL. A blank, `null` or `undefined` result drops the item.
    */
   loc: (item: T, index: number) => string | null | undefined
+  /**
+   * Drops an item when it returns true: a retired, draft, noindex or
+   * placeholder entity that the listing still carries. Runs before `loc`,
+   * `lastmod`, `changefreq` and `priority`, so none of them see an omitted
+   * item, and an omitted item never claims its `loc` for dedupe. The `index`
+   * an item reports is its position in the input listing, omitted items
+   * included. Off unless passed.
+   */
+  omit?: (item: T, index: number) => boolean
   /** `<priority>` for every row, or a per-item builder. */
   priority?: ItemValue<T, SitemapPriority>
 }
@@ -49,7 +58,7 @@ function normalizeLastmod(value: Date | string | number | null | undefined): str
  * `@nuxtjs/sitemap` URL rows, for a sitemap source handler or the `urls`
  * option. Pure and config-safe: no Nuxt or Nitro imports.
  *
- * Rows keep input order. Items whose `loc` builder returns a blank value are
+ * Rows keep input order. Items `omit` accepts are skipped first. Items whose `loc` builder returns a blank value are
  * skipped, and a repeated `loc` keeps its first row, so an entity listed
  * twice (say, under two categories) is emitted once.
  */
@@ -65,6 +74,7 @@ export function sitemapUrlsFromListing<T>(
 
   for (const item of items) {
     const itemIndex = index++
+    if (options.omit?.(item, itemIndex)) continue
     const loc = options.loc(item, itemIndex)?.trim()
     if (!loc || seen.has(loc)) continue
     seen.add(loc)

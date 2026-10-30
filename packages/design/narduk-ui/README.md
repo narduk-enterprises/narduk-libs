@@ -79,10 +79,13 @@ tests can classify without Vue.
 
 - `classifySignal(observedAt, intervalMinutes, now)` uses the source's own
   publishing interval: Live inside it, Aging inside three times it, Stale after.
-- `classifySignalByAge(observedAt, { live, aging, stale?, futureToleranceMinutes? }, now)`
-  uses fixed minute limits, each an exclusive upper bound. Use it when the
-  product publishes its own definition, such as "Live under 6 h". Past `stale`
-  reads `void`. `now` is required, so SSR and the browser agree. Pass the result
+- `classifySignalByAge(observedAt, { live, aging, stale?, futureToleranceMinutes?, inclusive? }, now)`
+  uses fixed minute limits, each an exclusive upper bound by default. Use it
+  when the product publishes its own definition, such as "Live under 6 h". Past
+  `stale` reads `void`. Pass `inclusive: true` for a rule that reads "60 minutes
+  or less": every limit then includes its own value, so an age of exactly 60
+  is Live and `void` starts only after `stale`. It changes the bounds only; the
+  future tolerance is the same. `now` is required, so SSR and the browser agree. Pass the result
   to `NsFreshnessChip` as `state`.
 - `worstSignal(states)` returns the overall signal for an entity with several
   sensors. It ignores `void` unless nothing is dated.

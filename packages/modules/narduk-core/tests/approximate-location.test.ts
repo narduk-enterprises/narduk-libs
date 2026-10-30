@@ -107,6 +107,63 @@ describe('readApproximateLocation', () => {
     expect(readApproximateLocation(event)).toMatchObject({ lat: 30.2672, lon: -97.7431 })
   })
 
+  it('adds city and regionCode only when asked, and only when Cloudflare provides them', () => {
+    const cf = {
+      city: 'Austin',
+      country: 'US',
+      latitude: '30.2672',
+      longitude: '-97.7431',
+      regionCode: 'TX',
+    }
+    expect(readApproximateLocation(eventWithRequestCf(cf), { includeCityRegion: true })).toEqual({
+      city: 'Austin',
+      label: 'Austin, TX',
+      lat: 30.2672,
+      lon: -97.7431,
+      regionCode: 'TX',
+      source: 'ip',
+    })
+    expect(readApproximateLocation(eventWithRequestCf(cf))).not.toHaveProperty('city')
+    expect(readApproximateLocation(eventWithRequestCf(cf))).not.toHaveProperty('regionCode')
+    expect(
+      readApproximateLocation(
+        eventWithRequestCf({ country: 'US', latitude: '30.2672', longitude: '-97.7431' }),
+        { includeCityRegion: true },
+      ),
+    ).toEqual({ label: 'US', lat: 30.2672, lon: -97.7431, source: 'ip' })
+    expect(
+      readApproximateLocation(eventWithRequestCf({ ...cf, city: '  ', regionCode: '' }), {
+        includeCityRegion: true,
+      }),
+    ).not.toHaveProperty('city')
+  })
+
+  it('returns city and the cf-region-code header from the cf-ip* fallback, leaving the label alone', () => {
+    const headers = {
+      'cf-ipcity': 'Marfa',
+      'cf-iplatitude': '30.3095',
+      'cf-iplongitude': '-104.0177',
+      'cf-region': 'Texas',
+      'cf-region-code': 'TX',
+    }
+    expect(readApproximateLocation(eventWithHeaders(headers), { includeCityRegion: true })).toEqual(
+      {
+        city: 'Marfa',
+        label: 'Marfa, Texas',
+        lat: 30.3095,
+        lon: -104.0177,
+        regionCode: 'TX',
+        source: 'ip',
+      },
+    )
+    expect(readApproximateLocation(eventWithHeaders(headers))).toEqual({
+      label: 'Marfa, Texas',
+      lat: 30.3095,
+      lon: -104.0177,
+      source: 'ip',
+    })
+  })
+
   it('returns null for a request with neither signal', () => {
     expect(readApproximateLocation(eventWithHeaders({}))).toBeNull()
   })
