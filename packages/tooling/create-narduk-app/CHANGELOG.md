@@ -1,5 +1,16 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.33
+
+### Patch Changes
+
+- 6f9ff53: Accept `runner-upload` alongside `workers-builds` in the canonical
+  narduk-v1 deployment parser and JSON Schema projection. Preserve existing
+  generator defaults, normalization, refinements, promotion, migration, live
+  proof and rollback declarations.
+- Updated dependencies [6f9ff53]
+  - @narduk-enterprises/narduk-app-tools@0.49.4
+
 ## 0.23.32
 
 ### Patch Changes
