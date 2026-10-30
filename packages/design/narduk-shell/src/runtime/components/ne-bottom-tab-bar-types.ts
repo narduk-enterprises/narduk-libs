@@ -48,8 +48,12 @@ export type NeBottomTabState = 'page' | 'section' | 'fallback' | 'none'
 // Query and hash are dropped, except a hash-only target (`#stations`), which
 // is an in-page tab and is compared as written.
 function trimSlash(path: string): string {
-  const bare = path.split(/(?<=.)[?#]/u)[0] ?? ''
-  return bare.length > 1 ? bare.replace(/\/+$/u, '') || '/' : bare || '/'
+  const hash = path.indexOf('#', 1)
+  const query = path.indexOf('?', 1)
+  const cut = Math.min(hash === -1 ? path.length : hash, query === -1 ? path.length : query)
+  let end = cut
+  while (end > 1 && path[end - 1] === '/') end -= 1
+  return path.slice(0, end) || '/'
 }
 
 function underPrefix(path: string, prefix: string): boolean {
