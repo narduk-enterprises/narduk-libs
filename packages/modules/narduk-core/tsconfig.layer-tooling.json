@@ -32,6 +32,8 @@
     "runtime/app/server-prefetch.ts",
     "runtime/app/session/useUserSessionStub.ts",
     "runtime/app/share.ts",
+    "runtime/app/media-query.ts",
+    "runtime/app/download.ts",
     "runtime/app/composables/useAppViewGate.ts",
     "runtime/app/composables/usePreferences.ts",
     "runtime/app/composables/useSkipHtmlCache.ts",

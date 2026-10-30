@@ -3653,6 +3653,35 @@ const data = listPublishedStations(product, result.data)
 The adoption itself is a Buoys-side change and is not part of this package's
 release; the snippet above is the shape it takes.
 
+## Small helpers: text, numbers, zoned days, media queries, downloads
+
+These are pure helpers the fleet kept writing for itself. Each is an explicit
+import, not an auto-import, so an app's own same-named helper keeps working
+until the app switches.
+
+| Import                                                    | Exports                                                                                        |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-core/shared/utils/text`       | `slugify(value, { maxLength })`, `plural`, `pluralWord`, `ordinal`, `initials`, `escapeRegExp` |
+| `@narduk-enterprises/narduk-core/shared/utils/numbers`    | `clamp` (keeps `NaN`), `median` (finite values only, `null` when empty)                        |
+| `@narduk-enterprises/narduk-core/shared/utils/zoned-date` | `zonedDateParts(instant, timeZone)`, `zonedDateKey(instant, timeZone)`                         |
+| `@narduk-enterprises/narduk-core/app/media-query`         | `useMediaQuery(query, { initial })`                                                            |
+| `@narduk-enterprises/narduk-core/app/download`            | `downloadFile(filename, content, type)`                                                        |
+
+- **`zonedDateKey`** returns `YYYY-MM-DD` for the calendar day in the named
+  zone. Use it for anything that should roll over at the product's local
+  midnight, such as a daily puzzle or today's totals. The zone is always an
+  argument. An unknown zone throws.
+- **`useMediaQuery`** returns `initial` (default `false`) on the server and on
+  the first client render, then reads the query on mount. The phone layout
+  therefore arrives after hydration instead of causing a hydration mismatch. In
+  a component-less effect scope, such as a Pinia setup store, it starts on the
+  next microtask and stops with the scope.
+- **`downloadFile`** waits one task before revoking its object URL, because some
+  browsers cancel a download whose URL is revoked during the same task as the
+  click. On the server it returns `false`.
+- **Distance between coordinates** stays in
+  `@narduk-enterprises/narduk-mapkit/geometry` (`haversineDistanceMetres`).
+
 ## Share with a clipboard fallback: `useShare`
 
 `@narduk-enterprises/narduk-core/app/share` offers the native share sheet and
