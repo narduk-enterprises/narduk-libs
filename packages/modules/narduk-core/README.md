@@ -2040,11 +2040,12 @@ readApproximateLocation(event, { includeCityRegion: true })
 ```
 
 `city` and `regionCode` are set only when Cloudflare provided a non-blank value,
-so a missing one is absent and never an empty string. The `cf-ip*` header
-fallback carries a city but only a region name, so it never sets `regionCode`.
-Without the option the result has the same four fields as before. The helper
-does not range-check coordinates; an app that must reject out-of-range values
-does so on the result.
+so a missing one is absent and never an empty string. `regionCode` comes from
+the Workers `cf` object, or from the `cf-region-code` header on the `cf-ip*`
+fallback. Without the option the result has the same four fields as before, and
+the fallback's `label` still reads the region name. The helper does not
+range-check coordinates; an app that must reject out-of-range values does so on
+the result.
 
 ## Edge cache: setCacheProfile
 

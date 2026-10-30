@@ -138,19 +138,25 @@ describe('readApproximateLocation', () => {
     ).not.toHaveProperty('city')
   })
 
-  it('returns the city from the cf-ip* header fallback but never a region code', () => {
-    expect(
-      readApproximateLocation(
-        eventWithHeaders({
-          'cf-ipcity': 'Marfa',
-          'cf-iplatitude': '30.3095',
-          'cf-iplongitude': '-104.0177',
-          'cf-region': 'Texas',
-        }),
-        { includeCityRegion: true },
-      ),
-    ).toEqual({
-      city: 'Marfa',
+  it('returns city and the cf-region-code header from the cf-ip* fallback, leaving the label alone', () => {
+    const headers = {
+      'cf-ipcity': 'Marfa',
+      'cf-iplatitude': '30.3095',
+      'cf-iplongitude': '-104.0177',
+      'cf-region': 'Texas',
+      'cf-region-code': 'TX',
+    }
+    expect(readApproximateLocation(eventWithHeaders(headers), { includeCityRegion: true })).toEqual(
+      {
+        city: 'Marfa',
+        label: 'Marfa, Texas',
+        lat: 30.3095,
+        lon: -104.0177,
+        regionCode: 'TX',
+        source: 'ip',
+      },
+    )
+    expect(readApproximateLocation(eventWithHeaders(headers))).toEqual({
       label: 'Marfa, Texas',
       lat: 30.3095,
       lon: -104.0177,

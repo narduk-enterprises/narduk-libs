@@ -37,6 +37,10 @@ import type { H3Event } from 'h3'
  * Cloudflare *and* passed to any downstream CDN, and because a response whose
  * edge TTL is visible is easier to debug than one Cloudflare strips.
  *
+ * A profile whose contract is keyed on `s-maxage` opts in with
+ * `sMaxAgeInCacheControl: true`, which adds `s-maxage` to `Cache-Control` and
+ * still sends `CDN-Cache-Control`. No named profile sets it.
+ *
  * WHERE THE EDGE CACHE COMES FROM
  * -------------------------------
  * Workers run before the cache, so a response a Worker generates is not stored

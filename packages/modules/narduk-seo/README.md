@@ -207,8 +207,10 @@ none is set, it falls back to the build branch (narduk-libs#999): a Workers
 Builds `WORKERS_CI_BRANCH` (or Cloudflare Pages `CF_PAGES_BRANCH`) of `main` is
 `production`, and any other branch is `preview`, so a branch build is noindexed
 and a `main` build gets `hostAwareIndexing`. A build with no explicit variable
-and no branch variable, such as a local `nuxt build`, keeps an unset target
-exactly as before: indexable, with host-aware indexing off.
+and no branch variable, such as a local `nuxt build`, keeps an unset target: the
+site stays indexable and nothing is noindexed at build time, but an app that
+sets `hostAwareIndexing` gets the host-aware guard (see
+[Host-aware indexing](#host-aware-indexing)).
 
 **If production deploys from a branch other than `main`** (for example `master`)
 and the app sets no `NARDUK_DEPLOY_TARGET`, its production build would now be
@@ -268,10 +270,15 @@ a preview host. The guard only ever noindexes a request host that differs from
 the canonical site host, and it fails open when `runtimeConfig.public.siteUrl`
 is missing or local, so an unlabelled build cannot noindex the real site as long
 as `siteUrl` is the production origin. It is still off unless the app opts in,
-and a `staging` or `preview` target keeps the build-time noindex instead. To
-keep it off for one build, set `NARDUK_DEPLOY_TARGET` to a non-production
-target. The missing-`siteUrl` warning is printed for an explicit `production`
-target only.
+and a `staging` or `preview` target keeps the build-time noindex instead. To opt
+out, leave `hostAwareIndexing` off. On such a build a request host of
+`localhost` is non-canonical when `siteUrl` is a real origin, so a local
+`preview` or an e2e run of an opted-in app serves `noindex`, so an e2e assertion
+of `index` there has to allow for it. The missing-`siteUrl` warning is printed
+for an explicit `production` target only. The guard has no alias list: if
+`siteUrl` is the apex and real traffic reaches the same Worker on `www.` without
+a redirect, that traffic is noindexed, on an unlabelled build as on a
+`production` one.
 
 The primitives behind that guard are exported from
 `@narduk-enterprises/narduk-seo/shared/hostAwareIndexing`:

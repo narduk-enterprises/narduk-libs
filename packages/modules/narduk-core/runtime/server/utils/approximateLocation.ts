@@ -39,8 +39,8 @@ export interface ApproximateLocation {
   /**
    * The ISO 3166-2 region code Cloudflare resolved, e.g. `"TX"`. Present only
    * when {@link ReadApproximateLocationOptions.includeCityRegion} is set and
-   * the Workers request `cf` object carried one. The `cf-ip*` header fallback
-   * has no region code, only a region name, so it never sets this.
+   * the Workers request `cf` object carried one, or the `cf-region-code`
+   * header (the "Add visitor location headers" managed transform) did.
    */
   regionCode?: string
   source: 'ip'
@@ -63,6 +63,11 @@ interface CloudflareLocationFields {
   longitude?: string
   region?: string
   regionCode?: string
+  /**
+   * `cf-region-code`, kept apart from `regionCode` so the header fallback's
+   * `label` still reads the region name, as it did before this was read.
+   */
+  regionCodeHeader?: string
 }
 
 function readCloudflareRequestContext(event: H3Event): CloudflareLocationFields | undefined {
@@ -82,11 +87,13 @@ function readCloudflareLocationHeaders(event: H3Event): CloudflareLocationFields
     latitude,
     longitude,
     region: getHeader(event, 'cf-region'),
+    regionCodeHeader: getHeader(event, 'cf-region-code'),
   }
 }
 
 function nonBlank(value: string | undefined): string | undefined {
-  return typeof value === 'string' && value.trim() ? value : undefined
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || undefined
 }
 
 function toApproximateLocation(
@@ -106,7 +113,7 @@ function toApproximateLocation(
   }
   if (options.includeCityRegion) {
     const city = nonBlank(fields?.city)
-    const regionCode = nonBlank(fields?.regionCode)
+    const regionCode = nonBlank(fields?.regionCode) ?? nonBlank(fields?.regionCodeHeader)
     if (city) location.city = city
     if (regionCode) location.regionCode = regionCode
   }
