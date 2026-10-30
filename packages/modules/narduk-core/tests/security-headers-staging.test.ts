@@ -13,6 +13,7 @@ import securityHeaders from '../runtime/server/middleware/securityHeaders'
 const { runtime } = vi.hoisted(() => ({
   runtime: {
     nardukSecurityHeaders: undefined as { mode?: string } | undefined,
+    security: undefined as { headers?: unknown } | undefined,
     public: {
       appVersion: '1.2.3',
       buildVersion: 'abc1234',
@@ -45,7 +46,19 @@ async function respond(): Promise<Headers> {
 
 afterEach(() => {
   runtime.nardukSecurityHeaders = undefined
+  runtime.security = undefined
 })
+
+// The shape nuxt-security resolves into runtimeConfig.security.headers.
+const presetSecurity = {
+  headers: {
+    contentSecurityPolicy: {
+      'default-src': ["'self'"],
+      'script-src': ["'self'", "'nonce-{{nonce}}'", "'strict-dynamic'"],
+    },
+    permissionsPolicy: { camera: [], microphone: [], geolocation: [] },
+  },
+}
 
 describe('preset off -- the default', () => {
   it('serves exactly the header set deployed apps have today', async () => {
@@ -94,14 +107,25 @@ describe('preset in report-only', () => {
     expect(headers.get('content-security-policy')).toContain("default-src 'self'")
   })
 
-  it('stops duplicating the headers nuxt-security now emits', async () => {
+  it('stops duplicating the headers nuxt-security emits on every resource', async () => {
     runtime.nardukSecurityHeaders = { mode: 'report-only' }
     const headers = await respond()
     expect(headers.get('x-content-type-options')).toBeNull()
     expect(headers.get('x-frame-options')).toBeNull()
     expect(headers.get('referrer-policy')).toBeNull()
-    expect(headers.get('permissions-policy')).toBeNull()
     expect(headers.get('x-xss-protection')).toBeNull()
+  })
+
+  // nuxt-security sets Permissions-Policy in render:response only, so a Nitro
+  // handler would otherwise serve none (narduk-libs#1216).
+  it('serves the preset Permissions-Policy on non-document responses', async () => {
+    runtime.nardukSecurityHeaders = { mode: 'report-only' }
+    runtime.security = presetSecurity
+    const headers = await respond()
+    expect(headers.get('permissions-policy')).toBe('camera=(), microphone=(), geolocation=()')
+    // The preset CSP is only being reported on; the legacy one keeps enforcing.
+    expect(headers.get('content-security-policy')).toContain("default-src 'self'")
+    expect(headers.get('content-security-policy')).not.toContain('strict-dynamic')
   })
 
   it('keeps the build diagnostics, which nuxt-security knows nothing about', async () => {
@@ -118,6 +142,18 @@ describe('preset enforcing', () => {
     runtime.nardukSecurityHeaders = { mode: 'enforce' }
     const headers = await respond()
     expect(headers.get('content-security-policy')).toBeNull()
+  })
+
+  // nuxt-security sets CSP and Permissions-Policy in render:response only, so
+  // API, sitemap and robots responses served none (narduk-libs#1216).
+  it('serves the preset policy, without the nonce, on non-document responses', async () => {
+    runtime.nardukSecurityHeaders = { mode: 'enforce' }
+    runtime.security = presetSecurity
+    const headers = await respond()
+    expect(headers.get('permissions-policy')).toBe('camera=(), microphone=(), geolocation=()')
+    expect(headers.get('content-security-policy')).toBe(
+      "default-src 'self'; script-src 'self' 'strict-dynamic';",
+    )
   })
 
   it('still serves the build diagnostics', async () => {

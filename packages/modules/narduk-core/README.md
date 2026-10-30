@@ -339,6 +339,21 @@ live policy. Serving the two policies side by side during the soak avoids both:
 a browser enforces the `Content-Security-Policy` it is given and only _reports_
 on the `-Report-Only` one, so the soak cannot break a page.
 
+### API, sitemap and robots responses
+
+nuxt-security sets `Permissions-Policy` and the CSP only in its
+`render:response` hook, which never runs for a Nitro handler. The legacy
+middleware fills that gap with the preset's own resolved values: both preset
+modes get the preset `Permissions-Policy` on every response, and `enforce: true`
+also gets the preset CSP with its `'nonce-…'` source removed (only the renderer
+mints a nonce, and with `'strict-dynamic'` a nonce-free policy authorises no
+script, which is right for JSON). On a page the renderer overwrites both with
+the nonced policy. An unrecognised policy shape falls back to a fixed
+restrictive header rather than none. The serialiser is exported as
+`@narduk-enterprises/narduk-core/server/non-document-security-headers`
+(narduk-libs#1216); apps that carry their own `non-document-security-headers`
+middleware can delete it after upgrading.
+
 ### The adoption path
 
 1. **Turn it on.** Set `security.headers.enabled` and deploy. Nothing a user can

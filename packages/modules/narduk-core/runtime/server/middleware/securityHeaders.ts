@@ -23,9 +23,17 @@
  *                  nuxt-security knows nothing about. Serving two enforcing
  *                  CSP headers would make the browser intersect them, which is
  *                  miserable to debug and buys nothing.
+ *
+ * nuxt-security sets `Permissions-Policy` and the CSP in `render:response`
+ * only, which never fires for a Nitro handler. So in both preset modes this
+ * file also puts the preset's own resolved `Permissions-Policy` on every
+ * response, and in 'enforce' a nonce-free copy of the preset CSP; the renderer
+ * overwrites both on documents (`../non-document-security-headers.ts`,
+ * narduk-libs#1216).
  */
 import { defineEventHandler, setResponseHeaders } from 'h3'
 
+import { nonDocumentSecurityHeaders } from '../non-document-security-headers'
 import { coreRuntimeConfig } from '../utils/runtime-config'
 import { readRuntimeBoolean, readRuntimeString } from '../utils/runtime-env'
 
@@ -110,6 +118,21 @@ function resolvePresetMode(config: object): SecurityHeadersMode {
   return mode === 'report-only' || mode === 'enforce' ? mode : 'off'
 }
 
+// Keyed on the resolved headers object, which is fixed per isolate, so the
+// policy is serialised once rather than per request.
+const nonDocumentHeadersCache = new WeakMap<object, Record<string, string>>()
+
+function presetNonDocumentHeaders(config: object): Record<string, string> {
+  const headers = (config as { security?: { headers?: unknown } }).security?.headers
+  if (headers === null || typeof headers !== 'object') return nonDocumentSecurityHeaders(headers)
+  let resolved = nonDocumentHeadersCache.get(headers)
+  if (!resolved) {
+    resolved = nonDocumentSecurityHeaders(headers)
+    nonDocumentHeadersCache.set(headers, resolved)
+  }
+  return resolved
+}
+
 export default defineEventHandler((event) => {
   const config = coreRuntimeConfig(event)
   const isDev = import.meta.dev
@@ -124,7 +147,7 @@ export default defineEventHandler((event) => {
   if (buildTime) diagnosticHeaders['X-Build-Time'] = buildTime
 
   if (presetMode === 'enforce') {
-    setResponseHeaders(event, diagnosticHeaders)
+    setResponseHeaders(event, { ...presetNonDocumentHeaders(config), ...diagnosticHeaders })
     return
   }
 
@@ -169,7 +192,13 @@ export default defineEventHandler((event) => {
   )
 
   // In 'report-only' nuxt-security already emits each of these, so repeating
-  // them here would mean two identical headers on every response.
+  // them here would mean two identical headers on every response. Its
+  // Permissions-Policy reaches documents only, so the preset's own value is
+  // restated here; the CSP below keeps enforcing while the preset reports.
+  const reportOnlyPermissions =
+    presetMode === 'report-only'
+      ? presetNonDocumentHeaders(config)['Permissions-Policy']
+      : undefined
   const ownedByPreset =
     presetMode === 'off'
       ? {
@@ -179,7 +208,9 @@ export default defineEventHandler((event) => {
           'Referrer-Policy': 'strict-origin-when-cross-origin',
           'Permissions-Policy': buildPermissionsPolicy(allowGeolocation),
         }
-      : {}
+      : reportOnlyPermissions
+        ? { 'Permissions-Policy': reportOnlyPermissions }
+        : {}
 
   setResponseHeaders(event, {
     ...ownedByPreset,
