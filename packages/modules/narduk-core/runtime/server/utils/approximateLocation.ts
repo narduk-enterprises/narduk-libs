@@ -26,11 +26,34 @@ import type { H3Event } from 'h3'
 
 /** The public shape a route hands back for a visitor's approximate location. */
 export interface ApproximateLocation {
+  /**
+   * The city Cloudflare resolved, e.g. `"Austin"`. Present only when
+   * {@link ReadApproximateLocationOptions.includeCityRegion} is set and
+   * Cloudflare provided one.
+   */
+  city?: string
   /** A short human-readable label, e.g. `"Austin, TX"` or `"US"`. */
   label: string
   lat: number
   lon: number
+  /**
+   * The ISO 3166-2 region code Cloudflare resolved, e.g. `"TX"`. Present only
+   * when {@link ReadApproximateLocationOptions.includeCityRegion} is set and
+   * the Workers request `cf` object carried one. The `cf-ip*` header fallback
+   * has no region code, only a region name, so it never sets this.
+   */
+  regionCode?: string
   source: 'ip'
+}
+
+export interface ReadApproximateLocationOptions {
+  /**
+   * Also return `city` and `regionCode` when Cloudflare provides them, for a
+   * route that needs the parts and not only the joined `label`. Off by
+   * default so a route that returns the helper's result as its body keeps the
+   * same JSON.
+   */
+  includeCityRegion?: boolean
 }
 
 interface CloudflareLocationFields {
@@ -62,20 +85,32 @@ function readCloudflareLocationHeaders(event: H3Event): CloudflareLocationFields
   }
 }
 
+function nonBlank(value: string | undefined): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
 function toApproximateLocation(
   fields: CloudflareLocationFields | undefined,
+  options: ReadApproximateLocationOptions,
 ): ApproximateLocation | null {
   const lat = Number(fields?.latitude)
   const lon = Number(fields?.longitude)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
 
   const label = [fields?.city, fields?.regionCode || fields?.region].filter(Boolean).join(', ')
-  return {
+  const location: ApproximateLocation = {
     label: label || fields?.country || 'approximate location',
     lat,
     lon,
     source: 'ip',
   }
+  if (options.includeCityRegion) {
+    const city = nonBlank(fields?.city)
+    const regionCode = nonBlank(fields?.regionCode)
+    if (city) location.city = city
+    if (regionCode) location.regionCode = regionCode
+  }
+  return location
 }
 
 /**
@@ -84,9 +119,12 @@ function toApproximateLocation(
  * reached the app outside Cloudflare's edge -- local dev without a Cloudflare
  * dev-proxy, for instance).
  */
-export function readApproximateLocation(event: H3Event): ApproximateLocation | null {
+export function readApproximateLocation(
+  event: H3Event,
+  options: ReadApproximateLocationOptions = {},
+): ApproximateLocation | null {
   return (
-    toApproximateLocation(readCloudflareRequestContext(event)) ??
-    toApproximateLocation(readCloudflareLocationHeaders(event))
+    toApproximateLocation(readCloudflareRequestContext(event), options) ??
+    toApproximateLocation(readCloudflareLocationHeaders(event), options)
   )
 }

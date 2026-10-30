@@ -137,6 +137,36 @@ describe('named profiles', () => {
     })
   })
 
+  it('adds s-maxage to Cache-Control only for a profile that asks for it', async () => {
+    expect(
+      await cacheHeaders({ maxAge: 30, sMaxAge: 120, sMaxAgeInCacheControl: true, swr: 600 }),
+    ).toMatchObject({
+      cacheControl: 'public, max-age=30, s-maxage=120, stale-while-revalidate=600',
+      cdnCacheControl: 'public, max-age=120, stale-while-revalidate=600',
+    })
+    expect(
+      await cacheHeaders({ maxAge: 30, sMaxAge: 120, sMaxAgeInCacheControl: false, swr: 600 }),
+    ).toMatchObject({ cacheControl: 'public, max-age=30, stale-while-revalidate=600' })
+    expect(
+      await cacheHeaders({ maxAge: 60, sMaxAge: 300, sMaxAgeInCacheControl: true, swr: 0 }),
+    ).toMatchObject({ cacheControl: 'public, max-age=60, s-maxage=300' })
+  })
+
+  it('never writes s-maxage for a private or no-store profile', async () => {
+    expect(
+      await cacheHeaders({
+        maxAge: 30,
+        private: true,
+        sMaxAge: 120,
+        sMaxAgeInCacheControl: true,
+        swr: 0,
+      }),
+    ).toMatchObject({ cacheControl: 'private, max-age=30', cdnCacheControl: null })
+    expect(
+      await cacheHeaders({ maxAge: 0, noStore: true, sMaxAge: 0, sMaxAgeInCacheControl: true, swr: 0 }),
+    ).toMatchObject({ cacheControl: NO_STORE })
+  })
+
   it('keeps a private inline profile off the edge entirely', async () => {
     expect(await cacheHeaders({ maxAge: 30, private: true, sMaxAge: 999, swr: 60 })).toMatchObject({
       cacheControl: 'private, max-age=30, stale-while-revalidate=60',
@@ -158,6 +188,14 @@ describe('runtimeConfig.cache.profiles overrides', () => {
     expect(await cacheHeaders('live')).toMatchObject({
       cacheControl: 'public, max-age=60, stale-while-revalidate=900',
       cdnCacheControl: 'public, max-age=30, stale-while-revalidate=900',
+    })
+  })
+
+  it('lets an app turn s-maxage on for a named profile', async () => {
+    runtime.cache = { profiles: { live: { sMaxAgeInCacheControl: true } } }
+    expect(await cacheHeaders('live')).toMatchObject({
+      cacheControl: 'public, max-age=60, s-maxage=300, stale-while-revalidate=900',
+      cdnCacheControl: 'public, max-age=300, stale-while-revalidate=900',
     })
   })
 

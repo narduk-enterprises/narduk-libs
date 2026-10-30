@@ -62,6 +62,17 @@ export interface CacheProfile {
    * when `private` is true — a private response must never be edge-cached.
    */
   sMaxAge: number
+  /**
+   * Also write the edge window as `s-maxage=<sMaxAge>` on `Cache-Control`, next
+   * to the `CDN-Cache-Control` header that is always sent. For a contract or a
+   * cache layer keyed on `s-maxage` (a Workers Cache TTL read from it, a
+   * downstream proxy that ignores `CDN-Cache-Control`). Off by default, because
+   * `s-maxage` disables `stale-while-revalidate` for any cache that reads
+   * `Cache-Control` for its edge TTL (see above); Cloudflare prefers
+   * `CDN-Cache-Control` when both are present, so its stale window survives.
+   * Ignored when `private` or `noStore` is true.
+   */
+  sMaxAgeInCacheControl?: boolean
   /** Stale-serving window, emitted as `stale-while-revalidate` on both headers. */
   swr: number
 }
@@ -169,6 +180,10 @@ export function resolveCacheProfile(event: H3Event, input: CacheProfileInput): C
     swr: isNonNegativeInteger(override.swr) ? override.swr : base.swr,
     private: typeof override.private === 'boolean' ? override.private : base.private,
     noStore: typeof override.noStore === 'boolean' ? override.noStore : base.noStore,
+    sMaxAgeInCacheControl:
+      typeof override.sMaxAgeInCacheControl === 'boolean'
+        ? override.sMaxAgeInCacheControl
+        : (base as CacheProfile).sMaxAgeInCacheControl,
   }
 }
 
@@ -237,6 +252,7 @@ function formatCacheControl(profile: CacheProfile): string {
   if (profile.noStore) return 'private, no-store'
 
   const directives = [profile.private ? 'private' : 'public', `max-age=${profile.maxAge}`]
+  if (profile.sMaxAgeInCacheControl && !profile.private) directives.push(`s-maxage=${profile.sMaxAge}`)
   if (profile.swr > 0) directives.push(`stale-while-revalidate=${profile.swr}`)
   return directives.join(', ')
 }

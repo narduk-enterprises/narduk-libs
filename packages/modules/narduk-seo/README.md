@@ -260,6 +260,19 @@ header and robots meta on any request host other than the canonical site host,
 such as a route-free `workers.dev` preview alias of the same Worker version. The
 canonical host stays indexable.
 
+The guard is on for a `production` target and for a build whose target cannot
+be detected: no `NARDUK_DEPLOY_TARGET` (or its `NUXT_PUBLIC_` forms) and no
+`WORKERS_CI_BRANCH` / `CF_PAGES_BRANCH`, such as a deploy-upload build or a CI
+`build:ci`. Before, that build left the guard off and served `index, follow` on
+a preview host. The guard only ever noindexes a request host that differs from
+the canonical site host, and it fails open when `runtimeConfig.public.siteUrl`
+is missing or local, so an unlabelled build cannot noindex the real site as
+long as `siteUrl` is the production origin. It is still off unless the app opts
+in, and a `staging` or `preview` target keeps the build-time noindex instead. To
+keep it off for one build, set `NARDUK_DEPLOY_TARGET` to a non-production
+target. The missing-`siteUrl` warning is printed for an explicit `production`
+target only.
+
 The primitives behind that guard are exported from
 `@narduk-enterprises/narduk-seo/shared/hostAwareIndexing`:
 `normalizeIndexingHost`, `isNonCanonicalIndexingHost` and
@@ -605,14 +618,16 @@ entity data so they cannot drift apart.
    as the fallback. `useOgImageData()` and the admin OG route previews below let
    an operator review the generated cards.
 3. **Sitemap** —
-   `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority? })`
+   `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority?, omit? })`
    from `@narduk-enterprises/narduk-seo/shared/sitemapFromListing` turns the
    same listing into `@nuxtjs/sitemap` rows. It is pure (no Nuxt or Nitro
    imports), keeps input order, skips items whose `loc` builder returns a blank
    value, keeps the first row for a repeated `loc`, and normalises `lastmod` (a
    `Date` or epoch milliseconds becomes an ISO string; a missing or unparseable
    value is omitted). `changefreq` and `priority` take a constant or a per-item
-   builder.
+   builder. `omit(item, index)` drops a retired, draft or noindex entity the
+   listing still carries: it runs before every other builder, so none of them
+   sees the item, and `index` is the item's position in the input listing.
 
 ```ts
 // server/api/__sitemap__/buoys.ts

@@ -88,6 +88,36 @@ describe("classifySignalByAge", () => {
     expect(classifySignalByAge(minutesAgo(2880), lake, now)).toBe("stale");
   });
 
+  it("treats each limit as an inclusive upper bound when asked", () => {
+    // borderwaitstat-us style: "60 minutes or less" is still Live.
+    const inclusive = { live: 60, aging: 180, stale: 1440, inclusive: true };
+    expect(classifySignalByAge(minutesAgo(60), inclusive, now)).toBe("live");
+    expect(classifySignalByAge(minutesAgo(60.5), inclusive, now)).toBe("aging");
+    expect(classifySignalByAge(minutesAgo(180), inclusive, now)).toBe("aging");
+    expect(classifySignalByAge(minutesAgo(181), inclusive, now)).toBe("stale");
+    expect(classifySignalByAge(minutesAgo(1440), inclusive, now)).toBe("stale");
+    expect(classifySignalByAge(minutesAgo(1441), inclusive, now)).toBe("void");
+    expect(classifySignalByAge(minutesAgo(180), { ...inclusive, stale: undefined }, now)).toBe(
+      "aging",
+    );
+    expect(classifySignalByAge(minutesAgo(181), { live: 60, aging: 180, inclusive: true }, now)).toBe(
+      "stale",
+    );
+  });
+
+  it("keeps exclusive bounds when inclusive is false or absent", () => {
+    expect(classifySignalByAge(minutesAgo(60), { live: 60, aging: 180, inclusive: false }, now)).toBe(
+      "aging",
+    );
+    expect(classifySignalByAge(minutesAgo(60), { live: 60, aging: 180 }, now)).toBe("aging");
+  });
+
+  it("keeps the future tolerance the same under inclusive bounds", () => {
+    const inclusive = { live: 60, aging: 180, inclusive: true };
+    expect(classifySignalByAge(minutesAgo(-5), inclusive, now)).toBe("live");
+    expect(classifySignalByAge(minutesAgo(-6), inclusive, now)).toBe("void");
+  });
+
   it("reads past the stale ceiling as void", () => {
     // buoys: live 90, aging 360, no data past 24 h.
     const buoy = { live: 91, aging: 361, stale: 1441 };

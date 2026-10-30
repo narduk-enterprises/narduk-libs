@@ -763,6 +763,41 @@ describe('narduk-seo module', () => {
     )
   })
 
+  it('enables host-aware indexing when the deployment target cannot be detected', async () => {
+    const { addPlugin, nuxt } = await setupModule({
+      moduleOptions: { hostAwareIndexing: true },
+    })
+
+    expect(
+      (nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+        ?.nardukSeoHostAwareIndexing,
+    ).toBe(true)
+    expect(addPlugin).toHaveBeenCalledWith(
+      expect.stringContaining('/app/plugins/hostAwareIndexing'),
+    )
+  })
+
+  it('keeps host-aware indexing off for an unset target that is not opted in', async () => {
+    const { addPlugin, nuxt } = await setupModule()
+
+    expect(
+      (nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+        ?.nardukSeoHostAwareIndexing,
+    ).toBe(false)
+    expect(addPlugin).not.toHaveBeenCalled()
+  })
+
+  it('does not warn about a localhost siteUrl on an undetectable target', async () => {
+    const { loggerWarn } = await setupModule({
+      moduleOptions: { hostAwareIndexing: true },
+      nuxtOptions: { runtimeConfig: { public: { siteUrl: 'http://localhost:3000' } } },
+    })
+
+    expect(loggerWarn).not.toHaveBeenCalledWith(
+      expect.stringContaining('runtimeConfig.public.siteUrl'),
+    )
+  })
+
   it('keeps host-aware indexing off for non-production targets even when opted in', async () => {
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'preview')
 
