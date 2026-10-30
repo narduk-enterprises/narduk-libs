@@ -165,7 +165,10 @@ describe('useInlineEdit', () => {
 
   it('does not reopen an older draft after a newer save succeeds', async () => {
     const pending = pendingSave()
-    const save = vi.fn().mockImplementationOnce(() => pending.promise).mockResolvedValue(undefined)
+    const save = vi
+      .fn()
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValue(undefined)
     const { edit, value } = harness('Alpha', save)
     edit.start()
     edit.draft.value = 'Beta'

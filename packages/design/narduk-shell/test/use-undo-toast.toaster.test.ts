@@ -73,7 +73,9 @@ describe('useUndoToast in a real UToaster', () => {
     const outcome = undo.show({ title: 'Removed AAPL' })
     await flush()
 
-    const close = document.body.querySelector('[data-slot="close"] button, button[aria-label="Close"]')
+    const close = document.body.querySelector(
+      '[data-slot="close"] button, button[aria-label="Close"]',
+    )
     expect(close).not.toBeNull()
     ;(close as HTMLButtonElement).click()
 

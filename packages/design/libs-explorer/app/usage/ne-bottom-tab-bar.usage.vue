@@ -1,9 +1,9 @@
 <script setup lang="ts">
 const items = [
-  { label: 'Map', to: '/', icon: 'i-lucide-map' },
-  { label: 'Stations', to: '/stations', icon: 'i-lucide-menu' },
-  { label: 'Cams', to: '/cams', icon: 'i-lucide-camera' },
-  { label: 'More', to: '/more', icon: 'i-lucide-ellipsis' },
+  { label: 'Map', to: '/example', icon: 'i-lucide-map' },
+  { label: 'Stations', to: '/example/stations', icon: 'i-lucide-menu' },
+  { label: 'Cams', to: '/example/cams', icon: 'i-lucide-camera' },
+  { label: 'More', to: '/example/more', icon: 'i-lucide-ellipsis' },
 ]
 </script>
 
@@ -15,6 +15,11 @@ const items = [
     style="transform: translate(0)"
   >
     <p class="m-3 text-sm">Station 42</p>
-    <NeBottomTabBar :items="items" path="/stations/42" fallback="/more" :phone-only="false" />
+    <NeBottomTabBar
+      :items="items"
+      path="/example/stations/42"
+      fallback="/example/more"
+      :phone-only="false"
+    />
   </div>
 </template>

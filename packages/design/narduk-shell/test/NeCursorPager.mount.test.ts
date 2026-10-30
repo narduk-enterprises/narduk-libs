@@ -4,7 +4,19 @@ import { describe, expect, it } from 'vitest'
 import NeCursorPager from '../src/runtime/components/NeCursorPager.vue'
 import type { NeCursorCollectionState } from '../src/runtime/composables/use-cursor-collection'
 
-const state: NeCursorCollectionState<unknown> = { cursor: null, error: null, hasNext: true, hasPrevious: false, items: [1], limit: 1, nextCursor: 'older', pending: false, q: '', sort: null, total: null }
+const state: NeCursorCollectionState<unknown> = {
+  cursor: null,
+  error: null,
+  hasNext: true,
+  hasPrevious: false,
+  items: [1],
+  limit: 1,
+  nextCursor: 'older',
+  pending: false,
+  q: '',
+  sort: null,
+  total: null,
+}
 describe('NeCursorPager', () => {
   it('offers semantic older/newer navigation without inventing totals, and disables pending actions', async () => {
     const wrapper = mount(NeCursorPager, { props: { state } })

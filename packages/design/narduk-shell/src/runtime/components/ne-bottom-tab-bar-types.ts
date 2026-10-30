@@ -46,7 +46,8 @@ export interface NeBottomTabBarProps {
 export type NeBottomTabState = 'page' | 'section' | 'fallback' | 'none'
 
 function trimSlash(path: string): string {
-  return path.length > 1 ? path.replace(/\/+$/u, '') : path
+  const bare = path.split(/[?#]/u)[0] ?? ''
+  return bare.length > 1 ? bare.replace(/\/+$/u, '') || '/' : bare || '/'
 }
 
 function underPrefix(path: string, prefix: string): boolean {
@@ -66,7 +67,7 @@ export function resolveBottomTabs(
   path: string,
   fallback?: string,
 ): NeBottomTabState[] {
-  const current = trimSlash(path.split(/[?#]/u)[0] || '/')
+  const current = trimSlash(path)
   const exactIndex = items.findIndex((item) => trimSlash(item.to) === current)
   if (exactIndex !== -1) return items.map((_, index) => (index === exactIndex ? 'page' : 'none'))
 
@@ -84,6 +85,8 @@ export function resolveBottomTabs(
   if (best !== -1) return items.map((_, index) => (index === best ? 'section' : 'none'))
 
   const fallbackIndex =
-    fallback === undefined ? -1 : items.findIndex((item) => item.to === fallback)
+    fallback === undefined
+      ? -1
+      : items.findIndex((item) => trimSlash(item.to) === trimSlash(fallback))
   return items.map((_, index) => (index === fallbackIndex ? 'fallback' : 'none'))
 }

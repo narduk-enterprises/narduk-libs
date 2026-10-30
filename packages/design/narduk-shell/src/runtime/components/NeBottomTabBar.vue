@@ -15,7 +15,9 @@
  * 3. **Safe area and reserved space.** Bottom padding includes
  *    `env(safe-area-inset-bottom)`, a spacer in the flow keeps the last row
  *    clear, and `--ne-bottom-bar-h` is published so focus and anchor jumps
- *    land above the bar (shared with NeStickyActionBar's token stack).
+ *    land above the bar. With a NeStickyActionBar on the same page the token
+ *    is the two heights summed, and the action bar sits above the tab bar
+ *    (`--ne-bottom-nav-h`), so neither covers the other.
  * 4. **Tap targets.** Each tab is the full height of the bar and at least
  *    2.75rem wide.
  *
@@ -52,7 +54,8 @@ defineSlots<{
 }>()
 
 const route = inject(routeLocationKey, null)
-const currentPath = computed(() => props.path ?? route?.path ?? '/')
+// With neither a router nor a `path`, nothing is lit rather than guessing `/`.
+const currentPath = computed(() => props.path ?? route?.path)
 function ariaCurrent(state: NeBottomTabState): 'page' | 'true' | undefined {
   if (state === 'page') return 'page'
   if (state === 'section') return 'true'
@@ -60,7 +63,11 @@ function ariaCurrent(state: NeBottomTabState): 'page' | 'true' | undefined {
 }
 
 const tabs = computed(() => {
-  const states = resolveBottomTabs(props.items, currentPath.value, props.fallback)
+  const path = currentPath.value
+  const states =
+    path === undefined
+      ? props.items.map((): NeBottomTabState => 'none')
+      : resolveBottomTabs(props.items, path, props.fallback)
   return props.items.map((item, index) => {
     const state = states[index] ?? 'none'
     return { item, state, current: ariaCurrent(state) }
@@ -70,7 +77,7 @@ const tabs = computed(() => {
 const bar = ref<HTMLElement | null>(null)
 const height = ref<number | null>(null)
 let observer: ResizeObserver | undefined
-const entry = { px: 0 }
+const entry = { kind: 'nav' as const, px: 0 }
 
 function publish(px: number) {
   height.value = px
@@ -108,6 +115,7 @@ onBeforeUnmount(() => {
         v-for="tab in tabs"
         :key="tab.item.to"
         :to="tab.item.to"
+        raw
         class="ne-bottom-tab-bar__tab"
         :data-state="tab.state"
         :aria-current="tab.current"

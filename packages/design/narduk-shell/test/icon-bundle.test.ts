@@ -11,7 +11,10 @@ describe('lucideIconsIn', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ne-icons-'))
     mkdirSync(join(dir, 'components'))
     mkdirSync(join(dir, 'node_modules'))
-    writeFileSync(join(dir, 'components', 'A.vue'), '<UIcon name="i-lucide-arrow-up-down" /><i class="i-lucide-x" />')
+    writeFileSync(
+      join(dir, 'components', 'A.vue'),
+      '<UIcon name="i-lucide-arrow-up-down" /><i class="i-lucide-x" />',
+    )
     writeFileSync(join(dir, 'b.ts'), "export const glyph = 'lucide:chevrons-up'")
     writeFileSync(join(dir, 'c.d.ts'), "type T = 'lucide:ignored-declaration'")
     writeFileSync(join(dir, 'node_modules', 'd.ts'), "export const d = 'lucide:ignored-dependency'")
@@ -45,7 +48,10 @@ describe('narduk-shell module icon bundle', () => {
     const module_ = (await import('../src/module')).default as unknown as {
       setup: (options: object, nuxt: unknown) => Promise<void>
     }
-    await module_.setup({ components: false }, { hook, options: { build: { transpile: [] }, css: [], appConfig: {} } })
+    await module_.setup(
+      { components: false },
+      { hook, options: { build: { transpile: [] }, css: [], appConfig: {} } },
+    )
 
     const call = hook.mock.calls.find(([name]) => name === 'icon:clientBundleIcons')
     expect(call, 'the module registered no icon:clientBundleIcons hook').toBeDefined()

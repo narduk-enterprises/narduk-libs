@@ -279,7 +279,11 @@ const matchedCount = computed(() =>
 
 const expanded = ref(false)
 const limited = computed(
-  () => !props.remote && !expanded.value && props.limit !== undefined && matchedCount.value > props.limit,
+  () =>
+    !props.remote &&
+    !expanded.value &&
+    props.limit !== undefined &&
+    matchedCount.value > props.limit,
 )
 
 const renderGroups = computed<RenderGroup[]>(() => {
@@ -548,7 +552,7 @@ function groupAttrs(group: NeCollectionGroup<T> | undefined): Record<string, str
 }
 
 const searchModel = computed({
-  get: () => props.remote ? (props.query ?? '') : collection.query.value,
+  get: () => (props.remote ? (props.query ?? '') : collection.query.value),
   set: (value: string) => {
     if (props.remote) emit('update:query', value)
     else collection.query.value = value
@@ -1064,7 +1068,8 @@ const filterModel = computed({
     }
 
     /* compact density: the primary cell heads the card, the rest run on as wrapped label-value pairs */
-    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-row {
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-row {
       flex-direction: row;
       flex-wrap: wrap;
       align-items: baseline;
@@ -1072,7 +1077,8 @@ const filterModel = computed({
       row-gap: 0.125rem;
     }
 
-    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-cell--pri {
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell--pri {
       flex: 1 1 100%;
     }
 
@@ -1198,7 +1204,8 @@ const filterModel = computed({
     }
 
     /* compact density: the primary cell heads the card, the rest run on as wrapped label-value pairs */
-    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-row {
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-row {
       flex-direction: row;
       flex-wrap: wrap;
       align-items: baseline;
@@ -1206,7 +1213,8 @@ const filterModel = computed({
       row-gap: 0.125rem;
     }
 
-    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-cell--pri {
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell--pri {
       flex: 1 1 100%;
     }
 
@@ -1332,7 +1340,8 @@ const filterModel = computed({
     }
 
     /* compact density: the primary cell heads the card, the rest run on as wrapped label-value pairs */
-    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-row {
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-row {
       flex-direction: row;
       flex-wrap: wrap;
       align-items: baseline;
@@ -1340,7 +1349,8 @@ const filterModel = computed({
       row-gap: 0.125rem;
     }
 
-    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-cell--pri {
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell--pri {
       flex: 1 1 100%;
     }
 

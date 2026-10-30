@@ -98,7 +98,7 @@ describe('NeStickyActionBar', () => {
     expect(root().style.getPropertyValue('--ne-bottom-bar-h')).toBe('')
   })
 
-  it('keeps the newest bar\'s height when an older bar leaves mid page transition', () => {
+  it("keeps the newest bar's height when an older bar leaves mid page transition", () => {
     stubHeight(60)
     root().style.setProperty('--ne-bottom-bar-h', '3rem')
     const outgoing = mount(NeStickyActionBar)

@@ -51,8 +51,7 @@ if (props.shortcuts) useCommandPaletteShortcuts()
 const hint = ref('')
 const accessibleLabel = computed(
   () =>
-    props.label ??
-    [props.placeholder, props.compact ? '' : hint.value].filter(Boolean).join(' '),
+    props.label ?? [props.placeholder, props.compact ? '' : hint.value].filter(Boolean).join(' '),
 )
 onMounted(() => {
   const platform = navigator.platform || navigator.userAgent
@@ -87,7 +86,8 @@ function onClick(event: MouseEvent) {
       @touchstart.passive="palette.preload()"
     >
       <UIcon name="i-lucide-search" class="ne-cmd-trigger__icon" aria-hidden="true" />
-      <span class="ne-cmd-trigger__text">{{ placeholder }}</span>{{ ' ' }}
+      <span class="ne-cmd-trigger__text">{{ placeholder }}</span
+      >{{ ' ' }}
       <kbd v-if="hint" class="ne-cmd-trigger__hint" aria-hidden="true">{{ hint }}</kbd>
     </button>
   </component>

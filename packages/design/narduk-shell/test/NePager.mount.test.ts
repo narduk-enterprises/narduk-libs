@@ -56,8 +56,19 @@ function render(props: Record<string, unknown> = {}, slots: Record<string, strin
 
 describe('NePager: the summary says what is on screen', () => {
   it('keeps an unread or pending collection distinct from a proven empty result', () => {
-    expect(render({ noun: 'runners', state: state({ items: [], total: null, pending: true }) }).get('[data-ne-pager-summary]').text()).toBe('Reading runners')
-    expect(render({ noun: 'runners', state: state({ items: [], total: null, error: new Error('unavailable') }) }).get('[data-ne-pager-summary]').text()).toBe('Could not read runners')
+    expect(
+      render({ noun: 'runners', state: state({ items: [], total: null, pending: true }) })
+        .get('[data-ne-pager-summary]')
+        .text(),
+    ).toBe('Reading runners')
+    expect(
+      render({
+        noun: 'runners',
+        state: state({ items: [], total: null, error: new Error('unavailable') }),
+      })
+        .get('[data-ne-pager-summary]')
+        .text(),
+    ).toBe('Could not read runners')
   })
   it('counts the window and the total when the route counted', () => {
     expect(render({ noun: 'runners' }).get('[data-ne-pager-summary]').text()).toBe(

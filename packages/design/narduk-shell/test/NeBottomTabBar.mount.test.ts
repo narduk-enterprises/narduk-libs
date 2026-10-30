@@ -10,6 +10,7 @@ import { h, nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import NeBottomTabBar from '../src/runtime/components/NeBottomTabBar.vue'
+import NeStickyActionBar from '../src/runtime/components/NeStickyActionBar.vue'
 import { resolveBottomTabs } from '../src/runtime/components/ne-bottom-tab-bar-types'
 
 import type { NeBottomTabItem } from '../src/runtime/components/ne-bottom-tab-bar-types'
@@ -35,6 +36,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   document.documentElement.style.removeProperty('--ne-bottom-bar-h')
+  document.documentElement.style.removeProperty('--ne-bottom-nav-h')
 })
 
 describe('resolveBottomTabs', () => {
@@ -67,6 +69,12 @@ describe('resolveBottomTabs', () => {
       'fallback',
     ])
     expect(resolveBottomTabs(items, '/settings')).toEqual(['none', 'none', 'none', 'none'])
+  })
+
+  it('compares fallback and item paths the same way, ignoring a query on `to`', () => {
+    expect(resolveBottomTabs(items, '/settings', '/more/')[3]).toBe('fallback')
+    expect(resolveBottomTabs([{ label: 'Map', to: '/map?layer=wind' }], '/map')).toEqual(['page'])
+    expect(resolveBottomTabs(items, '//')).toEqual(['page', 'none', 'none', 'none'])
   })
 
   it('does not treat a shared spelling as a prefix', () => {
@@ -135,5 +143,28 @@ describe('NeBottomTabBar', () => {
     expect(wrapper.find(PRIMARY_NAV).exists()).toBe(true)
     wrapper.unmount()
     expect(document.documentElement.style.getPropertyValue('--ne-bottom-bar-h')).toBe('0px')
+  })
+
+  it('adds its height to a sticky action bar and lifts that bar above itself', () => {
+    const heights = new Map<string, number>([
+      ['ne-bottom-tab-bar__bar', 56],
+      ['ne-sticky-action-bar__bar', 64],
+    ])
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return heights.get(this.className) ?? 0
+    })
+    const style = document.documentElement.style
+    const router = makeRouter()
+    const tabs = mount(NeBottomTabBar, { global: { plugins: [router] }, props: { items } })
+    const sticky = mount(NeStickyActionBar, { slots: { default: () => h('button', 'Buy') } })
+    expect(style.getPropertyValue('--ne-bottom-bar-h')).toBe('120px')
+    expect(style.getPropertyValue('--ne-bottom-nav-h')).toBe('56px')
+    sticky.unmount()
+    expect(style.getPropertyValue('--ne-bottom-bar-h')).toBe('56px')
+    tabs.unmount()
+    expect(style.getPropertyValue('--ne-bottom-bar-h')).toBe('')
+    expect(style.getPropertyValue('--ne-bottom-nav-h')).toBe('')
   })
 })

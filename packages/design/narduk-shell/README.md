@@ -717,7 +717,7 @@ composables (always available, even with `components: false`).
 | A tab can be linked, reloaded and shared                                             | `useRouteTab()`, `<NeTabs route-param>`                             |
 | A ticking figure changes colour and never width                                      | `<NePriceCell>`                                                     |
 | A phone's bottom CTA clears the home indicator and never covers the last row         | `<NeStickyActionBar>`, `.ne-safe-bottom`                            |
-| Phone tab bar: one lit tab, honest aria-current, clears the home indicator | `<NeBottomTabBar>` |
+| Phone tab bar: one lit tab, honest aria-current, clears the home indicator           | `<NeBottomTabBar>`                                                  |
 | Keyboard focus is always visible                                                     | the global `:focus-visible` ring (§ Focus ring)                     |
 | Inline edit: Enter or blur keeps, Escape cancels                                     | `useInlineEdit()`                                                   |
 | Keyboard shortcuts: Nuxt UI's `defineShortcuts`, plus "/" focuses search             | `useSlashFocus()`                                                   |
@@ -5489,9 +5489,9 @@ over a label. Put it once, in the layout. Six apps had hand-rolled one.
 - **One tab is lit.** An exact path match wins first. Otherwise the longest
   matching prefix wins, so `/stations/42` lights Stations and not `/`. If
   nothing matches, the optional `fallback` tab lights (typically "More").
-  `match` adds prefixes a tab owns. `exact` keeps a tab off its sub-paths.
-  Query strings and hashes are ignored. `resolveBottomTabs(items, path, fallback)`
-  is the same rule as a plain function, exported from the package root.
+  `match` adds prefixes a tab owns. `exact` keeps a tab off its sub-paths. Query
+  strings and hashes are ignored. `resolveBottomTabs(items, path, fallback)` is
+  the same rule as a plain function, exported from the package root.
 - **Honest `aria-current`.** The tab gets `page` on its own path and `true`
   anywhere inside its section. A fallback tab gets none: it is lit to show where
   you came from, not where you are.
@@ -5499,13 +5499,22 @@ over a label. Put it once, in the layout. Six apps had hand-rolled one.
   bottom padding includes `env(safe-area-inset-bottom)`, a spacer in the flow
   keeps the last row clear, and while mounted the bar publishes its height as
   `--ne-bottom-bar-h`, so focus and anchor jumps land above it.
+- **Works with `NeStickyActionBar`.** On a page that has both, the action bar
+  sits above the tab bar: the tab bar publishes `--ne-bottom-nav-h`, which the
+  action bar uses as its `bottom` offset. `--ne-bottom-bar-h` is then the two
+  heights added together.
 
 ```vue
 <script setup lang="ts">
 const tabs = [
   { label: 'Map', to: '/', icon: 'i-lucide-map' },
   { label: 'Stations', to: '/stations', icon: 'i-lucide-menu' },
-  { label: 'Library', to: '/library', icon: 'i-lucide-library', match: ['/playlists'] },
+  {
+    label: 'Library',
+    to: '/library',
+    icon: 'i-lucide-library',
+    match: ['/playlists'],
+  },
   { label: 'More', to: '/more', icon: 'i-lucide-ellipsis' },
 ]
 </script>
@@ -5516,12 +5525,12 @@ const tabs = [
 </template>
 ```
 
-| Prop        | Type                | Default    | What it does                                                                  |
-| ----------- | ------------------- | ---------- | ----------------------------------------------------------------------------- |
-| `items`     | `NeBottomTabItem[]` | required   | `{ label, to, icon?, match?, exact?, testid? }` per tab.                      |
-| `label`     | `string`            | `Primary`  | The `nav` landmark's accessible name.                                         |
-| `fallback`  | `string`            | —          | The `to` of the tab lit when no tab matches.                                  |
-| `path`      | `string`            | the router | The current path, to drive the bar without vue-router (tests, stories).       |
+| Prop        | Type                | Default    | What it does                                                                 |
+| ----------- | ------------------- | ---------- | ---------------------------------------------------------------------------- |
+| `items`     | `NeBottomTabItem[]` | required   | `{ label, to, icon?, match?, exact?, testid? }` per tab.                     |
+| `label`     | `string`            | `Primary`  | The `nav` landmark's accessible name.                                        |
+| `fallback`  | `string`            | —          | The `to` of the tab lit when no tab matches.                                 |
+| `path`      | `string`            | the router | The current path, to drive the bar without vue-router (tests, stories).      |
 | `phoneOnly` | `boolean`           | `true`     | Exists below `md` (48rem) only; on a wider screen bar and spacer are hidden. |
 
 Slot `#item="{ item, state }"` replaces a tab's icon and label; the link, its

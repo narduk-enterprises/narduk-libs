@@ -29,11 +29,15 @@ describe('NeCommandPalette default navigation (shell-src #8, shell-tests #8)', (
   async function pressEnterOn(to: string) {
     const wrapper = mount(NeCommandPalette, {
       attachTo: document.body,
-      props: { groups: [{ id: 'pages', label: 'Pages', items: [{ id: 'home', label: 'Home', to }] }], recentsKey: 'test:recents' },
+      props: {
+        groups: [{ id: 'pages', label: 'Pages', items: [{ id: 'home', label: 'Home', to }] }],
+        recentsKey: 'test:recents',
+      },
       global: { mocks: { $router: { push: vi.fn() } } },
     })
     useCommandPalette().open()
-    await nextTick(); await nextTick()
+    await nextTick()
+    await nextTick()
     await wrapper.get('[data-ne-command-input]').setValue('home')
     await flushPromises()
     await wrapper.get('[data-ne-command-input]').trigger('keydown', { key: 'Enter' })
@@ -71,7 +75,10 @@ describe('NeStatePanel unblocksHref (shell-src #10)', () => {
 
 describe('toCsv formula guard (shell-tests #4)', () => {
   it('neutralises a text cell that starts with a space then =', () => {
-    const text = toCsv<{ note: string }>([{ key: 'note', label: 'Note' }], [{ note: ' =HYPERLINK("x")' }])
+    const text = toCsv<{ note: string }>(
+      [{ key: 'note', label: 'Note' }],
+      [{ note: ' =HYPERLINK("x")' }],
+    )
     const cell = text.split('\r\n')[1]!
     expect(cell.replace(/^"/, '')).toMatch(/^'|^\s*'/)
   })
