@@ -94,7 +94,7 @@ export function applyNonDocumentSecurityHeaders(
 }
 
 export default defineNitroPlugin((nitro) => {
-  let resolved: { headers: unknown; mode: SecurityHeadersMode; } | undefined
+  let resolved: { headers: unknown; mode: SecurityHeadersMode } | undefined
   nitro.hooks.hook('beforeResponse', (event, response) => {
     // The preset is fixed at build time, so it is read once per isolate.
     if (!resolved) {
