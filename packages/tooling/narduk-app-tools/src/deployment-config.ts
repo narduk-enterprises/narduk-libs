@@ -4,8 +4,8 @@
  * design §2.1; Logan approved every recommended option on 2026-09-17,
  * company-hq#745).
  *
- * The standard in one line: **Cloudflare builds, GitHub promotes, production is
- * a promotion and never a push.** Everything an app has to say about that lives
+ * The standard in one line: **Builds upload versions, GitHub promotes, production
+ * is a promotion and never a push.** Everything an app has to say about that lives
  * in one object. `wrangler.json` keeps only what Wrangler itself reads; this
  * block keeps the estate's contract.
  *
@@ -48,7 +48,7 @@ export const DEPLOYMENT_STANDARD = 'narduk-v1'
 /** The only `promotion.mode` values narduk-v1 accepts. */
 export const PROMOTION_MODES = ['auto-on-green', 'manual-dispatch'] as const
 
-/** The only builder narduk-v1 supports: Cloudflare Workers Builds. */
+/** The existing default builder, retained for source-compatible app generation. */
 export const DEPLOYMENT_BUILDER = 'workers-builds'
 
 /** Both deploy commands, production and non-production. The whole standard
@@ -278,7 +278,7 @@ export const deploymentMigrationsSchema = z.strictObject({
 
 export const deploymentBlockSchema = z.strictObject({
   standard: z.literal(DEPLOYMENT_STANDARD),
-  builder: z.literal(DEPLOYMENT_BUILDER),
+  builder: z.enum([DEPLOYMENT_BUILDER, 'runner-upload']),
   /** The Cloudflare account every wrangler config in this repository must
    * declare, when it declares one at all (§2.2 tier 1). Optional: an app that
    * resolves the account from `CLOUDFLARE_ACCOUNT_ID` at deploy time has
