@@ -1,5 +1,52 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.34
+
+### Patch Changes
+
+- 8732e3e: Cut per-request and cold-isolate work on the request path
+  (riverstatus#669).
+
+  - narduk-logging: the `h3` `useLogger` builds one logger engine per distinct
+    set of options and binds each request's identity with `withContext`, instead
+    of creating a consola engine for every request. Records are unchanged. The
+    engine's `diagnostics` counters are now shared by the requests that use it,
+    and `close()` on a request logger now closes that shared engine for later
+    requests with the same options (nothing in this repo calls it).
+  - narduk-core: `resolveLoggingOptions` reads `LOG_LEVEL` alone instead of
+    copying every Worker binding on each call, and the scheduled-jobs default
+    logger is built once per isolate.
+  - narduk-core: a stored narduk-data artifact is hashed once when read, not a
+    second time after.
+  - narduk-core: `readBoundedBody` reads a body with a declared `content-length`
+    within the ceiling (and no `content-encoding`) in one call. The ceiling is
+    still checked on the bytes received.
+
+- 7b2807a: narduk-core: with the `security.headers` preset on, non-HTML
+  responses (API, sitemap, robots) now carry the preset's `Permissions-Policy`.
+  Under `enforce: true` they also get a nonce-free copy of the preset CSP.
+  nuxt-security sets both only on rendered documents, so these responses
+  previously served neither. HTML responses and headers that are already set
+  (route rules, handlers) are left untouched. The serialiser is exported from
+  `./server/non-document-security-headers`. After upgrading, delete the
+  app-local copies in riverstatus, borderwaitstat-us, lakestat-us and gonogo
+  (#1216).
+- bddb82f: narduk-core adds explicit-import helpers the fleet kept hand-rolling:
+
+  - `shared/utils/text`: `slugify`, `plural`, `pluralWord`, `ordinal`,
+    `initials` and `escapeRegExp`.
+  - `shared/utils/numbers`: `clamp` and `median`.
+  - `shared/utils/zoned-date`: `zonedDateParts` and `zonedDateKey`, which
+    compute local-day keys in a named zone.
+  - `app/media-query`: a hydration-safe `useMediaQuery`.
+  - `app/download`: `downloadFile`, which revokes the object URL on the next
+    task.
+
+  None of them is auto-imported, so existing app copies keep working.
+
+- Updated dependencies [f7ff5a0]
+  - @narduk-enterprises/narduk-app-tools@0.49.5
+
 ## 0.23.33
 
 ### Patch Changes
