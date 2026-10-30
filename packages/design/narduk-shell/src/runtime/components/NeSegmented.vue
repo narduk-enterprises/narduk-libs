@@ -191,7 +191,7 @@ watch(checkedIndex, async () => {
   padding: 0 0.875rem;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: calc(var(--ne-radius-control) - 0.125rem);
+  border-radius: var(--ne-radius-base);
   color: var(--ne-ink-muted);
   font: inherit;
   font-size: var(--ne-text-small);
