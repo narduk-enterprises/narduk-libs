@@ -231,6 +231,33 @@ describe('app-local command planning', () => {
     expect(fonts()).toEqual([])
   })
 
+  it('budgets the CSS Nuxt inlineStyles keeps in SSR style chunks', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-budget-'))
+    tempDirs.push(root)
+    mkdirSync(join(root, '.output', 'public'), { recursive: true })
+    const build = join(root, '.output', 'server', 'chunks', 'build')
+    mkdirSync(build, { recursive: true })
+    const chunk = join(build, 'entry-styles.CUxCUSuD.mjs')
+    // The shape Nuxt 4 emits: the asset URL helper is spliced into the string.
+    const write = (literal: string) =>
+      writeFileSync(
+        chunk,
+        `import{ad as a}from"../nitro/nitro.mjs";import"node:http";const r=[${literal}];export{r as default};`,
+      )
+    const css = () => runPerformanceBudgetCheck({ appDir: root, cssBudgetKb: 1 })
+    write('"@font-face{src:url("+a("/_fonts/face.woff2")+")}.row{color:red}"')
+    expect(css().violations).toEqual([])
+    expect(css().checked).toMatchObject({ cssFiles: 1, inlineCssChunks: 1 })
+    write(
+      JSON.stringify(
+        Array.from({ length: 400 }, (_, i) => `.r${i}{color:#${(i * 7919).toString(16)}}`).join(''),
+      ),
+    )
+    expect(css().violations.map((v) => [v.kind, v.metric, v.path])).toEqual([
+      ['css', 'gzip', '.output/server/chunks/build/entry-styles.CUxCUSuD.mjs'],
+    ])
+  })
+
   it('reads commented Wrangler JSONC and prefers it over legacy JSON', () => {
     const root = mkdtempSync(join(tmpdir(), 'narduk-app-jsonc-'))
     tempDirs.push(root)

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
+import { createContext, runInContext } from 'node:vm'
 import { gzipSync } from 'node:zlib'
 
 export type AssetKind = 'css' | 'font' | 'image'
@@ -42,7 +43,8 @@ export interface PerformanceBudgetReport {
     fontTotalBytes: number
     imageBytes: number
   }
-  checked: { cssFiles: number; fontFiles: number; imageFiles: number }
+  /** `cssFiles` counts built .css files plus `inlineCssChunks`. */
+  checked: { cssFiles: number; fontFiles: number; imageFiles: number; inlineCssChunks: number }
   violations: PerformanceBudgetViolation[]
   warnings: string[]
 }
@@ -77,6 +79,44 @@ function extension(path: string): string {
 
 function relativeAssetPath(appDir: string, path: string): string {
   return relative(appDir, path).replaceAll('\\', '/')
+}
+
+/**
+ * Nuxt's `features.inlineStyles` moves CSS into the HTML. The client build then
+ * emits no .css for it, and the SSR build keeps each inlined bundle as a
+ * `<name>-styles.<hash>.mjs` chunk whose default export is an array of CSS
+ * strings. The chunk imports the Nitro runtime, so it is never loaded: its
+ * imports are dropped and the rest is evaluated in an empty context, with
+ * every imported binding (the asset URL helper spliced into `url(...)`)
+ * stubbed as identity. The chunk is the app's own build output, already
+ * trusted to run in its Worker.
+ */
+const INLINE_STYLE_CHUNK_PATTERN = /-styles(?:-\d+)?(?:\.[\w-]+)?\.mjs$/u
+
+function inlineStyleCss(source: string): string {
+  const imported: string[] = []
+  let body = source.replaceAll(
+    /import\s*\{([^}]*)\}\s*from\s*(['"])[^'"]*\2\s*;?/gu,
+    (_match, names: string) => {
+      for (const spec of names.split(',')) {
+        const local = spec
+          .split(/\s+as\s+/u)
+          .pop()
+          ?.trim()
+        if (local) imported.push(local)
+      }
+      return ''
+    },
+  )
+  body = body.replaceAll(/import\s*(['"])[^'"]*\1\s*;?/gu, '')
+  const exported = /export\s*\{\s*([\w$]+)\s+as\s+default\s*\}\s*;?/u.exec(body)
+  const expression = exported
+    ? `${body.replace(exported[0], '')}\n;${exported[1]}`
+    : body.replace(/export\s+default\s+/u, ';(') + ')'
+  const context = createContext({})
+  for (const name of imported) context[name] = runInContext('(value) => value', context)
+  const value: unknown = runInContext(expression, context, { timeout: 1000 })
+  return Array.isArray(value) ? value.filter((css) => typeof css === 'string').join('') : ''
 }
 
 function cssOffenders(source: string): CssRuleOffender[] {
@@ -122,7 +162,14 @@ export function runPerformanceBudgetCheck(
     imageBytes: toBytes(normalized.imageBudgetKb),
   }
   const outputFiles = walkFiles(output)
-  const cssFiles = outputFiles.filter((path) => extension(path) === '.css')
+  const cssSources = outputFiles
+    .filter((path) => extension(path) === '.css')
+    .map((path) => ({ path, read: () => readFileSync(path, 'utf8') }))
+  const inlineChunks = walkFiles(join(normalized.appDir, '.output', 'server')).filter((path) =>
+    INLINE_STYLE_CHUNK_PATTERN.test(basename(path)),
+  )
+  for (const path of inlineChunks)
+    cssSources.push({ path, read: () => inlineStyleCss(readFileSync(path, 'utf8')) })
   const fontFiles = outputFiles.filter(
     (path) =>
       FONT_EXTENSIONS.has(extension(path)) &&
@@ -138,7 +185,7 @@ export function runPerformanceBudgetCheck(
   ]
   const warnings: string[] = []
   const violations: PerformanceBudgetViolation[] = []
-  if (cssFiles.length === 0) {
+  if (cssSources.length === 0) {
     violations.push({
       budgetBytes: 0,
       kind: 'css',
@@ -150,15 +197,16 @@ export function runPerformanceBudgetCheck(
   }
   if (fontFiles.length === 0)
     warnings.push(`No built font files found under ${relative(process.cwd(), output)}`)
-  for (const path of cssFiles) {
-    const sizeBytes = gzipSync(readFileSync(path, 'utf8')).byteLength
+  for (const { path, read } of cssSources) {
+    const css = read()
+    const sizeBytes = gzipSync(css).byteLength
     if (sizeBytes > budgets.cssBytes) {
       violations.push({
         budgetBytes: budgets.cssBytes,
         kind: 'css',
         message: `CSS bundle is ${label(sizeBytes)} gzip, budget is ${label(budgets.cssBytes)}.`,
         metric: 'gzip',
-        offenders: cssOffenders(readFileSync(path, 'utf8')),
+        offenders: cssOffenders(css),
         path: relativeAssetPath(normalized.appDir, path),
         sizeBytes,
       })
@@ -208,9 +256,10 @@ export function runPerformanceBudgetCheck(
     appDir: normalized.appDir,
     budgets,
     checked: {
-      cssFiles: cssFiles.length,
+      cssFiles: cssSources.length,
       fontFiles: fontFiles.length,
       imageFiles: imageFiles.length,
+      inlineCssChunks: inlineChunks.length,
     },
     violations,
     warnings,
@@ -259,7 +308,7 @@ export function parsePerformanceBudgetArgs(args: string[]): PerformanceBudgetOpt
 export function formatPerformanceBudgetReport(report: PerformanceBudgetReport): string {
   const lines = [
     `Performance budget report for ${relative(process.cwd(), report.appDir) || '.'}`,
-    `Checked ${report.checked.cssFiles} CSS, ${report.checked.fontFiles} font, ${report.checked.imageFiles} public image files.`,
+    `Checked ${report.checked.cssFiles} CSS${report.checked.inlineCssChunks ? ` (${report.checked.inlineCssChunks} inlined)` : ''}, ${report.checked.fontFiles} font, ${report.checked.imageFiles} public image files.`,
     ...report.warnings.map((warning) => `WARN ${warning}`),
   ]
   if (report.violations.length === 0)
