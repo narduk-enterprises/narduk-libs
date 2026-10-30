@@ -27,9 +27,10 @@ export interface ReadBoundedBodyOptions {
 }
 
 /**
- * Read `response`'s body, never holding more than `maxBytes` of it. A
- * single-chunk body is returned as-is, so the common small response never pays
- * for a merged copy.
+ * Read `response`'s body under `maxBytes`. A body with a trustworthy
+ * `content-length` is read in one call; any other is read chunk by chunk and
+ * never holds more than one chunk past the ceiling. A single-chunk body is
+ * returned as-is, so the common small response never pays for a merged copy.
  */
 export async function readBoundedBody(
   response: Response,
@@ -39,10 +40,27 @@ export async function readBoundedBody(
   const tooLarge = () =>
     options.tooLarge?.() ?? new BoundedBodyTooLargeError(maxBytes, options.label)
 
-  const declaredLength = Number(response.headers.get('content-length') ?? '')
+  // `Number('')` is 0, so a missing header is told apart from a declared zero.
+  const header = response.headers.get('content-length')
+  const declaredLength = header === null || header.trim() === '' ? Number.NaN : Number(header)
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
     await response.body?.cancel().catch(() => {})
     throw tooLarge()
+  }
+
+  // A body that declares a length within the ceiling, with no content-coding that
+  // would make the header disagree with the decoded bytes, is read in one go: the
+  // chunk loop below costs a promise per chunk plus a merge copy. The ceiling is
+  // still checked against the bytes received, so a header that understates the
+  // body is caught after the read instead of mid-stream (riverstatus#669).
+  if (
+    Number.isInteger(declaredLength) &&
+    declaredLength >= 0 &&
+    !response.headers.has('content-encoding')
+  ) {
+    const buffered = new Uint8Array(await response.arrayBuffer())
+    if (buffered.byteLength > maxBytes) throw tooLarge()
+    return buffered
   }
 
   const body = response.body

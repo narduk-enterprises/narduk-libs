@@ -175,8 +175,16 @@ export async function releaseScheduledJobLease(
     .run()
 }
 
+let isolateLogger: Logger | undefined
+
+/** Built once per isolate: every scheduled tick used to build a fresh logger engine. */
 function defaultLogger(): Logger {
-  return createLogger({ environment: 'unknown', runtime: 'worker', service: 'scheduled-jobs' })
+  isolateLogger ??= createLogger({
+    environment: 'unknown',
+    runtime: 'worker',
+    service: 'scheduled-jobs',
+  })
+  return isolateLogger
 }
 
 async function runOne<Env>(

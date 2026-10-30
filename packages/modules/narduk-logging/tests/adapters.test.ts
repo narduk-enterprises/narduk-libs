@@ -112,6 +112,24 @@ describe('Nitro request lifecycle', () => {
     expect(JSON.stringify(sink.records)).not.toContain('synthetic')
   })
 
+  it('builds one logger engine for equal options and keeps each request its own identity (riverstatus#669)', async () => {
+    const sink = createMemorySink()
+    const options = () => ({ service: 'once', environment: 'production', sinks: [sink] })
+    const first = event(undefined, 'first'),
+      second = event(undefined, 'second')
+    useLogger(first, options()).info('One')
+    // The engine is shared, so its diagnostics count both requests' records.
+    expect(useLogger(second, options()).diagnostics.emitted).toBe(1)
+    useLogger(second, options()).info('Two')
+    expect(useLogger(first, options()).diagnostics.emitted).toBe(2)
+    expect(sink.records.map((record) => record.requestId)).toEqual(['first', 'second'])
+    // A different level is a different logger, not a stale one.
+    const quiet = useLogger(event(), { ...options(), level: 'silent' })
+    expect(quiet.diagnostics.emitted).toBe(0)
+    quiet.error('Hidden')
+    expect(sink.records).toHaveLength(2)
+  })
+
   it('isolates overlapping requests and accepts safe caller correlation IDs', async () => {
     const { sink, nitro } = setup()
     const first = event(undefined, 'first'),

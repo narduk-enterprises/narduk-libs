@@ -75,6 +75,23 @@ describe('legacy logging compatibility', () => {
     expect(resolveLogLevel(event('info'))).toBe('info')
   })
 
+  it('reads only LOG_LEVEL from the Worker bindings, never every one of them', () => {
+    const enumerated = vi.fn()
+    const env = new Proxy(
+      { LOG_LEVEL: 'debug', DB: {} },
+      {
+        ownKeys(target) {
+          enumerated()
+          return Reflect.ownKeys(target)
+        },
+      },
+    )
+    const request = event()
+    request.context.cloudflare = { env }
+    expect(resolveLoggingOptions(request).level).toBe('debug')
+    expect(enumerated).not.toHaveBeenCalled()
+  })
+
   it('allows new apps to select info explicitly without changing old defaults', () => {
     const sink = createMemorySink()
     config.current = {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   BoundedBodyTooLargeError,
@@ -72,5 +72,33 @@ describe('readBoundedBody (narduk-libs#565)', () => {
     await expect(readBoundedJson(streamed(['{"a":', '1}']).response, 4)).rejects.toBeInstanceOf(
       BoundedBodyTooLargeError,
     )
+  })
+
+  describe('single read for a declared length (riverstatus#669)', () => {
+    it('reads a body with a declared length within the ceiling without a chunk loop', async () => {
+      const { response } = streamed(['ab', 'cd'], { 'content-length': '4' })
+      const arrayBuffer = vi.spyOn(response, 'arrayBuffer')
+      expect(new TextDecoder().decode(await readBoundedBody(response, 4))).toBe('abcd')
+      expect(arrayBuffer).toHaveBeenCalledTimes(1)
+    })
+
+    it('treats a declared length of zero as declared, not as missing', async () => {
+      const response = new Response(null, { headers: { 'content-length': '0' } })
+      expect((await readBoundedBody(response, 4)).byteLength).toBe(0)
+    })
+
+    it('still enforces the ceiling when the header understates the body', async () => {
+      const { response } = streamed(['abcdef'], { 'content-length': '2' })
+      await expect(readBoundedBody(response, 4)).rejects.toBeInstanceOf(BoundedBodyTooLargeError)
+    })
+
+    it('keeps the bounded chunk loop with no length or a content-coding', async () => {
+      for (const headers of [{}, { 'content-length': '4', 'content-encoding': 'gzip' }]) {
+        const { response } = streamed(['ab', 'cd'], headers)
+        const arrayBuffer = vi.spyOn(response, 'arrayBuffer')
+        expect(new TextDecoder().decode(await readBoundedBody(response, 4))).toBe('abcd')
+        expect(arrayBuffer).not.toHaveBeenCalled()
+      }
+    })
   })
 })

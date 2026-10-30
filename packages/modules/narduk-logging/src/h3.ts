@@ -130,21 +130,69 @@ export function requestRoute(event: H3Event): string {
   return typeof matched?.path === 'string' ? matched.path : '/[unmatched]'
 }
 
+const BASE_LOGGER_LIMIT = 8
+const baseLoggers: Array<{ options: LoggerOptions; logger: Logger }> = []
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value, index) => Object.is(value, b[index]))
+  }
+  return false
+}
+
+function sameOptions(a: LoggerOptions, b: LoggerOptions): boolean {
+  const left = a as unknown as Record<string, unknown>
+  const right = b as unknown as Record<string, unknown>
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+  for (const key of keys) {
+    if (key === 'context') continue
+    if (!sameValue(left[key], right[key])) return false
+  }
+  const first = a.context ?? {}
+  const second = b.context ?? {}
+  const names = new Set([...Object.keys(first), ...Object.keys(second)])
+  for (const name of names) {
+    if (
+      !sameValue(
+        (first as Record<string, unknown>)[name],
+        (second as Record<string, unknown>)[name],
+      )
+    )
+      return false
+  }
+  return true
+}
+
+/**
+ * One logger per distinct set of options, not per request: building one creates a consola
+ * engine and its reporter, which a request that logs nothing at the configured level paid for
+ * anyway (riverstatus#669). A request binds its own identity with `withContext`, so records
+ * are unchanged. Options compare by value (arrays element-wise), because the Nitro bridges
+ * rebuild an equal options object for every request. The list is capped so a caller that
+ * varies its options cannot grow it without bound.
+ */
+function baseLogger(config: LoggerOptions): Logger {
+  const known = baseLoggers.find((entry) => sameOptions(entry.options, config))
+  if (known) return known.logger
+  const logger = createLogger(config)
+  // A snapshot: a caller that mutates its options later must not match a stale logger.
+  baseLoggers.push({ options: { ...config, context: { ...config.context } }, logger })
+  if (baseLoggers.length > BASE_LOGGER_LIMIT) baseLoggers.shift()
+  return logger
+}
+
 export function useLogger(event: H3Event, options?: LoggerOptions): Logger {
   const current = state(event)
   if (!current.logger) {
     const config = options ?? current.options
     if (!config)
       throw new TypeError('useLogger needs the logging Nitro plugin or explicit LoggerOptions')
-    current.logger = createLogger({
-      ...config,
-      context: {
-        ...config.context,
-        requestId: current.id,
-        method: event.method,
-        path: requestRoute(event),
-        source: 'server',
-      },
+    current.logger = baseLogger(config).withContext({
+      requestId: current.id,
+      method: event.method,
+      path: requestRoute(event),
+      source: 'server',
     })
   }
   return current.logger
