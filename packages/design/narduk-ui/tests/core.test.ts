@@ -107,9 +107,9 @@ describe("classifySignalByAge", () => {
   it("tolerates small clock skew and voids anything further ahead", () => {
     expect(classifySignalByAge(minutesAgo(-4), lake, now)).toBe("live");
     expect(classifySignalByAge(minutesAgo(-6), lake, now)).toBe("void");
-    expect(
-      classifySignalByAge(minutesAgo(-30), { ...lake, futureToleranceMinutes: 60 }, now),
-    ).toBe("live");
+    expect(classifySignalByAge(minutesAgo(-30), { ...lake, futureToleranceMinutes: 60 }, now)).toBe(
+      "live",
+    );
   });
 
   it("never reads an undateable observation or bad limits as live", () => {
@@ -118,6 +118,14 @@ describe("classifySignalByAge", () => {
     expect(classifySignalByAge(Number.NaN, lake, now)).toBe("void");
     expect(classifySignalByAge(minutesAgo(1), { live: 0, aging: 10 }, now)).toBe("void");
     expect(classifySignalByAge(minutesAgo(1), { live: 10, aging: 5 }, now)).toBe("void");
+    expect(classifySignalByAge(minutesAgo(1), { ...lake, stale: 100 }, now)).toBe("void");
+    expect(classifySignalByAge(minutesAgo(1), { ...lake, stale: Number.NaN }, now)).toBe("void");
+    expect(
+      classifySignalByAge(minutesAgo(-600), { ...lake, futureToleranceMinutes: Number.NaN }, now),
+    ).toBe("void");
+    expect(classifySignalByAge(minutesAgo(1), { ...lake, futureToleranceMinutes: -1 }, now)).toBe(
+      "void",
+    );
   });
 });
 

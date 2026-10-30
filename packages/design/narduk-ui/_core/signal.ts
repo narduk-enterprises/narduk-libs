@@ -122,7 +122,10 @@ export function formatAge(
 /**
  * Absolute age limits for {@link classifySignalByAge}, in minutes. Each is an
  * exclusive upper bound: an observation is Live while its age is *under*
- * `live`, Aging while under `aging`, and Stale after that. With `stale` set,
+ * `live`, Aging while under `aging`, and Stale after that. This differs from
+ * {@link classifySignal}, whose interval bound is inclusive; a product whose
+ * rule reads "90 minutes or less" passes `live: 90` and accepts that exactly
+ * 90:00 is Aging, or rounds ages to whole minutes and passes 91. With `stale` set,
  * an observation at or past it reads "void" — too old to vouch for.
  */
 export interface SignalAgeLimits {
@@ -155,13 +158,16 @@ export function classifySignalByAge(
   now: Date | number,
 ): SignalState {
   if (observedAt == null) return "void";
+  const tolerance = limits.futureToleranceMinutes ?? 5;
   if (!(limits.live > 0) || !(limits.aging >= limits.live)) return "void";
+  if (limits.stale !== undefined && !(limits.stale >= limits.aging)) return "void";
+  if (!(Number.isFinite(tolerance) && tolerance >= 0)) return "void";
   const time = typeof observedAt === "number" ? observedAt : toDate(observedAt).getTime();
   const nowTime = typeof now === "number" ? now : now.getTime();
   if (!Number.isFinite(time) || !Number.isFinite(nowTime)) return "void";
 
   const age = (nowTime - time) / 60_000;
-  if (age < -(limits.futureToleranceMinutes ?? 5)) return "void";
+  if (age < -tolerance) return "void";
   if (age < limits.live) return "live";
   if (age < limits.aging) return "aging";
   if (limits.stale !== undefined && age >= limits.stale) return "void";
