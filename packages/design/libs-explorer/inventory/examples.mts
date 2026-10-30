@@ -166,6 +166,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'The phone bottom call to action: safe-area padding, and a spacer so it never covers the last row.',
   ),
   shell(
+    'NeBottomTabBar',
+    'Bottom tab bar',
+    'The phone tab bar: one lit tab (exact, longest prefix, fallback), honest aria-current, safe-area padding and a spacer.',
+  ),
+  shell(
     'NeTabs',
     'Tabs',
     'A tab strip with roving focus and the active tab kept in view; optionally kept in the URL as ?tab=.',

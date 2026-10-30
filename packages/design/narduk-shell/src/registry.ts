@@ -119,5 +119,6 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeRelativeTime', filePath: './runtime/components/NeRelativeTime.vue' },
   { name: 'NePriceCell', filePath: './runtime/components/NePriceCell.vue' },
   { name: 'NeStickyActionBar', filePath: './runtime/components/NeStickyActionBar.vue' },
+  { name: 'NeBottomTabBar', filePath: './runtime/components/NeBottomTabBar.vue' },
   { name: 'NeTabs', filePath: './runtime/components/NeTabs.vue' },
 ]

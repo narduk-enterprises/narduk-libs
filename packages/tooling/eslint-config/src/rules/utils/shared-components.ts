@@ -33,6 +33,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeAdminEditPage',
       'NeAdminListPage',
       'NeAppShell',
+      'NeBottomTabBar',
       'NeCard',
       'NeCardList',
       'NeCollectionTable',

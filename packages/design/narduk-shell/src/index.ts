@@ -437,6 +437,13 @@ export type {
 } from './runtime/components/ne-price-cell-types'
 export type { NeRelativeTimeProps } from './runtime/components/ne-relative-time-types'
 export type { NeStickyActionBarProps } from './runtime/components/ne-sticky-action-bar-types'
+/** NeBottomTabBar's shapes and its pure lit-tab rule (README § NeBottomTabBar). */
+export { resolveBottomTabs } from './runtime/components/ne-bottom-tab-bar-types'
+export type {
+  NeBottomTabBarProps,
+  NeBottomTabItem,
+  NeBottomTabState,
+} from './runtime/components/ne-bottom-tab-bar-types'
 export type { NeTabItem, NeTabsProps } from './runtime/components/ne-tabs-types'
 export type { NeRouteTab, NeRouteTabOptions } from './runtime/composables/use-route-tab'
 export type { NeTimeAgo, NeTimeAgoOptions } from './runtime/composables/use-time-ago'
