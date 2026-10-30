@@ -6,13 +6,24 @@
  * `false`) on the server *and* on the client's first render, and reads the
  * real query on mount. The first client render therefore matches the server
  * HTML, and the layout change arrives with the first effect rather than as a
- * hydration mismatch. Outside a component it reads the query immediately.
+ * hydration mismatch. Inside an effect scope with no component (a Pinia setup
+ * store) it starts on the next microtask, after hydration has begun, and stops
+ * with the scope. With neither, it reads the query immediately and listens for
+ * the page's lifetime.
  *
  * Import it explicitly from `@narduk-enterprises/narduk-core/app/media-query`.
  * It is not under `app/composables`, so it adds no auto-imported name.
  */
 
-import { getCurrentInstance, onBeforeUnmount, onMounted, readonly, shallowRef } from 'vue'
+import {
+  getCurrentInstance,
+  getCurrentScope,
+  onBeforeUnmount,
+  onMounted,
+  onScopeDispose,
+  readonly,
+  shallowRef,
+} from 'vue'
 
 import type { Ref } from 'vue'
 
@@ -32,16 +43,28 @@ export function useMediaQuery(
     matches.value = event.matches
   }
 
+  let stopped = false
+
   function start(): void {
+    if (stopped || media) return
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
     media = window.matchMedia(query)
     matches.value = media.matches
     media.addEventListener('change', onChange)
   }
 
+  function stop(): void {
+    stopped = true
+    media?.removeEventListener('change', onChange)
+    media = null
+  }
+
   if (getCurrentInstance()) {
     onMounted(start)
-    onBeforeUnmount(() => media?.removeEventListener('change', onChange))
+    onBeforeUnmount(stop)
+  } else if (getCurrentScope()) {
+    onScopeDispose(stop)
+    queueMicrotask(start)
   } else {
     start()
   }

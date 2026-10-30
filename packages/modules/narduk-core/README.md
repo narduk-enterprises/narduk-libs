@@ -3673,7 +3673,9 @@ until the app switches.
   argument. An unknown zone throws.
 - **`useMediaQuery`** returns `initial` (default `false`) on the server and on
   the first client render, then reads the query on mount. The phone layout
-  therefore arrives after hydration instead of causing a hydration mismatch.
+  therefore arrives after hydration instead of causing a hydration mismatch. In
+  a component-less effect scope, such as a Pinia setup store, it starts on the
+  next microtask and stops with the scope.
 - **`downloadFile`** waits one task before revoking its object URL, because some
   browsers cancel a download whose URL is revoked during the same task as the
   click. On the server it returns `false`.

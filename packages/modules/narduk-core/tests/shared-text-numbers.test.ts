@@ -17,6 +17,7 @@ describe('slugify', () => {
     expect(slugify('  Rêve -- Bleu!  ')).toBe('reve-bleu')
     expect(slugify('Salt & Pepper')).toBe('salt-and-pepper')
     expect(slugify('Ñandú 2026')).toBe('nandu-2026')
+    expect(slugify('Søren Straße Łódź')).toBe('soren-strasse-lodz')
   })
 
   it('returns an empty string when nothing usable is left', () => {

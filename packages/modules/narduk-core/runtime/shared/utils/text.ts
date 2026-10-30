@@ -23,8 +23,24 @@ export interface SlugifyOptions {
  * A slug is a suggestion, not a validated identifier: routes that accept one
  * still validate it against their own pattern.
  */
+// Letters NFKD does not decompose into a base letter plus a mark.
+const FOLDS: Readonly<Record<string, string>> = {
+  æ: 'ae',
+  ð: 'd',
+  đ: 'd',
+  ħ: 'h',
+  ı: 'i',
+  ł: 'l',
+  œ: 'oe',
+  ø: 'o',
+  ß: 'ss',
+  þ: 'th',
+}
+
 export function slugify(value: string, options: SlugifyOptions = {}): string {
   const slug = value
+    .toLowerCase()
+    .replaceAll(/[æðđħıłœøßþ]/gu, (letter) => FOLDS[letter] ?? letter)
     .normalize('NFKD')
     .replaceAll(/\p{M}/gu, '')
     .toLowerCase()
@@ -32,7 +48,7 @@ export function slugify(value: string, options: SlugifyOptions = {}): string {
     .replaceAll(/[^a-z0-9]+/gu, '-')
     .replaceAll(/^-+|-+$/gu, '')
   const max = options.maxLength
-  if (max === undefined || slug.length <= max) return slug
+  if (max === undefined || !Number.isFinite(max) || slug.length <= max) return slug
   return slug.slice(0, Math.max(0, max)).replace(/-+$/u, '')
 }
 

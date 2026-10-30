@@ -2,13 +2,17 @@
  * Save generated content as a file in the browser (seven apps hand-rolled
  * the object-URL-and-anchor dance; `NeCsvDownload` inlines it too).
  *
- * The object URL is revoked on the next task, not synchronously after
- * `click()`: some browsers start the download asynchronously and a URL
- * revoked in the same task can cancel it. On the server it does nothing and
+ * The object URL is revoked a few seconds later, not synchronously after
+ * `click()`: browsers start the download asynchronously, and some Safari and
+ * iOS builds cancel it when the URL is revoked too soon (FileSaver.js waits
+ * longer still for the same reason). On the server it does nothing and
  * returns `false`.
  *
  * Import it explicitly from `@narduk-enterprises/narduk-core/app/download`.
  */
+
+/** How long the object URL outlives the click. */
+export const REVOKE_DELAY_MS = 10_000
 
 export function downloadFile(
   filename: string,
@@ -28,7 +32,7 @@ export function downloadFile(
     anchor.click()
   } finally {
     anchor.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
+    setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS)
   }
   return true
 }
