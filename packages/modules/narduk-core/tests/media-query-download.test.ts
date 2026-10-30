@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSSRApp, defineComponent, effectScope, h, nextTick } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
-import { REVOKE_DELAY_MS, downloadFile } from '../runtime/app/download'
+import { downloadFile, REVOKE_DELAY_MS } from '../runtime/app/download'
 import { useMediaQuery } from '../runtime/app/media-query'
 
 type Listener = (event: MediaQueryListEvent) => void
