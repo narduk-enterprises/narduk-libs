@@ -116,6 +116,7 @@
     "runtime/server/utils/password.ts",
     "runtime/server/plugins/00-runtime-public.ts",
     "runtime/server/plugins/default-private-cache.ts",
+    "runtime/server/plugins/non-document-security-headers.ts",
     "runtime/server/plugins/error-cache.ts",
     "runtime/server/plugins/error-logger.ts",
     "runtime/server/plugins/html-cache.ts",
