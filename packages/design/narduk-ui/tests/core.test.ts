@@ -9,7 +9,13 @@ import {
   formatValue,
   positionPercent,
 } from "../_core/measure";
-import { ageMinutes, classifySignal, formatAge } from "../_core/signal";
+import {
+  ageMinutes,
+  classifySignal,
+  classifySignalByAge,
+  formatAge,
+  worstSignal,
+} from "../_core/signal";
 
 describe("measurement contracts", () => {
   it("renders missing values explicitly and formats present values", () => {
@@ -66,5 +72,64 @@ describe("signal contracts", () => {
     expect(formatAge("2026-07-30T11:56:00Z", now)).toBe("4 min");
     expect(formatAge("2026-07-30T09:00:00Z", now)).toBe("3 h");
     expect(formatAge(null, now)).toBe(MISSING);
+  });
+});
+
+describe("classifySignalByAge", () => {
+  const now = Date.parse("2026-07-30T12:00:00Z");
+  const minutesAgo = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
+  // lakestat-us: Live under 6 h, Stale at 48 h.
+  const lake = { live: 360, aging: 2880 };
+
+  it("treats each limit as an exclusive upper bound", () => {
+    expect(classifySignalByAge(minutesAgo(359), lake, now)).toBe("live");
+    expect(classifySignalByAge(minutesAgo(360), lake, now)).toBe("aging");
+    expect(classifySignalByAge(minutesAgo(2879), lake, now)).toBe("aging");
+    expect(classifySignalByAge(minutesAgo(2880), lake, now)).toBe("stale");
+  });
+
+  it("reads past the stale ceiling as void", () => {
+    // buoys: live 90, aging 360, no data past 24 h.
+    const buoy = { live: 91, aging: 361, stale: 1441 };
+    expect(classifySignalByAge(minutesAgo(1440), buoy, now)).toBe("stale");
+    expect(classifySignalByAge(minutesAgo(1441), buoy, now)).toBe("void");
+  });
+
+  it("accepts epoch milliseconds and Date for both arguments", () => {
+    expect(classifySignalByAge(now - 60_000, lake, new Date(now))).toBe("live");
+    expect(classifySignalByAge(new Date(now - 60_000), lake, now)).toBe("live");
+  });
+
+  it("reads a zone-less date-time as UTC, not local time", () => {
+    expect(classifySignalByAge("2026-07-30T11:59:00", { live: 2, aging: 10 }, now)).toBe("live");
+  });
+
+  it("tolerates small clock skew and voids anything further ahead", () => {
+    expect(classifySignalByAge(minutesAgo(-4), lake, now)).toBe("live");
+    expect(classifySignalByAge(minutesAgo(-6), lake, now)).toBe("void");
+    expect(
+      classifySignalByAge(minutesAgo(-30), { ...lake, futureToleranceMinutes: 60 }, now),
+    ).toBe("live");
+  });
+
+  it("never reads an undateable observation or bad limits as live", () => {
+    expect(classifySignalByAge(null, lake, now)).toBe("void");
+    expect(classifySignalByAge("not a date", lake, now)).toBe("void");
+    expect(classifySignalByAge(Number.NaN, lake, now)).toBe("void");
+    expect(classifySignalByAge(minutesAgo(1), { live: 0, aging: 10 }, now)).toBe("void");
+    expect(classifySignalByAge(minutesAgo(1), { live: 10, aging: 5 }, now)).toBe("void");
+  });
+});
+
+describe("worstSignal", () => {
+  it("picks the most severe dated state", () => {
+    expect(worstSignal(["live", "stale", "aging"])).toBe("stale");
+    expect(worstSignal(["live", "aging"])).toBe("aging");
+  });
+
+  it("ignores void beside a dated state and is void only when nothing is dated", () => {
+    expect(worstSignal(["void", "live"])).toBe("live");
+    expect(worstSignal(["void", "void"])).toBe("void");
+    expect(worstSignal([])).toBe("void");
   });
 });
