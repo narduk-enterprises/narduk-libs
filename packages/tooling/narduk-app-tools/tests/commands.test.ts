@@ -231,6 +231,58 @@ describe('app-local command planning', () => {
     expect(fonts()).toEqual([])
   })
 
+  it('budgets the CSS Nuxt inlineStyles keeps in SSR style chunks', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-budget-'))
+    tempDirs.push(root)
+    mkdirSync(join(root, '.output', 'public'), { recursive: true })
+    const build = join(root, '.output', 'server', 'chunks', 'build')
+    mkdirSync(build, { recursive: true })
+    const chunk = join(build, 'entry-styles.CUxCUSuD.mjs')
+    // The shape Nuxt 4 emits: the asset URL helper is spliced into the string.
+    const write = (literal: string) =>
+      writeFileSync(
+        chunk,
+        `import{ad as a}from"../nitro/nitro.mjs";import"node:http";const r=[${literal}];export{r as default};`,
+      )
+    const css = () => runPerformanceBudgetCheck({ appDir: root, cssBudgetKb: 1 })
+    write('"@font-face{src:url("+a("/_fonts/face.woff2")+")}.row{color:red}"')
+    expect(css().violations).toEqual([])
+    expect(css().checked).toMatchObject({ cssFiles: 1, inlineCssChunks: 1 })
+    write(
+      JSON.stringify(
+        Array.from({ length: 400 }, (_, i) => `.r${i}{color:#${(i * 7919).toString(16)}}`).join(''),
+      ),
+    )
+    expect(css().violations.map((v) => [v.kind, v.metric, v.path])).toEqual([
+      ['css', 'gzip', '.output/server/chunks/build/entry-styles.CUxCUSuD.mjs'],
+    ])
+  })
+
+  it('parses inline-style chunk shapes and fails a chunk it cannot read', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-budget-'))
+    tempDirs.push(root)
+    mkdirSync(join(root, '.output', 'public'), { recursive: true })
+    const build = join(root, '.output', 'server', 'chunks', 'build')
+    mkdirSync(build, { recursive: true })
+    const check = () => runPerformanceBudgetCheck({ appDir: root, cssBudgetKb: 1 })
+    expect(check().violations.map((v) => v.metric)).toEqual(['missing'])
+    // A Nitro route named like a style chunk is not one.
+    writeFileSync(join(build, 'site-styles.get.mjs'), 'export default 1')
+    expect(check().checked.inlineCssChunks).toBe(0)
+    writeFileSync(
+      join(build, 'entry-styles-1.Ab-9xY_z.mjs'),
+      `export default['@import"x.css";a{b:c}',"d{content:'\\u00e9'}"]`,
+    )
+    expect(check()).toMatchObject({ checked: { inlineCssChunks: 1 }, violations: [] })
+    writeFileSync(join(build, 'page-styles.12345678.mjs'), 'const r=[x];export{r as default};')
+    expect(check().violations.map((v) => [v.metric, v.path])).toEqual([
+      ['unreadable', '.output/server/chunks/build/page-styles.12345678.mjs'],
+    ])
+    // Client CSS present: Nuxt's default component inlining is not read twice.
+    writeFileSync(join(root, '.output', 'public', 'app.css'), 'a{}')
+    expect(check()).toMatchObject({ checked: { cssFiles: 1, inlineCssChunks: 0 }, violations: [] })
+  })
+
   it('reads commented Wrangler JSONC and prefers it over legacy JSON', () => {
     const root = mkdtempSync(join(tmpdir(), 'narduk-app-jsonc-'))
     tempDirs.push(root)
