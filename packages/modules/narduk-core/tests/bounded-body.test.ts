@@ -93,7 +93,10 @@ describe('readBoundedBody (narduk-libs#565)', () => {
     })
 
     it('keeps the bounded chunk loop with no length or a content-coding', async () => {
-      for (const headers of [{}, { 'content-length': '4', 'content-encoding': 'gzip' }]) {
+      for (const headers of [
+        {} as Record<string, string>,
+        { 'content-length': '4', 'content-encoding': 'gzip' },
+      ]) {
         const { response } = streamed(['ab', 'cd'], headers)
         const arrayBuffer = vi.spyOn(response, 'arrayBuffer')
         expect(new TextDecoder().decode(await readBoundedBody(response, 4))).toBe('abcd')
