@@ -5539,8 +5539,8 @@ Slot `#item="{ item, state }"` replaces a tab's icon and label; the link, its
 
 ### NeSegmented
 
-One choice among a few: a range (1D / 1W / 1M), a unit, a map layer, 2D / 3D.
-It is a filter or a setting, not navigation; for navigation use `NeTabs` or
+One choice among a few: a range (1D / 1W / 1M), a unit, a map layer, 2D / 3D. It
+is a filter or a setting, not navigation; for navigation use `NeTabs` or
 `NeBottomTabBar`. Five apps had hand-rolled one.
 
 - **A radiogroup.** `role="radiogroup"`, named by `labelledby` (preferred) or
@@ -5558,7 +5558,12 @@ const range = ref<'1d' | '1w' | '1m' | null>('1w')
 const ranges = [
   { value: '1d', label: '1D' },
   { value: '1w', label: '1W' },
-  { value: '1m', label: '1M', disabled: true, disabledReason: 'Not enough history' },
+  {
+    value: '1m',
+    label: '1M',
+    disabled: true,
+    disabledReason: 'Not enough history',
+  },
 ] as const
 </script>
 
@@ -5567,18 +5572,21 @@ const ranges = [
 </template>
 ```
 
-| Prop         | Type                          | Default | What it does                                                                     |
-| ------------ | ----------------------------- | ------- | -------------------------------------------------------------------------------- |
-| `modelValue` | `T \| null`                   | —       | The chosen value; `null` lights no segment.                                      |
-| `options`    | `NeSegmentOption<T>[]`        | —       | `{ value, label, count?, disabled?, disabledReason? }`.                          |
-| `label`      | `string`                      | —       | Accessible name when no visible heading names the group.                         |
-| `labelledby` | `string`                      | —       | Id of the visible heading that names the group.                                  |
-| `variant`    | `'track' \| 'chips'`          | `track` | Joined tray with the choice raised, or separate pills with the choice in ink.    |
-| `layout`     | `'fill' \| 'scroll' \| 'wrap'` | `fill`  | Share the width, keep size and scroll sideways, or wrap onto more rows.          |
-| `mono`       | `boolean`                     | `false` | Tabular mono, for figures such as speeds or years.                               |
+| Prop         | Type                           | Default | What it does                                                                  |
+| ------------ | ------------------------------ | ------- | ----------------------------------------------------------------------------- |
+| `modelValue` | `T \| null`                    | —       | The chosen value; `null` lights no segment.                                   |
+| `options`    | `NeSegmentOption<T>[]`         | —       | `{ value, label, count?, disabled?, disabledReason? }`.                       |
+| `label`      | `string`                       | —       | Accessible name when no visible heading names the group.                      |
+| `labelledby` | `string`                       | —       | Id of the visible heading that names the group.                               |
+| `variant`    | `'track' \| 'chips'`           | `track` | Joined tray with the choice raised, or separate pills with the choice in ink. |
+| `layout`     | `'fill' \| 'scroll' \| 'wrap'` | `fill`  | Share the width, keep size and scroll sideways, or wrap onto more rows.       |
+| `mono`       | `boolean`                      | `false` | Tabular mono, for figures such as speeds or years.                            |
 
 Event `update:modelValue`. Slot `#option="{ option, checked }"` replaces a
-segment's label and count.
+segment's label and count. The control is controlled: `aria-checked` follows
+`modelValue`, so if the parent does not apply an emitted value, the old segment
+stays checked. In the `scroll` layout, the chosen segment is scrolled into the
+strip's view.
 
 ### NeTabs / useRouteTab()
 

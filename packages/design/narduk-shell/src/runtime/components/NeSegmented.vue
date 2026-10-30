@@ -16,9 +16,12 @@
  * - **Tap targets.** 2.75rem tall below `md` or under a coarse pointer, 2.25rem
  *   under a desktop pointer. Choosing never moves a segment.
  *
+ * It is controlled: `aria-checked` follows `modelValue`, so a parent that does
+ * not apply the emitted value keeps the old segment checked.
+ *
  * Styling contract: tokens only.
  */
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import type { NeSegmentedProps, NeSegmentOption, NeSegmentValue } from './ne-segmented-types'
 
@@ -37,7 +40,12 @@ defineSlots<{
   option?(props: { checked: boolean; option: NeSegmentOption<T> }): unknown
 }>()
 
-const buttons = ref<HTMLButtonElement[]>([])
+const group = ref<HTMLElement | null>(null)
+
+/** The segment buttons in DOM order (a v-for ref array is not kept in order). */
+function segmentAt(index: number): HTMLElement | undefined {
+  return group.value?.querySelectorAll<HTMLElement>('[role="radio"]')[index]
+}
 
 const checkedIndex = computed(() =>
   props.options.findIndex((option) => option.value === props.modelValue),
@@ -82,18 +90,36 @@ function targetFor(key: string, from: number): number | null {
 }
 
 function onKeydown(event: KeyboardEvent, index: number) {
+  // Alt/Cmd/Ctrl + arrow belong to the browser (back, forward, word jumps).
+  if (event.altKey || event.metaKey || event.ctrlKey) return
   const target = targetFor(event.key, index)
   if (target === null) return
   event.preventDefault()
   const option = props.options[target]
   if (target === -1 || !option) return
   choose(option)
-  void nextTick(() => buttons.value[target]?.focus())
+  void nextTick(() => segmentAt(target)?.focus())
 }
+
+/** In the `scroll` layout, bring the chosen segment into the strip's view (only the strip scrolls). */
+function revealChecked() {
+  const strip = group.value
+  const segment = segmentAt(checkedIndex.value)
+  if (props.layout !== 'scroll' || !strip || !segment) return
+  if (strip.scrollWidth <= strip.clientWidth) return
+  strip.scrollLeft = segment.offsetLeft - (strip.clientWidth - segment.offsetWidth) / 2
+}
+
+onMounted(revealChecked)
+watch(checkedIndex, async () => {
+  await nextTick()
+  revealChecked()
+})
 </script>
 
 <template>
   <div
+    ref="group"
     class="ne-segmented"
     role="radiogroup"
     :aria-label="labelledby ? undefined : label"
@@ -105,7 +131,6 @@ function onKeydown(event: KeyboardEvent, index: number) {
     <button
       v-for="(segment, index) in segments"
       :key="String(segment.option.value)"
-      ref="buttons"
       type="button"
       role="radio"
       class="ne-segmented__segment"
@@ -149,6 +174,8 @@ function onKeydown(event: KeyboardEvent, index: number) {
 }
 
 .ne-segmented[data-layout='scroll'] {
+  /* Room for the focus ring, which overflow would otherwise clip. */
+  padding: 0.25rem;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;

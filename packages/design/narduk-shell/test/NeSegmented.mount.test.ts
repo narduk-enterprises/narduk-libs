@@ -88,6 +88,28 @@ describe('NeSegmented', () => {
     wrapper.unmount()
   })
 
+  it('focuses the chosen segment after the options are reordered', async () => {
+    const wrapper = render('1w')
+    await wrapper.setProps({ options: [options[3]!, options[0]!, options[1]!, options[2]!] })
+    // 1Y, 1D, 1W, 1M: ArrowRight from 1W skips the disabled 1M and wraps to 1Y.
+    await radios(wrapper)[2]?.trigger('keydown', { key: 'ArrowRight' })
+    await nextTick()
+    expect(emitted(wrapper)).toEqual(['1y'])
+    expect(document.activeElement?.textContent).toContain('1Y')
+    wrapper.unmount()
+  })
+
+  it('leaves modified arrows to the browser and does nothing when all are disabled', async () => {
+    const wrapper = render('1w')
+    await radios(wrapper)[1]?.trigger('keydown', { key: 'ArrowLeft', altKey: true })
+    expect(emitted(wrapper)).toEqual([])
+    await wrapper.setProps({ options: options.map((option) => ({ ...option, disabled: true })) })
+    await radios(wrapper)[1]?.trigger('keydown', { key: 'ArrowRight' })
+    expect(emitted(wrapper)).toEqual([])
+    expect(radios(wrapper).every((radio) => radio.attributes('tabindex') === '-1')).toBe(true)
+    wrapper.unmount()
+  })
+
   it('jumps with Home and End to the first and last enabled segments', async () => {
     const wrapper = render('1w')
     await radios(wrapper)[1]?.trigger('keydown', { key: 'End' })
