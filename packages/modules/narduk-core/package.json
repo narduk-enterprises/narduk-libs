@@ -29,6 +29,12 @@
     "./app/share": {
       "import": "./runtime/app/share.ts"
     },
+    "./app/media-query": {
+      "import": "./runtime/app/media-query.ts"
+    },
+    "./app/download": {
+      "import": "./runtime/app/download.ts"
+    },
     "./app/composables/*": {
       "import": "./runtime/app/composables/*.ts"
     },
