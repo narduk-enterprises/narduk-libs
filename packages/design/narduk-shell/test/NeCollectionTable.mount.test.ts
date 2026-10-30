@@ -477,7 +477,10 @@ describe('NeCollectionTable: phone', () => {
     const cells = (props: Record<string, unknown>) =>
       render({ caption: 'R', columns, rows: repos, ...props })
         .findAll('td[data-ne-column]')
-        .map((cell) => `${cell.attributes('data-ne-column')}:${cell.text()}:${cell.classes().join(' ')}`)
+        .map(
+          (cell) =>
+            `${cell.attributes('data-ne-column')}:${cell.text()}:${cell.classes().join(' ')}`,
+        )
     expect(cells({ cardDensity: 'compact' })).toEqual(cells({}))
   })
 
@@ -631,7 +634,17 @@ describe('NeCollectionTable: phone', () => {
 
 describe('NeCollectionTable: remote pages', () => {
   it('keeps server order and page rows even when search, sort and a local fold are supplied', async () => {
-    const wrapper = render({ caption: 'Repositories', columns, rows: repos, remote: true, query: 'outside this page', sort: 'name:asc', limit: 1, total: 105, toolbar: 'always' })
+    const wrapper = render({
+      caption: 'Repositories',
+      columns,
+      rows: repos,
+      remote: true,
+      query: 'outside this page',
+      sort: 'name:asc',
+      limit: 1,
+      total: 105,
+      toolbar: 'always',
+    })
     expect(rowNames(wrapper)).toEqual(repos.map((row) => row.name))
     expect(wrapper.text()).toContain('105 rows')
     expect(wrapper.text()).not.toContain('Show all')

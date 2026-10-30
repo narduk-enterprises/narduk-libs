@@ -37,7 +37,9 @@ describe('NeMessageProse server rendering', () => {
     const html = await render({
       text: '[a](https://ok.test) [b](http://no.test) [c](javascript:alert(1)) [d](#e) <script>alert(1)</script>',
     })
-    expect(html).toMatch(/<a[^>]*href="https:\/\/ok.test"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/)
+    expect(html).toMatch(
+      /<a[^>]*href="https:\/\/ok.test"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/,
+    )
     expect(html.match(/<a /g)).toHaveLength(1)
     expect(html).not.toContain('javascript:')
     expect(html).not.toContain('<script')

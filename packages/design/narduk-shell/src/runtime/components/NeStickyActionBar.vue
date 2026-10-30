@@ -45,7 +45,7 @@ const bar = ref<HTMLElement | null>(null)
 const height = ref<number | null>(null)
 
 let observer: ResizeObserver | undefined
-const entry = { px: 0 }
+const entry = { kind: 'action' as const, px: 0 }
 
 function publish(px: number) {
   height.value = px
@@ -91,7 +91,8 @@ onBeforeUnmount(() => {
 .ne-sticky-action-bar__bar {
   position: fixed;
   inset-inline: 0;
-  bottom: 0;
+  /* Above a NeBottomTabBar when the layout has one. */
+  bottom: var(--ne-bottom-nav-h, 0px);
   z-index: 30;
   display: flex;
   align-items: center;

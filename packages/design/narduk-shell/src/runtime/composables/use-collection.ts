@@ -514,7 +514,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   if (options.immediate !== false) schedule()
 
   function bindRouteQuery(): void {
-    const keyOf = (key: string) => `${options.queryPrefix ?? ""}${key}`
+    const keyOf = (key: string) => `${options.queryPrefix ?? ''}${key}`
     const route: RouteLocationNormalizedLoaded | undefined = useRoute()
     const router = useRouter()
     if (!route || !router) {

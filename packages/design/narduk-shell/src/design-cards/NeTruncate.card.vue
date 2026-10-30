@@ -19,7 +19,9 @@ const url =
     data-group="Shell"
   >
     <h2>Truncate</h2>
-    <p>The head shrinks, the tail stays whole; the full value is the tooltip and click expands it.</p>
+    <p>
+      The head shrinks, the tail stays whole; the full value is the tooltip and click expands it.
+    </p>
     <div class="preview-col" style="width: 16rem">
       <NeTruncate :text="url" kind="url" />
       <NeTruncate text="/var/lib/narduk/releases/2026-10-14/build-output.tar.gz" kind="path" />

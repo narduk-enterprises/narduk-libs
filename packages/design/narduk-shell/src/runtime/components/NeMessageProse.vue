@@ -113,7 +113,11 @@ function renderRun(run: NeProseInline): VNodeChild {
       // Checked again here, as NeProse does: `runs` could be built by hand one day.
       const href = safeProseHref(run.href)
       if (href === null || !isMessageHref(href)) return renderRuns(run.children)
-      return h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, renderRuns(run.children))
+      return h(
+        'a',
+        { href, target: '_blank', rel: 'noopener noreferrer' },
+        renderRuns(run.children),
+      )
     }
   }
 }

@@ -25,7 +25,8 @@ const rows = [
     <h2>Sort header</h2>
     <p>
       First click picks the useful way (readings strongest first, names A–Z); the second flips it.
-      The idle up-down glyph, the arrow, <code>aria-sort</code> and the column tint say which column sorts.
+      The idle up-down glyph, the arrow, <code>aria-sort</code> and the column tint say which column
+      sorts.
     </p>
     <div v-for="row in rows" :key="row.note" class="preview-row">
       <table>

@@ -30,7 +30,17 @@
  * Styling contract: tokens only.
  */
 import UIcon from '@nuxt/ui/components/Icon.vue'
-import { computed, nextTick, onBeforeUpdate, onMounted, ref, toRefs, toValue, useId, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUpdate,
+  onMounted,
+  ref,
+  toRefs,
+  toValue,
+  useId,
+  watch,
+} from 'vue'
 
 import { useReducedMotion } from '../composables/use-reduced-motion'
 import { useRouteTab } from '../composables/use-route-tab'

@@ -312,7 +312,9 @@ export function instantOf(value: NeDateInput): number | undefined {
         ? value
         : Date.parse(ZONELESS_DATE_TIME.test(value) ? `${value.replace(' ', 'T')}Z` : value)
   // `Date` itself refuses anything beyond +-8.64e15 ms (`toISOString` throws).
-  return Number.isFinite(milliseconds) && Math.abs(milliseconds) <= 8.64e15 ? milliseconds : undefined
+  return Number.isFinite(milliseconds) && Math.abs(milliseconds) <= 8.64e15
+    ? milliseconds
+    : undefined
 }
 
 /**
@@ -839,7 +841,10 @@ export function splitTruncate(text: string, options: NeTruncateSplitOptions = {}
     const pathEnd = chars.findIndex((char) => char === '?' || char === '#')
     const limit = pathEnd === -1 ? chars.length : pathEnd
     const schemeEnd = text.indexOf('://')
-    const hostEnd = chars.indexOf('/', schemeEnd === -1 ? 0 : Array.from(text.slice(0, schemeEnd)).length + 3)
+    const hostEnd = chars.indexOf(
+      '/',
+      schemeEnd === -1 ? 0 : Array.from(text.slice(0, schemeEnd)).length + 3,
+    )
     const slash = chars.lastIndexOf('/', limit - 1)
     if (hostEnd !== -1 && slash >= hostEnd) {
       const segment = chars.length - slash

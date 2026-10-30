@@ -334,7 +334,7 @@ describe('NeStatePanel: gaps, the unblocker, and the action slot', () => {
  */
 
 describe('NeStatePanel: loading with the real USkeleton', () => {
-  it('keeps the skeletons\' own alert roles out of the accessibility tree', () => {
+  it("keeps the skeletons' own alert roles out of the accessibility tree", () => {
     const wrapper = mount(NeStatePanel, {
       global: { components: { ...nuxtUiStubs, USkeleton: nuxtUiGlobals.USkeleton! } },
       props: { state: 'loading' },

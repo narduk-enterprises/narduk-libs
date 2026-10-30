@@ -29,9 +29,11 @@ describe('NeTruncate', () => {
     expect(mount(NeTruncate, { props: { text } }).get('.ne-truncate__tail').text()).toBe(
       text.slice(-14),
     )
-    expect(mount(NeTruncate, { props: { text, tail: 5 } }).get('.ne-truncate__tail').text()).toBe(
-      '56789',
-    )
+    expect(
+      mount(NeTruncate, { props: { text, tail: 5 } })
+        .get('.ne-truncate__tail')
+        .text(),
+    ).toBe('56789')
   })
 
   it('mode="end" renders no tail', () => {

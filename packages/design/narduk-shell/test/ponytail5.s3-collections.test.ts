@@ -5,7 +5,10 @@ import { effectScope, nextTick, ref } from 'vue'
 import { useCollection } from '../src/runtime/composables/use-collection'
 import { useCursorCollection } from '../src/runtime/composables/use-cursor-collection'
 
-import type { CursorListResponse, OffsetListResponse } from '@narduk-enterprises/narduk-platform/list-query'
+import type {
+  CursorListResponse,
+  OffsetListResponse,
+} from '@narduk-enterprises/narduk-platform/list-query'
 
 const page = (id: number, nextCursor: string | null): CursorListResponse<{ id: number }> => ({
   items: [{ id }],
@@ -17,15 +20,18 @@ const page = (id: number, nextCursor: string | null): CursorListResponse<{ id: n
 })
 
 describe('useCursorCollection: reserved filter keys (shell-src #7, shell-tests #2)', () => {
-  it.each(['cursor', 'limit', 'offset', 'q', 'sort'])('refuses a "%s" filter before any fetch', (key) => {
-    const fetch = vi.fn(async () => page(1, null))
-    const scope = effectScope()
-    expect(() =>
-      scope.run(() => useCursorCollection({ fetch, filters: { [key]: 'x' }, immediate: false })),
-    ).toThrow(TypeError)
-    expect(fetch).not.toHaveBeenCalled()
-    scope.stop()
-  })
+  it.each(['cursor', 'limit', 'offset', 'q', 'sort'])(
+    'refuses a "%s" filter before any fetch',
+    (key) => {
+      const fetch = vi.fn(async () => page(1, null))
+      const scope = effectScope()
+      expect(() =>
+        scope.run(() => useCursorCollection({ fetch, filters: { [key]: 'x' }, immediate: false })),
+      ).toThrow(TypeError)
+      expect(fetch).not.toHaveBeenCalled()
+      scope.stop()
+    },
+  )
 })
 
 describe('useCursorCollection: aborts and the initial sort', () => {
@@ -33,7 +39,8 @@ describe('useCursorCollection: aborts and the initial sort', () => {
     const enabled = ref(true)
     const rejects: Array<(reason: unknown) => void> = []
     const fetch = vi.fn(
-      () => new Promise<CursorListResponse<{ id: number }>>((_resolve, reject) => rejects.push(reject)),
+      () =>
+        new Promise<CursorListResponse<{ id: number }>>((_resolve, reject) => rejects.push(reject)),
     )
     const scope = effectScope()
     const c = scope.run(() => useCursorCollection({ fetch, enabled }))!
@@ -56,7 +63,9 @@ describe('useCursorCollection: aborts and the initial sort', () => {
     )!
     await c.refresh()
     expect(fetch.mock.calls[0]![0]).not.toHaveProperty('sort')
-    const bad = scope.run(() => useCursorCollection({ fetch, immediate: false, sort: 'name:sideways' }))!
+    const bad = scope.run(() =>
+      useCursorCollection({ fetch, immediate: false, sort: 'name:sideways' }),
+    )!
     await bad.refresh()
     expect(fetch.mock.calls[1]![0]).not.toHaveProperty('sort')
     scope.stop()

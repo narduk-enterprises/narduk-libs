@@ -274,7 +274,9 @@ function cellNode(column: NeDataColumn<T>, entry: Entry, leaf: number): VNodeChi
   if (custom) return custom({ column, row: entry.row, value })
   if (isMissingValue(value)) return missingNode(column, entry.row)
   if (column.format) return column.format(value, entry.row)
-  return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : String(value)
+  return value instanceof Date && !Number.isNaN(value.getTime())
+    ? value.toISOString()
+    : String(value)
 }
 
 function thClass(column: NeDataColumn<T>): string {

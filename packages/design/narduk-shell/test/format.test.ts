@@ -669,9 +669,15 @@ describe('splitTruncate', () => {
 
   it('counts code points, never cutting a multi-byte character', () => {
     const emoji = '😀'.repeat(10)
-    expect(splitTruncate(emoji, { tail: 3 })).toEqual({ head: '😀'.repeat(7), tail: '😀'.repeat(3) })
+    expect(splitTruncate(emoji, { tail: 3 })).toEqual({
+      head: '😀'.repeat(7),
+      tail: '😀'.repeat(3),
+    })
     const accented = 'é'.repeat(5) + 'ü'.repeat(3)
-    expect(splitTruncate(accented, { tail: 3 })).toEqual({ head: 'é'.repeat(5), tail: 'ü'.repeat(3) })
+    expect(splitTruncate(accented, { tail: 3 })).toEqual({
+      head: 'é'.repeat(5),
+      tail: 'ü'.repeat(3),
+    })
     // 7 code points, 14 UTF-16 units: not split, because it is counted by code point.
     expect(splitTruncate('😀'.repeat(7), { tail: 3 }).tail).toBe('😀'.repeat(3))
     expect(splitTruncate('😀'.repeat(6), { tail: 3 }).tail).toBe('')
