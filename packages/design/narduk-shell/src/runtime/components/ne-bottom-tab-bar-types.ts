@@ -45,8 +45,10 @@ export interface NeBottomTabBarProps {
 /** How a tab relates to the current path. */
 export type NeBottomTabState = 'page' | 'section' | 'fallback' | 'none'
 
+// Query and hash are dropped, except a hash-only target (`#stations`), which
+// is an in-page tab and is compared as written.
 function trimSlash(path: string): string {
-  const bare = path.split(/[?#]/u)[0] ?? ''
+  const bare = path.split(/(?<=.)[?#]/u)[0] ?? ''
   return bare.length > 1 ? bare.replace(/\/+$/u, '') || '/' : bare || '/'
 }
 

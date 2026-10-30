@@ -75,6 +75,11 @@ describe('resolveBottomTabs', () => {
     expect(resolveBottomTabs(items, '/settings', '/more/')[3]).toBe('fallback')
     expect(resolveBottomTabs([{ label: 'Map', to: '/map?layer=wind' }], '/map')).toEqual(['page'])
     expect(resolveBottomTabs(items, '//')).toEqual(['page', 'none', 'none', 'none'])
+    const inPage = [
+      { label: 'A', to: '#a' },
+      { label: 'B', to: '#b' },
+    ]
+    expect(resolveBottomTabs(inPage, '#b')).toEqual(['none', 'page'])
   })
 
   it('does not treat a shared spelling as a prefix', () => {

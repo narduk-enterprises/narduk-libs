@@ -5,16 +5,16 @@
  * The bar is `position: fixed`, so the demonstration frame is given a
  * transform, which makes it the bar's containing block. `phone-only` is off
  * because the gallery is a desktop page, and `path` is passed so the card
- * shows a lit tab without depending on the gallery's own route. Targets sit
- * under `/example/`, which the explorer's prerender crawl skips.
+ * shows a lit tab without depending on the gallery's own route. Targets are
+ * in-page hashes because a design card may link nowhere else.
  */
 import NeBottomTabBar from '../runtime/components/NeBottomTabBar.vue'
 
 const items = [
-  { label: 'Map', to: '/example', icon: 'i-lucide-map' },
-  { label: 'Stations', to: '/example/stations', icon: 'i-lucide-menu' },
-  { label: 'Cams', to: '/example/cams', icon: 'i-lucide-camera' },
-  { label: 'About', to: '/example/about', icon: 'i-lucide-info' },
+  { label: 'Map', to: '#map', icon: 'i-lucide-map' },
+  { label: 'Stations', to: '#stations', icon: 'i-lucide-menu' },
+  { label: 'Cams', to: '#cams', icon: 'i-lucide-camera' },
+  { label: 'About', to: '#about', icon: 'i-lucide-info' },
 ]
 </script>
 
@@ -42,7 +42,7 @@ const items = [
       "
     >
       <p style="margin: 0.75rem 1rem">Station 42</p>
-      <NeBottomTabBar :items="items" path="/example/stations/42" :phone-only="false" />
+      <NeBottomTabBar :items="items" path="#stations" :phone-only="false" />
     </div>
   </section>
 </template>

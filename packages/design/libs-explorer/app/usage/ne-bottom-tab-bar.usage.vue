@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const items = [
-  { label: 'Map', to: '/example', icon: 'i-lucide-map' },
+  { label: 'Map', to: '/example/map', icon: 'i-lucide-map' },
   { label: 'Stations', to: '/example/stations', icon: 'i-lucide-menu' },
   { label: 'Cams', to: '/example/cams', icon: 'i-lucide-camera' },
   { label: 'More', to: '/example/more', icon: 'i-lucide-ellipsis' },
