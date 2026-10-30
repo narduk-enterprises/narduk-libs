@@ -72,6 +72,28 @@ From the design system, in priority order:
    makes brand and meaning unreadable against each other, which is a design
    argument rather than a governance one, so it survives a re-skin.
 
+## Freshness logic (`./core`)
+
+`@narduk-enterprises/narduk-ui/core` is framework-free, so server routes and
+tests can classify without Vue.
+
+- `classifySignal(observedAt, intervalMinutes, now)` uses the source's own
+  publishing interval: Live inside it, Aging inside three times it, Stale after.
+- `classifySignalByAge(observedAt, { live, aging, stale?, futureToleranceMinutes? }, now)`
+  uses fixed minute limits, each an exclusive upper bound. Use it when the
+  product publishes its own definition, such as "Live under 6 h". Past `stale`
+  reads `void`. `now` is required, so SSR and the browser agree. Pass the result
+  to `NsFreshnessChip` as `state`.
+- `worstSignal(states)` returns the overall signal for an entity with several
+  sensors. It ignores `void` unless nothing is dated.
+- `ageMinutes` and `formatAge` give the compact age for the metadata line.
+
+```ts
+import { classifySignalByAge } from "@narduk-enterprises/narduk-ui/core";
+
+const state = classifySignalByAge(reading.observedAt, { live: 360, aging: 2880 }, now);
+```
+
 ## Instruments
 
 Import from `@narduk-enterprises/narduk-ui/instruments`. Pair with

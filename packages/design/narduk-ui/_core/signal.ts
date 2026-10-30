@@ -118,3 +118,74 @@ export function formatAge(
   if (hours < 48) return `${hours} h`;
   return `${Math.floor(hours / 24)} d`;
 }
+
+/**
+ * Absolute age limits for {@link classifySignalByAge}, in minutes. Each is an
+ * exclusive upper bound: an observation is Live while its age is *under*
+ * `live`, Aging while under `aging`, and Stale after that. This differs from
+ * {@link classifySignal}, whose interval bound is inclusive; a product whose
+ * rule reads "90 minutes or less" passes `live: 90` and accepts that exactly
+ * 90:00 is Aging, or rounds ages to whole minutes and passes 91. With `stale` set,
+ * an observation at or past it reads "void" — too old to vouch for.
+ */
+export interface SignalAgeLimits {
+  readonly live: number;
+  readonly aging: number;
+  readonly stale?: number;
+  /**
+   * How far in the future a timestamp may be and still count as just
+   * observed (clock skew between producer and reader). Default 5 minutes;
+   * anything further ahead reads "void".
+   */
+  readonly futureToleranceMinutes?: number;
+}
+
+/**
+ * Classify an observation against fixed age limits instead of the source's
+ * publishing interval. Use it where a product publishes its own definition of
+ * Live — "under 6 h" for a reservoir, "under 15 min" for a border wait — which
+ * {@link classifySignal}'s 1×/3× interval rule cannot express. lakestat-us,
+ * buoys, borderwaitstat-us, gonogo and riverstatus each carried a copy of this
+ * ladder with their own thresholds.
+ *
+ * `now` is required: there is no ambient-clock default, so a server render and
+ * the browser classify against the same instant. A missing, unparseable or
+ * too-far-future timestamp reads "void", never "live".
+ */
+export function classifySignalByAge(
+  observedAt: Date | string | number | null | undefined,
+  limits: SignalAgeLimits,
+  now: Date | number,
+): SignalState {
+  if (observedAt == null) return "void";
+  const tolerance = limits.futureToleranceMinutes ?? 5;
+  if (!(limits.live > 0) || !(limits.aging >= limits.live)) return "void";
+  if (limits.stale !== undefined && !(limits.stale >= limits.aging)) return "void";
+  if (!(Number.isFinite(tolerance) && tolerance >= 0)) return "void";
+  const time = typeof observedAt === "number" ? observedAt : toDate(observedAt).getTime();
+  const nowTime = typeof now === "number" ? now : now.getTime();
+  if (!Number.isFinite(time) || !Number.isFinite(nowTime)) return "void";
+
+  const age = (nowTime - time) / 60_000;
+  if (age < -tolerance) return "void";
+  if (age < limits.live) return "live";
+  if (age < limits.aging) return "aging";
+  if (limits.stale !== undefined && age >= limits.stale) return "void";
+  return "stale";
+}
+
+const SEVERITY: Readonly<Record<SignalState, number>> = { live: 0, aging: 1, stale: 2, void: -1 };
+
+/**
+ * The worst dated state among several observations — what a station, lake or
+ * crossing with several sensors shows as its overall signal. "void" entries are
+ * ignored unless every entry is "void" (or there are none), because one dead
+ * sensor beside a live one is not a station with no data.
+ */
+export function worstSignal(states: Iterable<SignalState>): SignalState {
+  let worst: SignalState = "void";
+  for (const state of states) {
+    if (SEVERITY[state] > SEVERITY[worst]) worst = state;
+  }
+  return worst;
+}
