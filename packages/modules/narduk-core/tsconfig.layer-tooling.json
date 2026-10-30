@@ -76,6 +76,7 @@
     "runtime/server/sql-search.ts",
     "runtime/server/unicode-search-folds.json",
     "runtime/server/json-error-no-store.ts",
+    "runtime/server/non-document-security-headers.ts",
     "runtime/server/api/health.get.ts",
     "runtime/server/api/runtime/status.get.ts",
     "runtime/server/database/d1RoundTrips.ts",

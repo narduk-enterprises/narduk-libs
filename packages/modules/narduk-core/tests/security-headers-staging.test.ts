@@ -44,6 +44,8 @@ async function respond(): Promise<Headers> {
   }
 }
 
+const CSP_HEADER = 'content-security-policy'
+
 afterEach(() => {
   runtime.nardukSecurityHeaders = undefined
   runtime.security = undefined
@@ -64,7 +66,7 @@ describe('preset off -- the default', () => {
   it('serves exactly the header set deployed apps have today', async () => {
     const headers = await respond()
     const csp = Object.fromEntries(
-      (headers.get('content-security-policy') ?? '').split('; ').map((directive) => {
+      (headers.get(CSP_HEADER) ?? '').split('; ').map((directive) => {
         const [name, ...sources] = directive.split(' ')
         return [name, sources]
       }),
@@ -104,7 +106,7 @@ describe('preset in report-only', () => {
   it('keeps enforcing the legacy CSP, because the strict policy only reports', async () => {
     runtime.nardukSecurityHeaders = { mode: 'report-only' }
     const headers = await respond()
-    expect(headers.get('content-security-policy')).toContain("default-src 'self'")
+    expect(headers.get(CSP_HEADER)).toContain("default-src 'self'")
   })
 
   it('stops duplicating the headers nuxt-security emits on every resource', async () => {
@@ -124,8 +126,8 @@ describe('preset in report-only', () => {
     const headers = await respond()
     expect(headers.get('permissions-policy')).toBe('camera=(), microphone=(), geolocation=()')
     // The preset CSP is only being reported on; the legacy one keeps enforcing.
-    expect(headers.get('content-security-policy')).toContain("default-src 'self'")
-    expect(headers.get('content-security-policy')).not.toContain('strict-dynamic')
+    expect(headers.get(CSP_HEADER)).toContain("default-src 'self'")
+    expect(headers.get(CSP_HEADER)).not.toContain('strict-dynamic')
   })
 
   it('keeps the build diagnostics, which nuxt-security knows nothing about', async () => {
@@ -141,7 +143,7 @@ describe('preset enforcing', () => {
   it('retires the legacy CSP so the browser is not intersecting two policies', async () => {
     runtime.nardukSecurityHeaders = { mode: 'enforce' }
     const headers = await respond()
-    expect(headers.get('content-security-policy')).toBeNull()
+    expect(headers.get(CSP_HEADER)).toBeNull()
   })
 
   // nuxt-security sets CSP and Permissions-Policy in render:response only, so
@@ -151,9 +153,7 @@ describe('preset enforcing', () => {
     runtime.security = presetSecurity
     const headers = await respond()
     expect(headers.get('permissions-policy')).toBe('camera=(), microphone=(), geolocation=()')
-    expect(headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'strict-dynamic';",
-    )
+    expect(headers.get(CSP_HEADER)).toBe("default-src 'self'; script-src 'self' 'strict-dynamic';")
   })
 
   it('still serves the build diagnostics', async () => {
