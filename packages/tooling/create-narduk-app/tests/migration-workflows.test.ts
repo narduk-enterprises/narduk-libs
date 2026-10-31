@@ -51,6 +51,8 @@ describe('D1 workflow trust and failure boundaries', () => {
       expect(steps[4].if).toBe('always()')
       expect(steps[4].uses).toContain('actions/upload-artifact@')
       expect(steps[4].with.path).toBe('.narduk/recovery/d1')
+      expect(steps[4]['continue-on-error']).toBe(true)
+      expect(steps[4].with['retention-days']).toBe(3)
       expect(steps[4].env).toBeUndefined()
       const productionOptIn = byPath.get('docs/deployment/promote-d1-r2.steps.yml').steps[0]
       expect(productionOptIn.if).toBe("always() && steps.migrate_d1.outcome != 'skipped'")
@@ -86,6 +88,8 @@ describe('D1 workflow trust and failure boundaries', () => {
       const defaultPreserve = preview.jobs.migrate.steps.at(-1)
       expect(defaultPreserve.if).toBe('always()')
       expect(defaultPreserve.uses).toContain('actions/upload-artifact@')
+      expect(defaultPreserve['continue-on-error']).toBe(true)
+      expect(defaultPreserve.with['retention-days']).toBe(3)
       expect(defaultPreserve.env).toBeUndefined()
       const previewOptIn = byPath.get('docs/deployment/preview-d1-r2.steps.yml').steps[0]
       expect(previewOptIn.if).toBe("always() && steps.migrate_d1.outcome != 'skipped'")
