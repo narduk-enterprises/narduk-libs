@@ -346,6 +346,31 @@ describe('the Dependabot read behind security (D-NAC-STATUS-1: unknown, never pa
     expect(artefact.dependabot).toMatchObject({ fixableCritical: 0, fixableHigh: 0, read: 'ok' })
   })
 
+  it('names the counted alerts by number, package and manifest without changing the verdict', async () => {
+    const artefact = await run({
+      dependabot: {
+        read: async () => ({
+          alerts: [
+            {
+              firstPatchedVersion: '1.4.1',
+              manifestPath: 'pnpm-lock.yaml',
+              number: 165,
+              packageName: 'node-forge',
+              severity: 'high',
+            },
+            { firstPatchedVersion: null, number: 134, packageName: 'old', severity: 'high' },
+          ],
+          kind: 'read',
+        }),
+      },
+    })
+
+    expect(check(artefact, 'security').verdict).toBe('fail')
+    expect(check(artefact, 'security').detail).toContain('1 open alert(s)')
+    expect(check(artefact, 'security').detail).toContain('#165 node-forge pnpm-lock.yaml')
+    expect(check(artefact, 'security').detail).not.toContain('#134')
+  })
+
   it('fails on a fixable high or critical alert, and says how many of each', async () => {
     const artefact = await run({
       dependabot: alerts(['high', '1.2.3'], ['critical', '4.0.0'], ['high', '2.0.0']),
@@ -473,8 +498,20 @@ describe('the GitHub Dependabot reader', () => {
     expect(urls[0]).toContain('severity=critical,high')
     expect(read).toEqual({
       alerts: [
-        { firstPatchedVersion: '2.0.1', packageName: 'axios', severity: 'high' },
-        { firstPatchedVersion: null, packageName: 'old', severity: 'critical' },
+        {
+          firstPatchedVersion: '2.0.1',
+          manifestPath: null,
+          number: null,
+          packageName: 'axios',
+          severity: 'high',
+        },
+        {
+          firstPatchedVersion: null,
+          manifestPath: null,
+          number: null,
+          packageName: 'old',
+          severity: 'critical',
+        },
       ],
       kind: 'read',
     })
