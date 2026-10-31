@@ -133,14 +133,18 @@ steps:
       pnpm exec narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA"
       pnpm exec narduk-app db migrate-deployment --target production --check
     working-directory: apps/web
+  # Report-only. A refused artifact upload must not fail the job after the
+  # migration step has already decided the result (workflows#223). Retention
+  # stays inside the 1-3 day budget. The migration step stays fatal.
   - name: Preserve D1 recovery evidence, including on failure
     if: always()
+    continue-on-error: true
     uses: ${upload}
     with:
       name: d1-production-recovery-\${{ github.run_id }}-\${{ github.run_attempt }}
       path: .narduk/recovery/d1
       include-hidden-files: true
-      retention-days: 14
+      retention-days: 3
       if-no-files-found: ignore
 # Keep the app's existing versions-promote and live proof steps next. All
 # require preceding success, and each of them also carries
@@ -235,14 +239,18 @@ ${setup()}      - name: Download SQL from this exact successful CI run and attem
           set -euo pipefail
           pnpm exec narduk-app db migrate-deployment --target preview --sha "$VERIFIED_SHA" --bundle "$SQL_BUNDLE"
           pnpm exec narduk-app db migrate-deployment --target preview --sha "$VERIFIED_SHA" --bundle "$SQL_BUNDLE" --check
+      # Report-only. A refused artifact upload must not fail the job after the
+      # migration step has already decided the result (workflows#223). Retention
+      # stays inside the 1-3 day budget. The migration step stays fatal.
       - name: Preserve D1 recovery evidence, including on failure
         if: always()
+        continue-on-error: true
         uses: ${upload}
         with:
           name: d1-preview-recovery-\${{ github.run_id }}-\${{ github.run_attempt }}
           path: .narduk/recovery/d1
           include-hidden-files: true
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
 # Run the app's preview health/smoke checks only AFTER this job succeeds.
 # An uploaded preview URL alone is not evidence that its schema is ready.
