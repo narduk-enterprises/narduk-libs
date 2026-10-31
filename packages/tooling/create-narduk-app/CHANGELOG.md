@@ -1,5 +1,80 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.35
+
+### Patch Changes
+
+- f7c1c8d: narduk-core adds three opt-in options for published-data routes;
+  callers that pass none see no change. `definePublishedDataHandler` takes
+  `unavailableBody(error, event)`, which builds the whole 503 body for a failed
+  read (a `private, no-store` 503 with the route's own error envelope) instead
+  of the h3 error. A cache profile takes `sMaxAgeInCacheControl: true`, which
+  writes `s-maxage` on `Cache-Control` next to `CDN-Cache-Control` for a
+  contract keyed on `s-maxage`; it works inline, through
+  `runtimeConfig.cache.profiles` and through `definePublishedDataHandler`.
+  `readApproximateLocation(event, { includeCityRegion: true })` also returns
+  `city` and `regionCode` when Cloudflare provides them (`regionCode` also comes
+  from the `cf-region-code` header on the `cf-ip*` fallback). They close the
+  gaps that kept riverstatus, lakestat-us and buoys on local copies.
+- 49d8d4a: The generated `promote-d1` and `preview-d1` "Preserve D1 recovery
+  evidence, including on failure" uploads are report-only:
+  `continue-on-error: true` and `retention-days: 3`. A GitHub artifact-quota
+  refusal no longer fails that job after the migration step has already decided
+  the result. The migration step stays fatal. The optional R2
+  `preserve-recovery` replacement is unchanged and still has no
+  `continue-on-error`.
+- f7c1c8d: narduk-seo adds an `omit(item, index)` option to
+  `sitemapUrlsFromListing` that drops retired, draft or noindex entities before
+  any builder runs; without it nothing changes.
+
+  Behavior change for apps that set `hostAwareIndexing`: a build whose
+  deployment target cannot be detected (no `NARDUK_DEPLOY_TARGET`, no
+  `WORKERS_CI_BRANCH` or `CF_PAGES_BRANCH`, as in a deploy-upload build or a CI
+  `build:ci`) now turns the guard on, so a non-canonical host such as a
+  `workers.dev` alias gets `noindex, nofollow` where it used to get
+  `index, follow`. It was off for that build only. The guard noindexes only a
+  request host that differs from the canonical site host, and fails open when
+  `siteUrl` is missing or local, so the canonical host stays indexable as long
+  as `siteUrl` is the production origin. Apps that do not set
+  `hostAwareIndexing` are unaffected. On an undetectable target a request host
+  of `localhost` counts as non-canonical when `siteUrl` is a real origin, so
+  `nuxt dev`, a local `build` and `preview`, and `build:ci` e2e runs of an
+  opted-in app now serve `noindex` on every page, and an e2e test that asserts
+  `index` there will flip. Generated apps are not affected: their
+  `nuxt.config.ts` write-back always sets the target and they do not set
+  `hostAwareIndexing`. To opt out, leave `hostAwareIndexing` off. The localhost
+  `siteUrl` warning still prints for an explicit `production` target only. Found
+  by borderwaitstat-us#218.
+
+- c9c24ba: narduk-shell adds `NeBottomTabBar`, the phone's bottom navigation.
+  Exactly one tab is lit: an exact path wins, then the longest prefix, then an
+  optional `fallback`. `aria-current` is honest, safe-area padding is included,
+  and a spacer plus `--ne-bottom-bar-h` keep content clear of the bar.
+  `resolveBottomTabs` exposes the same lit-tab rule as a pure function. It
+  replaces the hand-rolled tab bars in buoys, float-forecast, music, mybo-at-v2,
+  riverstatus and operator-portal. When a page also has a `NeStickyActionBar`,
+  that bar now sits above the tab bar (`--ne-bottom-nav-h`), and
+  `--ne-bottom-bar-h` is the two heights summed; pages with only a sticky bar
+  are unchanged. eslint-config and narduk-app-tools register the new shared
+  component name.
+- 2f1c822: narduk-shell adds `NeSegmented`, a control for picking one of a few
+  options. It is a radiogroup with roving focus and keyboard support: arrow
+  keys, Home and End move the choice and skip disabled segments. Disabled
+  segments stay visible and show their reason. It has `track` and `chips`
+  variants and `fill`, `scroll` and `wrap` layouts, and its tap targets are 44px
+  on a phone. It replaces the hand-rolled segmented controls in
+  austin-rising-runners, stonx and narduk-farm. eslint-config and
+  narduk-app-tools register the new shared component name.
+- f7c1c8d: narduk-ui adds `inclusive: true` to the limits `classifySignalByAge`
+  takes, which makes each limit an inclusive upper bound: Live through exactly
+  `live` minutes, Aging through exactly `aging`, and "void" only after `stale`.
+  It is for a rule that reads "60 minutes or less". The default stays exclusive
+  bounds, and the future tolerance is unchanged. Apps that offset each limit by
+  a millisecond to get inclusive bounds (gonogo) can drop that.
+- Updated dependencies [c9c24ba]
+- Updated dependencies [2f1c822]
+  - @narduk-enterprises/narduk-app-tools@0.49.6
+
 ## 0.23.34
 
 ### Patch Changes
