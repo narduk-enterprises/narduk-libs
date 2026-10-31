@@ -295,6 +295,10 @@ export interface DependabotAlertRow {
   /** null when no patched release exists: not fixable, so it does not count. */
   firstPatchedVersion: string | null
   packageName: string | null
+  /** The alert number, so a failing cell names the alerts it counted. */
+  number?: number | null
+  /** The manifest the alert is attached to, e.g. `pnpm-lock.yaml`. */
+  manifestPath?: string | null
 }
 
 export type DependabotRead =
@@ -311,10 +315,13 @@ export interface NacDependabotReading {
   /** Open alerts of severity critical or high that have a patched release. */
   fixableCritical: number | null
   fixableHigh: number | null
+  /** The counted alerts as `#number package manifest`, capped; empty when none. */
+  counted?: string[]
 }
 
 const DEPENDABOT_PAGE_SIZE = 100
 const DEPENDABOT_MAX_PAGES = 10
+const DEPENDABOT_COUNTED_LIMIT = 8
 const DEPENDABOT_MISSING_PERMISSION =
   'needs vulnerability-alerts: read (native job token), "Dependabot alerts: read" (fine-grained token) or security_events (classic); the checker does not widen a token'
 
@@ -340,7 +347,10 @@ function parseAlertRows(body: unknown): DependabotAlertRow[] | null {
       : null
     const pkg = isRecord(vulnerability.package) ? vulnerability.package.name : null
     const severity = vulnerability.severity ?? advisory.severity
+    const dependency = isRecord(alert.dependency) ? alert.dependency : {}
     return {
+      manifestPath: typeof dependency.manifest_path === 'string' ? dependency.manifest_path : null,
+      number: typeof alert.number === 'number' ? alert.number : null,
       firstPatchedVersion: typeof patched === 'string' && patched !== '' ? patched : null,
       packageName: typeof pkg === 'string' ? pkg : null,
       severity: typeof severity === 'string' ? severity.toLowerCase() : 'unknown',
@@ -489,7 +499,16 @@ export function summariseDependabot(read: DependabotRead): NacDependabotReading 
     return { fixableCritical: null, fixableHigh: null, read: 'unknown', reason: read.reason }
   }
   const fixable = read.alerts.filter((alert) => alert.firstPatchedVersion !== null)
+  const counted = fixable
+    .filter((alert) => alert.severity === 'critical' || alert.severity === 'high')
+    .slice(0, DEPENDABOT_COUNTED_LIMIT)
+    .map((alert) =>
+      [alert.number == null ? null : `#${alert.number}`, alert.packageName, alert.manifestPath]
+        .filter((part) => part !== null)
+        .join(' '),
+    )
   return {
+    counted,
     fixableCritical: fixable.filter((alert) => alert.severity === 'critical').length,
     fixableHigh: fixable.filter((alert) => alert.severity === 'high').length,
     read: 'ok',
@@ -561,8 +580,10 @@ function dependabotPart(reading: NacDependabotReading): Part {
       verdict: 'pass',
     }
   }
+  const counted = reading.counted ?? []
+  const named = counted.length > 0 ? `: ${counted.join(', ')}` : ''
   return {
-    detail: `${critical + high} open alert(s) with a patched release (${critical} critical, ${high} high)`,
+    detail: `${critical + high} open alert(s) with a patched release (${critical} critical, ${high} high)${named}`,
     source: 'Dependabot',
     verdict: 'fail',
   }
