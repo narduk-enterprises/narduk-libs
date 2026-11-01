@@ -38,6 +38,7 @@ import {
   rollbackProvenance,
   ROLLBACK_MESSAGE_PREFIX,
   runRollback,
+  readWorkersBuildsCheck,
   runVersionsPromote,
   shaMatchesTag,
   writePromoteStepOutputs,
@@ -1543,6 +1544,87 @@ describe('--wait-for-version (narduk-libs#695)', () => {
     expect(result.outcome).toBe('ambiguous-version')
     expect(run.listings()).toBe(1)
     expect(run.slept).toEqual([])
+  })
+
+  describe('under workflow_run the wait is on by default (narduk-libs#2116)', () => {
+    const raced = (run: ReturnType<typeof racing>, extra: Partial<PromoteContext> = {}) => ({
+      ...run.ctx,
+      env: { ...ACTIONS_ENV, GITHUB_EVENT_NAME: 'workflow_run' },
+      ...extra,
+    })
+
+    it('promotes an upload that lands after CI finished, on the first attempt', async () => {
+      const run = racing(4)
+      const result = await runVersionsPromote(
+        parseVersionsPromoteArgs(['--sha', SHA]),
+        raced(run, { buildCheck: () => ({ state: 'pending' }) }),
+      )
+      expect(result.exitCode).toBe(PROMOTE_EXIT.ok)
+      expect(run.calls.deployed.map((call) => call.versionId)).toEqual(['v-new'])
+      expect(run.listings()).toBe(4)
+    })
+
+    it('still ends in version-not-found when the upload never arrives', async () => {
+      const run = racing(Number.POSITIVE_INFINITY)
+      const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA]), raced(run))
+      expect(result.outcome).toBe('version-not-found')
+      expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+      expect(run.calls.deployed).toEqual([])
+      expect(result.detail).toContain('Waited 900s')
+    })
+
+    it('fails at once, naming the check, when the build really failed', async () => {
+      const run = racing(Number.POSITIVE_INFINITY)
+      const result = await runVersionsPromote(
+        parseVersionsPromoteArgs(['--sha', SHA]),
+        raced(run, {
+          buildCheck: () => ({
+            state: 'failed',
+            name: 'Workers Builds: buoys',
+            conclusion: 'failure',
+          }),
+        }),
+      )
+      expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+      expect(result.detail).toContain('"Workers Builds: buoys" check-run')
+      expect(result.detail).toContain('concluded failure')
+      expect(run.listings()).toBe(1)
+    })
+
+    it('honours an explicit --wait-for-version 0', async () => {
+      const run = racing(Number.POSITIVE_INFINITY)
+      const result = await runVersionsPromote(
+        parseVersionsPromoteArgs(['--sha', SHA, '--wait-for-version', '0']),
+        raced(run),
+      )
+      expect(result.outcome).toBe('version-not-found')
+      expect(run.listings()).toBe(1)
+    })
+  })
+
+  it('reads the Workers Builds check-run state', () => {
+    const get = (check_runs: unknown[]) => () => ({ check_runs })
+    expect(readWorkersBuildsCheck(SHA, () => null)).toEqual({ state: 'unknown' })
+    expect(
+      readWorkersBuildsCheck(SHA, get([{ name: 'ci / Required', status: 'completed' }])),
+    ).toEqual({
+      state: 'unknown',
+    })
+    expect(
+      readWorkersBuildsCheck(SHA, get([{ name: 'Workers Builds: x', status: 'in_progress' }])),
+    ).toEqual({ state: 'pending' })
+    expect(
+      readWorkersBuildsCheck(
+        SHA,
+        get([{ name: 'Workers Builds: x', status: 'completed', conclusion: 'success' }]),
+      ),
+    ).toEqual({ state: 'success' })
+    expect(
+      readWorkersBuildsCheck(
+        SHA,
+        get([{ name: 'Workers Builds: x', status: 'completed', conclusion: 'failure' }]),
+      ),
+    ).toEqual({ state: 'failed', name: 'Workers Builds: x', conclusion: 'failure' })
   })
 
   it('bounds its flags', () => {
