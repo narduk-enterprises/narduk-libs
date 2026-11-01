@@ -12,7 +12,7 @@
  *
  * - a `// LIBS-KEEP: <name> <reason>` comment on the declaration's line or in
  *   the three lines above it (the marker agent-infrastructure `libs-find`
- *   honours, so the two tools agree);
+ *   honours; the rule is stricter, requiring the name to match);
  * - the `allow` option, a list of names;
  * - an `eslint-disable` comment with a reason.
  *

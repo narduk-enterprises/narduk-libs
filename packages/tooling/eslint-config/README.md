@@ -226,7 +226,8 @@ about half of the duplicated bespoke code in 60 apps was already in libs.
   regeneration.
 - Keep a copy on purpose with `// LIBS-KEEP: <name> <reason>` on the
   declaration's line or in the three lines above it (the marker `libs-find`
-  reads), list the name in the rule's `allow` option
+  reads; here the name must match the declaration), list the name in the rule's
+  `allow` option
   (`'narduk/no-shadowed-shared-export': ['warn', { allow: ['median'] }]`), or
   use an `eslint-disable` comment with a reason.
 - It is `warn` in the `design-system` pack. `narduk-lint` fails on any warning,

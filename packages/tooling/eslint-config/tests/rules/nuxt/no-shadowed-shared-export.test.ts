@@ -108,6 +108,12 @@ ts.run('no-shadowed-shared-export', rule, {
         },
       ],
     },
+    // Hit: a named default export is still a top-level declaration.
+    {
+      filename: 'shared/utils/numbers.ts',
+      code: 'export default function median(values: number[]) { return values[0] }',
+      errors: [{ messageId: 'shadowed' }],
+    },
     // Hit: one report per declarator.
     {
       filename: 'app/utils/text.ts',
