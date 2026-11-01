@@ -1778,7 +1778,7 @@ describe('trustValidatedStoreHits', () => {
     }
   })
 
-  it('hashes a stored artifact once, marked or not, and an upstream read once', async () => {
+  it('hashes an upstream read once, a stored hit once unless this build marked it', async () => {
     const { base, upstream } = await setup()
     const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
     const { context, done } = settle()
@@ -1792,17 +1792,28 @@ describe('trustValidatedStoreHits', () => {
     try {
       expect(await hashesFor(createNardukDataClient(options))).toBe(1)
       expect(upstream.calls).toHaveLength(2)
-      // An entry another build (or nobody) marked, then the one this build marked.
+      // An entry nobody marked, then one another build marked, are hashed.
       expect(await hashesFor(createNardukDataClient(base))).toBe(1)
+      expect(
+        await hashesFor(
+          createNardukDataClient({ ...base, trustValidatedStoreHits: { mark: 'build-0' } }),
+        ),
+      ).toBe(1)
+      // Re-marked for build-1 by the read above; now this build's mark skips the digest.
+      expect(
+        await hashesFor(
+          createNardukDataClient({ ...base, trustValidatedStoreHits: { mark: 'build-0' } }),
+        ),
+      ).toBe(0)
       expect(await hashesFor(createNardukDataClient(options))).toBe(1)
-      expect(await hashesFor(createNardukDataClient(options))).toBe(1)
+      expect(await hashesFor(createNardukDataClient(options))).toBe(0)
       expect(upstream.calls).toHaveLength(2)
     } finally {
       digest.mockRestore()
     }
   })
 
-  it('does not trust a marked hit that fails its checksum', async () => {
+  it('accepts a marked hit without hashing it, so this build’s mark is the only voucher', async () => {
     const { artifactKey, base, entries, upstream } = await setup()
     const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
     const { context, done } = settle()
@@ -1818,9 +1829,56 @@ describe('trustValidatedStoreHits', () => {
       productOf({ schema: after.schema }),
       context,
     )
+    expect(result.data.stations).toEqual(['tampered'])
+    expect(after.state.walks).toBe(0)
+    expect(upstream.calls).toHaveLength(2)
+  })
+
+  it.each([
+    ['an unmarked entry', undefined, 'build-1'],
+    ['an entry another build marked', 'build-0', 'build-1'],
+    ['a marked entry with the option off', 'build-1', undefined],
+  ])('does not trust %s that fails its checksum', async (_label, entryMark, readMark) => {
+    const { artifactKey, base, entries, upstream } = await setup()
+    const { context, done } = settle()
+    await createNardukDataClient({
+      ...base,
+      trustValidatedStoreHits: entryMark ? { mark: entryMark } : undefined,
+    }).read(productOf(), context)
+    await done()
+    const stored = entries.get(artifactKey())!
+    entries.set(
+      artifactKey(),
+      new Response('{"stations":["tampered"]}', { headers: stored.headers }),
+    )
+    const after = countingSchema()
+    const result = await createNardukDataClient({
+      ...base,
+      trustValidatedStoreHits: readMark ? { mark: readMark } : undefined,
+    }).read(productOf({ schema: after.schema }), context)
     await done()
     expect(result.data.stations).toEqual(['41008'])
     expect(after.state.walks).toBe(1)
+    expect(upstream.calls).toHaveLength(3)
+  })
+
+  it('drops a marked hit that no longer decodes and reads upstream', async () => {
+    const { artifactKey, base, entries, upstream } = await setup()
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
+    const { context, done } = settle()
+    await createNardukDataClient(options).read(productOf(), context)
+    await done()
+    const key = artifactKey()
+    entries.set(key, new Response('{"stations":["41', { headers: entries.get(key)!.headers }))
+    const result = await createNardukDataClient(options).read(productOf(), context)
+    await done()
+    expect(result.data.stations).toEqual(['41008'])
+    expect(result.freshness.source).toBe('upstream')
+    expect(upstream.calls).toHaveLength(3)
+    // The repaired entry is stored, marked and valid again.
+    expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBe('build-1')
+    const again = await createNardukDataClient(options).read(productOf(), context)
+    expect(again.freshness.source).toBe('cache')
     expect(upstream.calls).toHaveLength(3)
   })
 
