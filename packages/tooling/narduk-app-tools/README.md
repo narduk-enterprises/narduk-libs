@@ -1324,6 +1324,14 @@ the manifest and the workflow agree.
 `deploy staging` pass it as `--expect-content-type`. An app whose promote
 workflow passes `--expect-content-type` should declare it here too.
 
+`liveProof.attempts` and `intervalSeconds` are the bound
+`verify --live --attempts` uses. `doctor --adoption --live --expect-sha` uses
+that same bound for the smoke route it grades (the build-version header and the
+document on that route): a readable stamp that is not the expected commit is
+re-read, each time with a new cache-busting query, and R5 fails only when every
+attempt still disagrees. The detail text of that failure is unchanged. With no
+`--expect-sha` the route is read once, at the URL as given.
+
 `staging.enabled` defaults to `false` and `previewBindings` to all-empty, so a
 block that omits them still validates. `previewChecks` is accepted and optional
 (the shared workflow's `preview-checks` input). A `standard` other than

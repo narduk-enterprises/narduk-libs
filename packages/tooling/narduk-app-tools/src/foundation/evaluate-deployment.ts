@@ -61,6 +61,14 @@ export interface DeclaredLiveProof {
   healthAuth?: 'anonymous' | 'authenticated'
   /** The path a delivery-path probe must read. */
   smokePath: string
+  /**
+   * The same bound `verify --live --attempts` uses. Absent on a declaration
+   * this report built before the fields were carried out of the block; the
+   * adoption reader then uses verify's defaults.
+   */
+  attempts?: number
+  /** Seconds between those attempts. */
+  intervalSeconds?: number
 }
 
 /** A one-item artefact, deliberately NOT shaped like `FoundationCheckArtefact`
@@ -175,6 +183,8 @@ export function runDeploymentCheck(options: RunDeploymentCheckOptions): Deployme
             healthPath: block.liveProof.healthPath,
             healthAuth: block.liveProof.healthAuth,
             smokePath: block.liveProof.smokePath,
+            attempts: block.liveProof.attempts,
+            intervalSeconds: block.liveProof.intervalSeconds,
           }
         : null,
     },

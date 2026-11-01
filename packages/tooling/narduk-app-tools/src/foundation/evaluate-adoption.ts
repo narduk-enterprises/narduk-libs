@@ -89,6 +89,7 @@ import {
   type EgressSummary,
 } from '../egress-fallback.js'
 import { createLiveProbe, type FetchTransport, type LiveProbe } from '../live-probe.js'
+import { cacheBustedUrl, DEFAULT_VERIFY_FLAGS } from '../verify-live.js'
 import { FilesystemRegistryReality, type RegistryReality } from './npm-registry.js'
 import type {
   FoundationAppInfo,
@@ -233,6 +234,10 @@ export interface LiveProofContract {
   healthAuth: 'anonymous' | 'authenticated'
   healthPath: string
   smokePath: string
+  /** Same bound `verify --live --attempts` uses. Declaration, else verify's default. */
+  attempts: number
+  /** Seconds between those attempts. */
+  intervalSeconds: number
 }
 
 /**
@@ -252,6 +257,8 @@ export function resolveLiveProofContract(
     healthAuth: declared?.healthAuth ?? 'anonymous',
     healthPath: declared?.healthPath ?? FALLBACK_HEALTH_PATH,
     smokePath: declared?.smokePath ?? FALLBACK_SMOKE_PATH,
+    attempts: declared?.attempts ?? DEFAULT_VERIFY_FLAGS.attempts,
+    intervalSeconds: declared?.intervalSeconds ?? DEFAULT_VERIFY_FLAGS.intervalSeconds,
   }
 }
 
@@ -320,13 +327,32 @@ export interface LiveRetry {
   /** Reads of the smoke route before a stale `--expect-sha` stamp is graded. */
   attempts: number
   intervalMs: number
+  /** Overall budget, including sleeps. The same ceiling `verify --live` uses. */
+  deadlineMs: number
   sleep: (ms: number) => Promise<void>
+  now: () => number
+  /**
+   * Per-attempt cache-bust token. A fresh value each attempt: reusing the
+   * first attempt's key lets a cached copy of the previous release answer
+   * the whole window, which is the failure `verify --live` cache-busts.
+   */
+  cacheBustToken: (attempt: number) => string
 }
 
 const DEFAULT_LIVE_RETRY: LiveRetry = {
-  attempts: 6,
-  intervalMs: 10_000,
+  attempts: DEFAULT_VERIFY_FLAGS.attempts,
+  intervalMs: DEFAULT_VERIFY_FLAGS.intervalSeconds * 1000,
+  deadlineMs: DEFAULT_VERIFY_FLAGS.deadlineMs,
   sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+  now: () => performance.now(),
+  cacheBustToken: (attempt) =>
+    `${Date.now().toString(36)}-${String(attempt)}-${Math.random().toString(36).slice(2, 8)}`,
+}
+
+/** The URL this attempt actually fetches. With `--expect-sha`, each attempt
+ * gets its own cache key; without one, the URL is unchanged. */
+function attemptUrl(url: string, attempt: number, bust: boolean, retry: LiveRetry): string {
+  return cacheBustedUrl(url, retry.cacheBustToken(attempt), bust)
 }
 
 async function readLive(
@@ -338,17 +364,27 @@ async function readLive(
 ): Promise<AdoptionLiveReading> {
   const smokeUrl = resolveAgainst(liveUrl, contract.smokePath)
   const healthUrl = resolveAgainst(liveUrl, contract.healthPath)
-
-  let smoke = await reality.read(smokeUrl)
-  // Right after a promotion the edge can still serve the previous build; the
-  // deploy proof retries that, so a single stale read must not grade R5 FAIL
-  // (narduk-libs#1889). Only a readable, mismatched stamp is re-read.
-  for (let attempt = 1; expectSha !== null && attempt < retry.attempts; attempt += 1) {
+  // R5's two reads are this one response: the build-version header and the
+  // smoke document. `verify --live` retries its build-version read and its
+  // smoke read together, up to `--attempts`, and busts the cache each time.
+  // Grade the header on the smoke URL -- the detail names that URL -- and
+  // re-read it on the same bound. Only a readable, mismatched stamp is
+  // re-read: an absent header stays unknown, and no `--expect-sha` stays one
+  // read of the plain URL (narduk-libs#1768, #1780, #1810, #1889).
+  const bust = expectSha !== null
+  const deadline = retry.now() + retry.deadlineMs
+  let attempt = 1
+  let smoke = await reality.read(attemptUrl(smokeUrl, attempt, bust, retry))
+  while (expectSha !== null && attempt < retry.attempts) {
     const stamp =
       smoke.challenged === true ? null : headerValue(smoke.headers, contract.buildVersionHeader)
     if (stamp === null || matchesCommit(expectSha, stamp)) break
-    await retry.sleep(retry.intervalMs)
-    smoke = await reality.read(smokeUrl)
+    const remaining = deadline - retry.now()
+    if (remaining <= 0) break
+    await retry.sleep(Math.min(retry.intervalMs, remaining))
+    if (retry.now() >= deadline) break
+    attempt += 1
+    smoke = await reality.read(attemptUrl(smokeUrl, attempt, true, retry))
   }
   const smokeChallenged = smoke.challenged === true
   // A challenge page carries no build stamp of the app's: never read one off it.
@@ -486,7 +522,12 @@ export async function runAdoptionCheck(
         options.expectSha ?? null,
         options.liveReality ?? createFetchLiveReality(probe),
         liveProof,
-        { ...DEFAULT_LIVE_RETRY, ...options.liveRetry },
+        {
+          ...DEFAULT_LIVE_RETRY,
+          attempts: liveProof.attempts,
+          intervalMs: liveProof.intervalSeconds * 1000,
+          ...options.liveRetry,
+        },
       )
     : null
 

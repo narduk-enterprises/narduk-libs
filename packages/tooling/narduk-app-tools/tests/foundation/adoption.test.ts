@@ -395,12 +395,16 @@ describe('the paths a live probe reads (narduk-libs#632, absorbing #638)', () =>
 
   it('falls back to the standard defaults only when nothing is declared', () => {
     expect(resolveLiveProofContract(null)).toEqual({
+      attempts: 6,
       buildVersionHeader: 'x-build-version',
       healthAuth: 'anonymous',
       healthPath: '/api/health',
+      intervalSeconds: 10,
       smokePath: '/',
     })
     // A declaration wins outright, and the header is matched case-insensitively.
+    // Attempts and interval fall back to verify's defaults when the declaration
+    // names neither -- an older reader of the block.
     expect(
       resolveLiveProofContract({
         buildVersionHeader: 'X-Build-Version',
@@ -408,10 +412,28 @@ describe('the paths a live probe reads (narduk-libs#632, absorbing #638)', () =>
         smokePath: '/login',
       }),
     ).toEqual({
+      attempts: 6,
       buildVersionHeader: 'x-build-version',
       healthAuth: 'anonymous',
       healthPath: '/healthz',
+      intervalSeconds: 10,
       smokePath: '/login',
+    })
+    expect(
+      resolveLiveProofContract({
+        attempts: 10,
+        buildVersionHeader: 'x-build-version',
+        healthPath: '/api/health',
+        intervalSeconds: 5,
+        smokePath: '/',
+      }),
+    ).toEqual({
+      attempts: 10,
+      buildVersionHeader: 'x-build-version',
+      healthAuth: 'anonymous',
+      healthPath: '/api/health',
+      intervalSeconds: 5,
+      smokePath: '/',
     })
   })
 
