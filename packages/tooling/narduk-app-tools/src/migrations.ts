@@ -883,16 +883,14 @@ export type MigrationExecutor = (args: string[], cwd: string, json: boolean) => 
 interface MigrationDatabase {
   rows<T>(sql: string): T[]
   /**
-   * Read-only statements, one result set each, in order. `--local` runs them
-   * in ONE wrangler process: its startup is the whole cost of a local read
-   * (~1.3 s), and a no-op `db migrate --local` used to pay it about twenty
-   * times (narduk-libs#704). `--remote` keeps one process per statement --
-   * that path was not measured, and its multi-statement result shape is not
-   * proven here.
+   * Read-only statements, one result set each, in order, in ONE wrangler
+   * process: its startup is the whole cost of a read (~1.3 s locally, 2-4 s on
+   * a busy deploy runner), and a no-op migrate used to pay it about twenty
+   * times (narduk-libs#704, #2149). `--remote` sends the statements as one D1
+   * `/query`, which answers with one result set per statement in order -- the
+   * same shape as `--local`, proven against a remote D1 for #2149.
    */
   batch(statements: readonly string[]): unknown[][]
-  /** True when `batch` costs one process however many statements it carries. */
-  readonly batchIsOneProcess: boolean
   execute(sql: string): void
   file(path: string): void
   bookmark(): string
@@ -936,12 +934,8 @@ function migrationDatabase(
     })
   return {
     rows: <T>(sql: string) => parseWranglerJson<T>(run(args(sql, true), true)).results,
-    batchIsOneProcess: options.location === '--local',
     batch: (statements) => {
       if (statements.length === 0) return []
-      if (options.location !== '--local') {
-        return statements.map((sql) => parseWranglerJson(run(args(sql, true), true)).results)
-      }
       for (const sql of statements) {
         if (!sql.trimEnd().endsWith(';')) throw new Error(`Unterminated batched statement: ${sql}`)
       }
@@ -1174,17 +1168,13 @@ interface DatabaseInspection {
 }
 
 /**
- * Everything planning needs, in as few wrangler processes as the database
- * handle allows (narduk-libs#704). The first batch names the tables and is
- * valid whether any exist or not -- `PRAGMA` on a missing table is an empty
- * result, not an error; the second reads only tables the first proved exist,
- * and is skipped when none do.
- *
- * Where a batch is one process (`--local`), reads the answer may not need --
- * the ledger's shape before the ledger is known to exist, the lock owner
- * before the plan is known to be a no-op -- ride along for free. Where each
- * statement is its own process (`--remote`), they are made only once needed,
- * so no remote run starts more processes than it did before.
+ * Everything planning needs, in two wrangler processes (narduk-libs#704,
+ * #2149). The first batch names the tables and is valid whether any exist or
+ * not -- `PRAGMA` on a missing table is an empty result, not an error; the
+ * second reads only tables the first proved exist, and is skipped when none
+ * do. Reads the answer may not need -- the ledger's shape before the ledger is
+ * known to exist, the lock owner before the plan is known to be a no-op --
+ * ride along for free.
  */
 function inspectDatabase(
   options: MigrationRunOptions,
@@ -1198,39 +1188,33 @@ function inspectDatabase(
     ...new Set(config.adoptions.flatMap((adoption) => adoption.evidence.tables)),
   ]
   for (const table of evidenceTables) validateIdentifier(table)
-  const speculate = db.batchIsOneProcess
   const lockOwnerSql = `SELECT owner FROM ${MIGRATION_LOCK_TABLE} LIMIT 1;`
 
   const first = db.batch([
     "SELECT name FROM sqlite_master WHERE type = 'table';",
-    ...(speculate ? [migrationLedgerInfoSql()] : []),
+    migrationLedgerInfoSql(),
     ...evidenceTables.flatMap((table) => [
       `PRAGMA table_info(${table});`,
       `PRAGMA index_list(${table});`,
     ]),
   ])
   const tables = new Set((first.shift() as Array<{ name: string }>).map((row) => row.name))
-  const speculativeLedgerColumns = speculate ? first.shift() : undefined
+  const ledgerColumns = first.shift() as Array<{ name?: string; pk?: number }>
   const evidenceRows = first as Array<Array<{ name: string }>>
   const hasLedger = tables.has(MIGRATION_LEDGER_TABLE)
   const hasLock = readLock && tables.has(MIGRATION_LOCK_TABLE)
   if (hasLedger) {
     // Before the rows are read, so a malformed ledger is named, not a SQL error.
-    validateLedgerSchema(
-      (speculativeLedgerColumns ?? db.batch([migrationLedgerInfoSql()])[0]) as Array<{
-        name?: string
-        pk?: number
-      }>,
-    )
+    validateLedgerSchema(ledgerColumns)
   }
 
   const legacyReads = legacyLedgerReads(tables)
   const second = db.batch([
-    ...(hasLock && speculate ? [lockOwnerSql] : []),
+    ...(hasLock ? [lockOwnerSql] : []),
     ...(hasLedger ? [migrationLedgerRowsSql()] : []),
     ...legacyReads.map((read) => read.sql),
   ])
-  const speculativeLockRows = hasLock && speculate ? second.shift() : undefined
+  const lockRows = (hasLock ? second.shift() : []) as Array<{ owner?: unknown }>
   const stableRows = (hasLedger ? second.shift() : []) as MigrationLedgerRow[]
   const legacyRows = legacyReads.flatMap((read) => read.rows(second.shift() ?? []))
 
@@ -1266,8 +1250,7 @@ function inspectDatabase(
 
   let lockOwner: string | null = null
   if (hasLock && plan.apply + plan.adopt === 0) {
-    const rows = (speculativeLockRows ?? db.batch([lockOwnerSql])[0]) as Array<{ owner?: unknown }>
-    const owner = rows[0]?.owner
+    const owner = lockRows[0]?.owner
     lockOwner = typeof owner === 'string' ? owner : null
   }
   return { lockOwner, plan }

@@ -31,6 +31,7 @@ import {
 } from '../src/migrations.js'
 
 import type { GitHubGet } from '../src/commit-containment.js'
+import { splitStatements } from './wrangler-d1-fake.js'
 
 const paths: string[] = []
 afterEach(() => {
@@ -995,8 +996,12 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     it('requires recovery evidence before the first pending migration write, including a failed apply', () => {
       const t = setup()
       const output = join(t.f.root, 'step-output')
-      const pending: MigrationExecutor = (_args, _cwd, json) => {
-        if (json) return JSON.stringify([{ success: true, results: [] }])
+      // An empty database: one empty result set per statement of a batched read.
+      const pending: MigrationExecutor = (args, _cwd, json) => {
+        if (json) {
+          const sql = args[args.indexOf('--command') + 1]!
+          return JSON.stringify(splitStatements(sql).map(() => ({ success: true, results: [] })))
+        }
         expect(readFileSync(output, 'utf8')).toBe('recovery_required=true\n')
         throw reached
       }

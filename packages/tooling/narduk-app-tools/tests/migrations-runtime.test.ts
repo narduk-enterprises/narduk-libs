@@ -183,6 +183,45 @@ describe('D1 migration database protocol', () => {
       expect(() => parseWranglerBatchJson(output, 1)).toThrow()
     },
   )
+  it('reads a recorded --remote multi-statement reply in statement order (#2149)', () => {
+    // `wrangler d1 execute DB --remote --json --command` with four statements
+    // against a live D1 (wrangler 4.107, 2026-11-01); rows trimmed, meta kept.
+    const meta = {
+      served_by: 'v3-prod',
+      served_by_primary: true,
+      timings: { sql_duration_ms: 0.03 },
+      duration: 0.03,
+      changes: 0,
+      last_row_id: 0,
+      changed_db: false,
+      size_after: 286720,
+      rows_read: 0,
+      rows_written: 0,
+      total_attempts: 1,
+    }
+    const reply = JSON.stringify([
+      { results: [{ name: '_narduk_migrations' }], success: true, meta },
+      {
+        results: [{ cid: 0, name: 'source', type: 'TEXT', notnull: 1, dflt_value: null, pk: 1 }],
+        success: true,
+        meta,
+      },
+      // PRAGMA on a table that does not exist: an empty set, not an error.
+      { results: [], success: true, meta },
+      {
+        results: [{ source: '@narduk-enterprises/narduk-auth', filename: '0001_auth_bridge.sql' }],
+        success: true,
+        meta,
+      },
+    ])
+    const [tables, ledger, missing, rows] = parseWranglerBatchJson(reply, 4)
+    expect(tables).toEqual([{ name: '_narduk_migrations' }])
+    expect(ledger).toMatchObject([{ name: 'source', pk: 1 }])
+    expect(missing).toEqual([])
+    expect(rows).toEqual([
+      { source: '@narduk-enterprises/narduk-auth', filename: '0001_auth_bridge.sql' },
+    ])
+  })
   it("never reads one statement's result as another's", () => {
     const two = '[{"success":true,"results":[]},{"success":true,"results":[{"a":1}]}]'
     expect(parseWranglerBatchJson(two, 2)).toEqual([[], [{ a: 1 }]])
@@ -256,20 +295,24 @@ describe('wrangler process count (narduk-libs#704)', () => {
     expect(() => runMigrations(f.options, f.executor)).toThrow('Could not acquire')
   })
 
-  it('a warm --remote run takes no lock and sends each statement on its own', () => {
+  it('a warm --remote run is two read processes too, and takes no lock (#2149)', () => {
     const f = withHistory()
     runMigrations(f.options, f.executor)
     f.calls.length = 0
     expect(runMigrations(f.options, f.executor)).toMatchObject({ apply: 0, skip: 3 })
-    expect(spawns(f.calls).writes).toBe(0)
-    for (const args of f.calls) {
-      const sql = args[args.indexOf('--command') + 1]!
-      expect(
-        sql
-          .trim()
-          .split(';')
-          .filter((part) => part.trim()),
-      ).toHaveLength(1)
+    // Before: one wrangler process per statement, nine for this history, and
+    // two more per adoption evidence table -- minutes on a busy deploy runner.
+    expect(spawns(f.calls)).toEqual({ total: 2, reads: 2, writes: 0 })
+    expect(f.calls.every((args) => args.includes('--remote'))).toBe(true)
+    const second = f.calls[1]!
+    const sql = second[second.indexOf('--command') + 1]!
+    for (const table of [
+      MIGRATION_LOCK_TABLE,
+      '_narduk_migrations',
+      '_applied_migrations',
+      'd1_migrations',
+    ]) {
+      expect(sql).toContain(`FROM ${table}`)
     }
   })
 
