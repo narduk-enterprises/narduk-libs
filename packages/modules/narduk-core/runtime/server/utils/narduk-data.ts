@@ -1055,6 +1055,63 @@ function acceptArtifact<T>(
   return { data, mayMark: marking && structurallyUnchanged(decoded, data) }
 }
 
+interface AcceptedArtifact<T> {
+  data: T
+  /** The bytes after the product's at-rest encoding is undone. */
+  decoded: Uint8Array<ArrayBuffer>
+  mayMark: boolean
+}
+
+async function acceptBytes<T>(
+  url: string,
+  raw: Uint8Array<ArrayBuffer>,
+  product: Pick<NardukDataProduct<T>, 'encoding' | 'maxDecodedBytes' | 'schema'>,
+  trusted: boolean,
+  marking: boolean,
+): Promise<AcceptedArtifact<T>> {
+  const decoded = await decodeEncoding(
+    url,
+    raw,
+    product.encoding,
+    product.maxDecodedBytes ?? DEFAULT_MAX_BYTES,
+  )
+  return { decoded, ...acceptArtifact(url, decoded, product.schema, trusted, marking) }
+}
+
+/**
+ * A stored artifact, with its accepted value when this build's mark vouched for it.
+ *
+ * A marked hit is not hashed, so corruption shows when it is decoded: the entry
+ * is deleted and the caller reads upstream, instead of every cold isolate failing
+ * on it until it expires.
+ */
+async function loadStoredArtifact<T>(
+  store: NardukDataStore,
+  key: string,
+  sha256: string,
+  url: string,
+  product: Pick<NardukDataProduct<T>, 'encoding' | 'maxBytes' | 'maxDecodedBytes' | 'schema'>,
+  mark: string | undefined,
+): Promise<{ accepted?: AcceptedArtifact<T>; bytes: Uint8Array<ArrayBuffer> } | undefined> {
+  const stored = await readStoredArtifact(
+    store,
+    key,
+    sha256,
+    product.maxBytes ?? DEFAULT_MAX_BYTES,
+    mark,
+  )
+  if (!stored?.trusted) return stored
+  try {
+    return {
+      bytes: stored.bytes,
+      accepted: await acceptBytes(url, stored.bytes, product, true, true),
+    }
+  } catch {
+    await store.delete(key).catch(() => false)
+    return undefined
+  }
+}
+
 async function assertArtifactChecksum(
   bytes: Uint8Array<ArrayBuffer>,
   sha256: string,
@@ -1274,40 +1331,12 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     }
     const artifactKey = `${artifactUrl}?sha256=${sha256}`
     const mark = trustMark(options)
-    let storedArtifact = store
-      ? await readStoredArtifact(
-          store,
-          artifactKey,
-          sha256,
-          product.maxBytes ?? DEFAULT_MAX_BYTES,
-          mark,
-        )
+    const stored = store
+      ? await loadStoredArtifact(store, artifactKey, sha256, artifactUrl, product, mark)
       : undefined
-    const acceptBytes = async (raw: Uint8Array<ArrayBuffer>, trusted: boolean) => {
-      const decoded = await decodeEncoding(
-        artifactUrl,
-        raw,
-        product.encoding,
-        product.maxDecodedBytes ?? DEFAULT_MAX_BYTES,
-      )
-      return {
-        decoded,
-        ...acceptArtifact(artifactUrl, decoded, product.schema, trusted, mark !== undefined),
-      }
-    }
-    let accepted: Awaited<ReturnType<typeof acceptBytes>> | undefined
-    if (store && storedArtifact?.trusted) {
-      // A trusted hit was not hashed, so corruption shows here: drop the entry
-      // and read upstream instead of failing every isolate until it expires.
-      try {
-        accepted = await acceptBytes(storedArtifact.bytes, true)
-      } catch {
-        storedArtifact = undefined
-        await store.delete(artifactKey).catch(() => false)
-      }
-    }
-    let bytes = storedArtifact?.bytes
-    const artifactFromStore = storedArtifact !== undefined
+    let accepted = stored?.accepted
+    let bytes = stored?.bytes
+    const artifactFromStore = stored !== undefined
     if (!bytes) {
       bytes = await requestBytes(
         artifactUrl,
@@ -1320,7 +1349,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     // build's mark; only upstream bytes are new to this check (riverstatus#669).
     if (!artifactFromStore) await assertArtifactChecksum(bytes, sha256, artifactUrl)
 
-    accepted ??= await acceptBytes(bytes, false)
+    accepted ??= await acceptBytes(artifactUrl, bytes, product, false, mark !== undefined)
     const { data, decoded, mayMark } = accepted
     if (product.validate) {
       const validate = product.validate
