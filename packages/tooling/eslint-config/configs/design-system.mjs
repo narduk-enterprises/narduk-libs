@@ -97,6 +97,20 @@ const designSystemConfigs = [
   },
 
   {
+    // Function, const and class names that shadow a released export
+    // (narduk-libs#2126). Warn first, like the component rule above: a name
+    // match is a candidate, and `// LIBS-KEEP: <name> <reason>` marks a copy
+    // kept on purpose. Script files as well as `.vue`, so a `median` in
+    // `shared/utils/` is seen.
+    name: 'narduk/design-system-shared-exports',
+    files: ['**/*.{ts,mts,cts,js,mjs,cjs,vue}'],
+    plugins: { narduk },
+    rules: {
+      'narduk/no-shadowed-shared-export': 'warn',
+    },
+  },
+
+  {
     // Raw palette, arbitrary colour and `vh`/`screen` height classes, matched by
     // name so the ban holds when `tailwindcss` does not resolve from the lint cwd.
     // createAppLintConfig's `allowedRawPaletteFiles` relaxes the palette half.
