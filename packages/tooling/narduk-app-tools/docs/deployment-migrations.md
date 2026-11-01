@@ -405,6 +405,15 @@ nothing at all -- not even the lock -- and reports what `db status` would. A
 lock row still sends it down the locked path, so a retained lock fails that run
 exactly as it fails one with pending work (narduk-libs#704).
 
+Read-only introspection uses multi-statement
+`wrangler d1 execute --command --json` for both local and remote D1. Table
+discovery, ledger shape and adoption PRAGMAs share one call; ledger rows and the
+optional lock-owner read share a second call once table existence is known. Each
+statement must return one successful result set in order, including empty
+results, or inspection fails. The status/`--check` path retains its separate
+lock checks before and after inspection. Writes, lock acquisition/release and
+remote file imports keep their existing execution paths (narduk-libs#2149).
+
 A Workers Build that finds the row held by a _live_ run of the same or an
 **older** commit can wait for it, bounded (`--lock-wait-seconds`,
 `NARDUK_MIGRATION_LOCK_WAIT_SECONDS`, default 300 s with `--workers-build-only`,

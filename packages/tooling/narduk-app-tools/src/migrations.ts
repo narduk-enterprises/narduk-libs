@@ -849,9 +849,10 @@ export function parseWranglerJson<T>(output: string): WranglerResult<T> {
 
 /**
  * One result set per statement of a multi-statement `--command`, in order --
- * which is how `wrangler d1 execute --local --json` reports it (one
- * `db.batch` entry per statement). Fails closed when the count differs, so a
- * result can never be read as another statement's.
+ * which is how `wrangler d1 execute --json` reports it: local `db.batch` and
+ * the remote D1 `/query` endpoint both return one entry per statement. Fails
+ * closed when the count differs, so a result can never be read as another
+ * statement's.
  */
 export function parseWranglerBatchJson(output: string, statements: number): unknown[][] {
   const entries = parseWranglerEntries(output)
@@ -883,12 +884,10 @@ export type MigrationExecutor = (args: string[], cwd: string, json: boolean) => 
 interface MigrationDatabase {
   rows<T>(sql: string): T[]
   /**
-   * Read-only statements, one result set each, in order. `--local` runs them
-   * in ONE wrangler process: its startup is the whole cost of a local read
-   * (~1.3 s), and a no-op `db migrate --local` used to pay it about twenty
-   * times (narduk-libs#704). `--remote` keeps one process per statement --
-   * that path was not measured, and its multi-statement result shape is not
-   * proven here.
+   * Read-only statements, one result set each, in order, in one wrangler
+   * process for both `--local` and `--remote` (narduk-libs#704, #2149).
+   * Remote reads use `--command`: `--file` is an import with different
+   * locking and result semantics, not the read-only `/query` endpoint.
    */
   batch(statements: readonly string[]): unknown[][]
   /** True when `batch` costs one process however many statements it carries. */
@@ -936,12 +935,9 @@ function migrationDatabase(
     })
   return {
     rows: <T>(sql: string) => parseWranglerJson<T>(run(args(sql, true), true)).results,
-    batchIsOneProcess: options.location === '--local',
+    batchIsOneProcess: true,
     batch: (statements) => {
       if (statements.length === 0) return []
-      if (options.location !== '--local') {
-        return statements.map((sql) => parseWranglerJson(run(args(sql, true), true)).results)
-      }
       for (const sql of statements) {
         if (!sql.trimEnd().endsWith(';')) throw new Error(`Unterminated batched statement: ${sql}`)
       }
@@ -1180,11 +1176,9 @@ interface DatabaseInspection {
  * result, not an error; the second reads only tables the first proved exist,
  * and is skipped when none do.
  *
- * Where a batch is one process (`--local`), reads the answer may not need --
+ * Since a batch is one process, reads the answer may not need --
  * the ledger's shape before the ledger is known to exist, the lock owner
- * before the plan is known to be a no-op -- ride along for free. Where each
- * statement is its own process (`--remote`), they are made only once needed,
- * so no remote run starts more processes than it did before.
+ * before the plan is known to be a no-op -- ride along in those two batches.
  */
 function inspectDatabase(
   options: MigrationRunOptions,

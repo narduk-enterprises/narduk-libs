@@ -188,6 +188,34 @@ describe('D1 migration database protocol', () => {
     expect(parseWranglerBatchJson(two, 2)).toEqual([[], [{ a: 1 }]])
     expect(() => parseWranglerBatchJson(two, 3)).toThrow('2 D1 result sets for 3 statements')
   })
+  it('parses remote /query result sets, preserving empty PRAGMAs and statement order', () => {
+    // Wrangler prints the /query response's result array, without its API envelope.
+    const output = JSON.stringify([
+      { success: true, results: [{ name: 'example' }], meta: { rows_read: 1 } },
+      { success: true, results: [], meta: { rows_read: 0 } },
+      { success: true, results: [{ name: 'id', pk: 0 }], meta: { rows_read: 1 } },
+    ])
+    expect(parseWranglerBatchJson(output, 3)).toEqual([
+      [{ name: 'example' }],
+      [],
+      [{ name: 'id', pk: 0 }],
+    ])
+    expect(() => parseWranglerBatchJson(output, 2)).toThrow('3 D1 result sets for 2 statements')
+  })
+  it.each([
+    '[{"success":true,"results":[]}]',
+    '[{"success":true,"results":[]},{"success":false,"results":[]}]',
+    '[{"success":true,"results":[]},{"success":true,"results":null}]',
+  ])('refuses a malformed remote inspection before any write: %s', (output) => {
+    const f = fixture()
+    const execute: MigrationExecutor = (args) => {
+      f.calls.push(args)
+      return output
+    }
+    expect(() => runMigrations(f.options, execute)).toThrow('Wrangler returned')
+    expect(spawns(f.calls)).toEqual({ total: 1, reads: 1, writes: 0 })
+    expect(f.db.prepare('SELECT name FROM sqlite_master').all()).toEqual([])
+  })
   it.each(['{}', '[]', '[{"success":false,"results":[]}]', '[{"success":true}]'])(
     'fails closed on malformed provider output %s',
     (output) => {
@@ -219,15 +247,19 @@ describe('wrangler process count (narduk-libs#704)', () => {
     return { ...f, local }
   }
 
-  it('a warm --local run is two read processes, and writes nothing', () => {
-    const f = withHistory()
-    expect(runMigrations(f.local, f.executor)).toMatchObject({ apply: 3, skip: 0 })
-    f.calls.length = 0
-    expect(runMigrations(f.local, f.executor)).toMatchObject({ apply: 0, skip: 3 })
-    // Before: three inspections of five reads each plus three lock statements.
-    expect(spawns(f.calls)).toEqual({ total: 2, reads: 2, writes: 0 })
-    expect(f.db.prepare(`SELECT * FROM ${MIGRATION_LOCK_TABLE}`).all()).toEqual([])
-  })
+  it.each(['--local', '--remote'] as const)(
+    'a warm %s run is two read processes, and writes nothing',
+    (location) => {
+      const f = withHistory()
+      const options = { ...f.options, location }
+      expect(runMigrations(options, f.executor)).toMatchObject({ apply: 3, skip: 0 })
+      f.calls.length = 0
+      expect(runMigrations(options, f.executor)).toMatchObject({ apply: 0, skip: 3 })
+      // Before: three inspections of five reads each plus three lock statements.
+      expect(spawns(f.calls)).toEqual({ total: 2, reads: 2, writes: 0 })
+      expect(f.db.prepare(`SELECT * FROM ${MIGRATION_LOCK_TABLE}`).all()).toEqual([])
+    },
+  )
 
   it('reads the lock and every ledger in the same --local process', () => {
     const f = withHistory()
@@ -256,21 +288,66 @@ describe('wrangler process count (narduk-libs#704)', () => {
     expect(() => runMigrations(f.options, f.executor)).toThrow('Could not acquire')
   })
 
-  it('a warm --remote run takes no lock and sends each statement on its own', () => {
-    const f = withHistory()
+  it('a warm --remote run batches ten tables and every ledger regardless of migration count', () => {
+    const tables = Array.from({ length: 10 }, (_, i) => `t${i}`)
+    const f = fixture(
+      tables.map((table) => `CREATE TABLE ${table} (id TEXT);`).join('\n') +
+        '\nCREATE INDEX t0_id ON t0 (id);',
+    )
+    for (let i = 2; i <= 16; i += 1)
+      writeFileSync(join(f.root, 'sql', `${String(i).padStart(4, '0')}.sql`), 'SELECT 1;')
+    f.db.exec(
+      'CREATE TABLE _applied_migrations (filename TEXT); CREATE TABLE d1_migrations (name TEXT);',
+    )
+    writeFileSync(
+      join(f.root, 'sources.json'),
+      JSON.stringify({
+        sources: [{ source: 'app', path: 'sql', sourceVersion: '1' }],
+        adoptions: [
+          {
+            source: 'app',
+            filename: '0001.sql',
+            sourceVersion: '1',
+            checksum: checksumMigrationSql(readFileSync(join(f.root, 'sql', '0001.sql'), 'utf8')),
+            legacy: { filename: 'old.sql' },
+            evidence: {
+              tables,
+              columns: [{ table: 't0', column: 'id' }],
+              indexes: [{ table: 't0', name: 't0_id' }],
+            },
+          },
+        ],
+      }),
+    )
     runMigrations(f.options, f.executor)
     f.calls.length = 0
-    expect(runMigrations(f.options, f.executor)).toMatchObject({ apply: 0, skip: 3 })
-    expect(spawns(f.calls).writes).toBe(0)
+    expect(runMigrations(f.options, f.executor)).toMatchObject({ apply: 0, skip: 16 })
+    // Previously: table list + 20 PRAGMAs + ledger shape + 3 ledgers + lock = 26.
+    expect(spawns(f.calls)).toEqual({ total: 2, reads: 2, writes: 0 })
     for (const args of f.calls) {
-      const sql = args[args.indexOf('--command') + 1]!
-      expect(
-        sql
-          .trim()
-          .split(';')
-          .filter((part) => part.trim()),
-      ).toHaveLength(1)
+      expect(args).toContain('--remote')
+      expect(args).toContain('--json')
+      expect(args).toContain('--command')
+      expect(args.some((arg) => arg.startsWith('--file'))).toBe(false)
     }
+    const first = f.calls[0]![f.calls[0]!.indexOf('--command') + 1]!
+    for (const table of tables) {
+      expect(first).toContain(`PRAGMA table_info(${table});`)
+      expect(first).toContain(`PRAGMA index_list(${table});`)
+    }
+    expect(first).toContain('PRAGMA table_info(_narduk_migrations);')
+    const second = f.calls[1]![f.calls[1]!.indexOf('--command') + 1]!
+    for (const table of [
+      MIGRATION_LOCK_TABLE,
+      '_narduk_migrations',
+      '_applied_migrations',
+      'd1_migrations',
+    ])
+      expect(second).toContain(`FROM ${table}`)
+    f.calls.length = 0
+    expect(inspectMigrations(f.options, f.executor)).toMatchObject({ apply: 0, skip: 16 })
+    // The status path keeps its before/after lock checks (four reads) unchanged.
+    expect(spawns(f.calls)).toEqual({ total: 6, reads: 6, writes: 0 })
   })
 
   it('still applies and proves a cold --local run', () => {
