@@ -321,6 +321,8 @@ export interface NacDependabotReading {
 
 const DEPENDABOT_PAGE_SIZE = 100
 const DEPENDABOT_MAX_PAGES = 10
+const DEPENDABOT_CONNECT_ATTEMPTS = 3
+const DEPENDABOT_CONNECT_BACKOFF_MS = 1_000
 const DEPENDABOT_COUNTED_LIMIT = 8
 const DEPENDABOT_MISSING_PERMISSION =
   'needs vulnerability-alerts: read (native job token), "Dependabot alerts: read" (fine-grained token) or security_events (classic); the checker does not widen a token'
@@ -330,6 +332,8 @@ export interface GithubDependabotOptions {
   token?: string
   fetchImpl?: typeof fetch
   apiUrl?: string
+  /** Waits between connection retries; tests inject a no-op. */
+  sleepImpl?: (ms: number) => Promise<void>
 }
 
 function clip(text: string, length = 160): string {
@@ -419,6 +423,8 @@ export function createGithubDependabotReality(
       }
       const doFetch = options.fetchImpl ?? fetch
       const base = options.apiUrl ?? 'https://api.github.com'
+      const sleep =
+        options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
       const alerts: DependabotAlertRow[] = []
       const initial = `${base}/repos/${repo}/dependabot/alerts?state=open&severity=critical,high&per_page=${DEPENDABOT_PAGE_SIZE}`
       let url = initial
@@ -428,20 +434,31 @@ export function createGithubDependabotReality(
           return { kind: 'unknown', reason: 'GitHub repeated a Dependabot pagination cursor' }
         }
         visited.add(url)
-        let response: Response
-        try {
-          response = await doFetch(url, {
-            headers: {
-              accept: 'application/vnd.github+json',
-              authorization: `Bearer ${token}`,
-              'x-github-api-version': '2022-11-28',
-            },
-            signal: AbortSignal.timeout(15_000),
-          })
-        } catch (error) {
+        let response: Response | undefined
+        let connectError: unknown
+        for (let attempt = 1; attempt <= DEPENDABOT_CONNECT_ATTEMPTS; attempt += 1) {
+          try {
+            response = await doFetch(url, {
+              headers: {
+                accept: 'application/vnd.github+json',
+                authorization: `Bearer ${token}`,
+                'x-github-api-version': '2022-11-28',
+              },
+              signal: AbortSignal.timeout(15_000),
+            })
+            break
+          } catch (error) {
+            // Only a connection failure is retried; any HTTP answer is final.
+            connectError = error
+            if (attempt < DEPENDABOT_CONNECT_ATTEMPTS) {
+              await sleep(DEPENDABOT_CONNECT_BACKOFF_MS * attempt)
+            }
+          }
+        }
+        if (!response) {
           return {
             kind: 'unknown',
-            reason: `the Dependabot alerts read failed to connect: ${clip(error instanceof Error ? error.message : String(error))}`,
+            reason: `the Dependabot alerts read failed to connect after ${DEPENDABOT_CONNECT_ATTEMPTS} attempts: ${clip(connectError instanceof Error ? connectError.message : String(connectError))}`,
           }
         }
         if (response.status !== 200) {
