@@ -1,4 +1,5 @@
-import { rmSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -6,15 +7,18 @@ import {
   formatAdoptionSummary,
   runAdoptionCheck,
   type AdoptionArtefact,
+  type LiveRetry,
 } from '../../src/foundation/evaluate-adoption.js'
 import type { FetchTransport } from '../../src/live-probe.js'
-import { makeTempRepo } from './helpers.js'
+import { CACHE_BUST_PARAM } from '../../src/verify-live.js'
+import { makeTempRepo, writeJson } from './helpers.js'
 import {
   CONFORMANT_HEADERS,
   NO_ALERTS,
   SHA,
   TOOL_VERSION,
   baselineReality,
+  fakeHeaderProbe,
   writeAdoptionBaseline,
 } from './adoption-fixture.js'
 
@@ -48,18 +52,30 @@ async function run(
   direct: FetchTransport,
   extra: {
     env?: Record<string, string>
+    expectSha?: string | null
+    headerProbe?: boolean
+    liveProof?: { attempts: number; intervalSeconds: number }
     proxy?: FetchTransport
-    retry?: { attempts: number; intervalMs?: number }
+    retry?: Partial<LiveRetry>
   } = {},
 ): Promise<AdoptionArtefact> {
   const root = makeTempRepo()
   tempDirs.push(root)
   writeAdoptionBaseline(root)
+  if (extra.liveProof) {
+    const path = join(root, 'Config', 'cloudflare-app.json')
+    const config = JSON.parse(readFileSync(path, 'utf8')) as {
+      deployment: { liveProof: Record<string, unknown> }
+    }
+    config.deployment.liveProof = { ...config.deployment.liveProof, ...extra.liveProof }
+    writeJson(root, 'Config/cloudflare-app.json', config)
+  }
   return runAdoptionCheck({
     dependabotReality: NO_ALERTS,
     egressProxyFetch: extra.proxy,
     env: extra.env ?? {},
-    expectSha: SHA,
+    ...(extra.expectSha === null ? {} : { expectSha: extra.expectSha ?? SHA }),
+    ...(extra.headerProbe ? { headerProbe: fakeHeaderProbe } : {}),
     liveRetry: extra.retry ?? { attempts: 1 },
     liveTransport: direct,
     liveUrl: 'https://buoystat.us',
@@ -148,5 +164,140 @@ describe('doctor --adoption --live egress fallback', () => {
     const artefact = await run(direct.transport, { retry: { attempts: 2, intervalMs: 0 } })
 
     expect(req(artefact, 'R5').verdict).toBe('fail')
+    expect(req(artefact, 'R5').detail).toBe(
+      'live https://buoystat.us/ serves e4df9478b4c5, which is NOT the expected commit',
+    )
+  })
+})
+
+const OLD = 'e4df9478b4c5'
+const FRESH = '48ba389bdb1b'
+
+/** Smoke-route answers in order. Health is always 200 and is not a smoke read.
+ * The header probe is injected, so this transport sees only R5 and R12. */
+function stamped(stamps: readonly string[]) {
+  const urls: string[] = []
+  let smokeReads = 0
+  const transport: FetchTransport = async (url) => {
+    urls.push(url)
+    if (new URL(url).pathname === '/api/health') return new Response('{}', { status: 200 })
+    const stamp = stamps[Math.min(smokeReads, stamps.length - 1)] ?? OLD
+    smokeReads += 1
+    return new Response('<html></html>', {
+      headers: { 'x-build-version': stamp },
+      status: 200,
+    })
+  }
+  const smokeUrls = () => urls.filter((url) => new URL(url).pathname !== '/api/health')
+  return { smokeUrls, transport }
+}
+
+describe('R5 propagation retry (verify --attempts)', () => {
+  it('passes R5 when the first smoke read is stale and the next is the expected build', async () => {
+    const live = stamped([OLD, FRESH])
+    const artefact = await run(live.transport, {
+      headerProbe: true,
+      retry: {
+        attempts: 4,
+        cacheBustToken: (attempt) => `attempt-${String(attempt)}`,
+        intervalMs: 0,
+      },
+    })
+
+    expect(req(artefact, 'R5').verdict).toBe('pass')
+    expect(req(artefact, 'R5').detail).toBe(
+      `live https://buoystat.us/ serves ${FRESH}, which is the expected commit`,
+    )
+    const smoke = live.smokeUrls()
+    expect(smoke).toHaveLength(2)
+    const [first, second] = smoke
+    expect(first && new URL(first).searchParams.get(CACHE_BUST_PARAM)).toBe('attempt-1')
+    expect(second && new URL(second).searchParams.get(CACHE_BUST_PARAM)).toBe('attempt-2')
+    expect(req(artefact, 'R5').detail).not.toContain(CACHE_BUST_PARAM)
+  })
+
+  it('fails R5 with the same detail when every read stays on the previous build', async () => {
+    const live = stamped([OLD])
+    const artefact = await run(live.transport, {
+      headerProbe: true,
+      retry: { attempts: 3, cacheBustToken: (n) => `t${String(n)}`, intervalMs: 0 },
+    })
+
+    expect(req(artefact, 'R5').verdict).toBe('fail')
+    expect(req(artefact, 'R5').detail).toBe(
+      `live https://buoystat.us/ serves ${OLD}, which is NOT the expected commit`,
+    )
+    expect(live.smokeUrls()).toHaveLength(3)
+    expect(artefact.result).toBe('FAIL')
+  })
+
+  it('does not pass R5 because the health route already serves the expected commit', async () => {
+    const urls: string[] = []
+    const transport: FetchTransport = async (url) => {
+      urls.push(url)
+      if (new URL(url).pathname === '/api/health') {
+        return new Response('{}', { headers: { 'x-build-version': FRESH }, status: 200 })
+      }
+      return new Response('<html></html>', {
+        headers: { 'x-build-version': OLD },
+        status: 200,
+      })
+    }
+    const artefact = await run(transport, {
+      headerProbe: true,
+      retry: { attempts: 2, intervalMs: 0 },
+    })
+
+    expect(req(artefact, 'R5').verdict).toBe('fail')
+    expect(req(artefact, 'R5').detail).toContain('NOT the expected commit')
+    expect(urls.filter((url) => new URL(url).pathname !== '/api/health')).toHaveLength(2)
+  })
+
+  it('reads the smoke route once, with no cache bust, when no expected commit is given', async () => {
+    const live = stamped([OLD])
+    const artefact = await run(live.transport, {
+      expectSha: null,
+      headerProbe: true,
+      retry: { attempts: 4, cacheBustToken: () => 'should-not-appear', intervalMs: 0 },
+    })
+
+    expect(live.smokeUrls()).toEqual(['https://buoystat.us/'])
+    expect(req(artefact, 'R5').verdict).toBe('unknown')
+    expect(req(artefact, 'R5').detail).toContain('no --expect-sha')
+  })
+
+  it('uses the declared liveProof attempts, the same number verify --attempts is given', async () => {
+    const live = stamped([OLD])
+    const artefact = await run(live.transport, {
+      headerProbe: true,
+      liveProof: { attempts: 3, intervalSeconds: 10 },
+      retry: { cacheBustToken: (n) => `t${String(n)}`, intervalMs: 0 },
+    })
+
+    expect(req(artefact, 'R5').verdict).toBe('fail')
+    expect(live.smokeUrls()).toHaveLength(3)
+  })
+
+  it('stops at the verify deadline even when attempts remain', async () => {
+    let clock = 0
+    const live = stamped([OLD])
+    const artefact = await run(live.transport, {
+      headerProbe: true,
+      retry: {
+        attempts: 6,
+        deadlineMs: 15_000,
+        intervalMs: 10_000,
+        now: () => clock,
+        sleep: async (ms) => {
+          clock += ms
+        },
+      },
+    })
+
+    expect(req(artefact, 'R5').verdict).toBe('fail')
+    // One read, sleep 10s, second read, then the remaining 5s of the deadline
+    // is not enough for another full wait: the loop stops the way verify does.
+    expect(live.smokeUrls()).toHaveLength(2)
+    expect(clock).toBe(15_000)
   })
 })
