@@ -423,7 +423,8 @@ export function createGithubDependabotReality(
       }
       const doFetch = options.fetchImpl ?? fetch
       const base = options.apiUrl ?? 'https://api.github.com'
-      const sleep = options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+      const sleep =
+        options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
       const alerts: DependabotAlertRow[] = []
       const initial = `${base}/repos/${repo}/dependabot/alerts?state=open&severity=critical,high&per_page=${DEPENDABOT_PAGE_SIZE}`
       let url = initial
