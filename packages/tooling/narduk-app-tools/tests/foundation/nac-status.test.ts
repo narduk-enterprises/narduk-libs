@@ -463,9 +463,42 @@ describe('the GitHub Dependabot reader', () => {
       fetchImpl: async () => {
         throw new Error('getaddrinfo ENOTFOUND api.github.com')
       },
+      sleepImpl: async () => {},
+      token: 't',
+    })
+    expect(await reality.read('narduk-enterprises/x')).toMatchObject({
+      kind: 'unknown',
+      reason: expect.stringContaining('failed to connect after 3 attempts'),
+    })
+  })
+
+  it('retries a transient connection failure and then reads the alerts', async () => {
+    let calls = 0
+    const reality = createGithubDependabotReality({
+      fetchImpl: async () => {
+        calls += 1
+        if (calls < 3) throw new Error('fetch failed')
+        return response(200, [])
+      },
+      sleepImpl: async () => {},
+      token: 't',
+    })
+    expect(await reality.read('narduk-enterprises/x')).toMatchObject({ kind: 'read', alerts: [] })
+    expect(calls).toBe(3)
+  })
+
+  it('does not retry an HTTP answer', async () => {
+    let calls = 0
+    const reality = createGithubDependabotReality({
+      fetchImpl: async () => {
+        calls += 1
+        return response(403, { message: 'nope' })
+      },
+      sleepImpl: async () => {},
       token: 't',
     })
     expect(await reality.read('narduk-enterprises/x')).toMatchObject({ kind: 'unknown' })
+    expect(calls).toBe(1)
   })
 
   it('reads open critical and high alerts, with the patched version, from the REST list', async () => {
