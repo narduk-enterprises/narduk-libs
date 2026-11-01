@@ -103,6 +103,16 @@ function handbookLink(chapterFile: string): string {
 }
 
 /**
+ * The router region's pointer to `libs-find`, which searches what narduk-libs
+ * ships (agent-infrastructure `docs/agents/narduk-libs-first.md`). #2120 traced
+ * about twenty `useStoredState` and twenty `useShare` copies to agents not
+ * knowing the lookup existed. `// LIBS-KEEP:` is the marker `libs-find` and
+ * `narduk/no-shadowed-shared-export` both read (narduk-libs#2127).
+ */
+const LIBS_FIND_GUIDANCE =
+  'Before writing a composable, util, server helper or component, search what libs ships: `~/.local/share/agent-infrastructure/scripts/libs-find <need>`. Mark a copy you keep on purpose with `// LIBS-KEEP: <export> <reason>`.'
+
+/**
  * The quality bar in the managed AGENTS.md router region (coding-standards
  * SPEC S3, 2026-09-27). Each rule is one checkable line with the handbook
  * chapter behind it, because the handbook alone did not reach the agents who
@@ -843,6 +853,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'Shared packages: ' +
           sharedPackageList +
           '. Before design or implementation, check the narduk-libs catalog and owning README/public exports. Use suitable shared capabilities across UI, server, contracts, data, tests and tooling. Extend incomplete capabilities or build clearly reusable primitives in the owning package; publish and adopt the release instead of copying locally. Keep product policy in the app and respect recorded stack exceptions.',
+        '',
+        LIBS_FIND_GUIDANCE,
         '',
         'Growing collections require bounded source queries and reachable continuation. Use narduk-core parseListQuery/listResponse and server/list-cursor, narduk-platform list types, and narduk-shell useCollection/NePager for offset lists (useCollection is not a cursor client). A cap or browser slice alone is not pagination. Document enforced bounds for fixed catalogs, previews, snapshots and viewport/map queries. See the handbook Web Apps collection navigation and Backend bounded list query rules.',
         '',

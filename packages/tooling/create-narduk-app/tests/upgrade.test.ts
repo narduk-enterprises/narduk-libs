@@ -772,6 +772,25 @@ describe('upgrade opt-outs and notices', () => {
     expect(await read(targetDir, 'AGENTS.md')).toBe(after)
   })
 
+  // narduk-libs#2127: an app scaffolded before the libs-find line gets it on
+  // its next upgrade, inside the router region only.
+  it('adds the libs-find line to a router region that predates it', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'AGENTS.md', (contents) =>
+      contents.replace(/^Before writing a composable, util.*\n\n/mu, ''),
+    )
+    expect(await read(targetDir, 'AGENTS.md')).not.toContain('libs-find')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'AGENTS.md')).toBe('drift')
+    expect(await read(targetDir, 'AGENTS.md')).toContain(
+      'search what libs ships: `~/.local/share/agent-infrastructure/scripts/libs-find <need>`. Mark a copy you keep on purpose with `// LIBS-KEEP: <export> <reason>`.',
+    )
+
+    const again = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(again, 'AGENTS.md')).toBe('clean')
+  })
+
   // SPEC S3 (2026-09-27): an app scaffolded before the quality bar gets it on
   // its next upgrade, inside the router region only.
   it('adds the quality bar to a router region that predates it', async () => {
