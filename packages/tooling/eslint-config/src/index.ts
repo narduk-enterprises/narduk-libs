@@ -83,6 +83,7 @@ import noRawFetchInStores from './rules/nuxt/no-raw-fetch-in-stores'
 import noSecretInPublicRuntimeConfig from './rules/nuxt/no-secret-in-public-runtime-config'
 import noSequentialAwaitedIoInEventHandler from './rules/nuxt/no-sequential-awaited-io-in-event-handler'
 import noShadowedSharedComponent from './rules/nuxt/no-shadowed-shared-component'
+import noShadowedSharedExport from './rules/nuxt/no-shadowed-shared-export'
 import requireSafeRedirectQuery from './rules/nuxt/require-safe-redirect-query'
 import requireUsePrefixForComposables from './rules/nuxt/require-use-prefix-for-composables'
 
@@ -172,6 +173,7 @@ const plugin = {
     'no-secret-in-public-runtime-config': noSecretInPublicRuntimeConfig,
     'no-sequential-awaited-io-in-event-handler': noSequentialAwaitedIoInEventHandler,
     'no-shadowed-shared-component': noShadowedSharedComponent,
+    'no-shadowed-shared-export': noShadowedSharedExport,
     'require-safe-redirect-query': requireSafeRedirectQuery,
     'require-use-prefix-for-composables': requireUsePrefixForComposables,
 

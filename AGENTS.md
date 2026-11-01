@@ -32,6 +32,12 @@ a continuing sync, reconcile, drift, or control-plane relationship with apps.
   complete usage example. Supply the shell README, design card, mount and SSR
   proofs required by `surface:check`. Declare file-reading consumers with
   `nardukWorkspaceInputs` so scoped CI runs their drift checks.
+- A new or renamed function, const or class export in an app-family package
+  (`modules/`, `design/`, `contracts/`) joins eslint-config's
+  `src/rules/utils/shared-exports.ts` through
+  `node scripts/generate-shared-exports.mjs`, which `no-shadowed-shared-export`
+  reads. `scripts:test` fails when the list names an export that no longer
+  exists; a missing new one only lags until the next regeneration.
 - Do not commit token-bearing files such as `.npmrc.auth`.
 - Publish package versions from this repo only after build/pack validation.
 
