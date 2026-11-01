@@ -18,7 +18,9 @@ test('every public CI and language job uses a hosted runner without package cred
   assert.equal((logging.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 2)
   // The Apple-only Swift client needs a GitHub-hosted macOS image, never a fleet Mac.
   assert.equal((authKit.match(/^    runs-on: macos-\d+$/gmu) || []).length, 1)
-  assert.equal((authKit.match(/^    runs-on:/gmu) || []).length, 1)
+  // Its format and lint checks need no Apple SDK, so they run in a hosted Linux job beside it.
+  assert.equal((authKit.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 1)
+  assert.equal((authKit.match(/^    runs-on:/gmu) || []).length, 2)
   assert.match(ci, /runner: '"ubuntu-latest"'/u)
   assert.match(ci, /required-runner: '"ubuntu-latest"'/u)
   assert.match(ci, /package-registry-auth: disabled/u)

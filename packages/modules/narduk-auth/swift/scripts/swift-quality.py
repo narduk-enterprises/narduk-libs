@@ -54,6 +54,7 @@ def lint() -> None:
     if swiftlint:
         run(swiftlint, "lint", "--strict", "--quiet", cwd=SWIFT)
     elif os.environ.get("CI"):
+        # Lint runs in the Linux CI job (it needs no Apple SDK); the macOS job passes --skip-lint.
         raise SystemExit("SwiftLint is required in CI")
     else:
         print("SwiftLint is not installed; skipped outside CI")
@@ -113,6 +114,11 @@ let package = Package(name: "Check", platforms: [.macOS(.v15)], dependencies: [
 
 
 def main() -> None:
+    if sys.argv[1:] == ["--lint-only"]:
+        # Format and lint are syntactic and run on Linux CI; nothing below this branch is.
+        run("swift", "--version")
+        lint()
+        return
     if sys.platform != "darwin":
         raise SystemExit(
             "NardukAuthKit needs an Apple host: it uses Security and CryptoKit"
@@ -122,9 +128,10 @@ def main() -> None:
         # Resolve the tag and build only NardukAuthKit, as an app consumer does.
         consumer()
         return
-    if sys.argv[1:]:
-        raise SystemExit("usage: swift-quality.py [--consumer-only]")
-    lint()
+    if sys.argv[1:] and sys.argv[1:] != ["--skip-lint"]:
+        raise SystemExit("usage: swift-quality.py [--consumer-only | --lint-only | --skip-lint]")
+    if not sys.argv[1:]:
+        lint()
     run("swift", "test", "--filter", "NardukAuthKitTests")
     # The package floor is iOS 18; prove the product compiles for a device.
     with tempfile.TemporaryDirectory(prefix="narduk-auth-kit-ios-") as derived:
