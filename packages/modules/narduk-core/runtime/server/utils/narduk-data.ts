@@ -1081,9 +1081,9 @@ async function acceptBytes<T>(
 /**
  * A stored artifact, with its accepted value when this build's mark vouched for it.
  *
- * A marked hit is not hashed, so corruption shows when it is decoded: the entry
- * is deleted and the caller reads upstream, instead of every cold isolate failing
- * on it until it expires.
+ * A marked hit is not hashed, so corruption shows when it is decoded: the bytes
+ * are hashed then, and a mismatch deletes the entry so the caller reads upstream,
+ * instead of every cold isolate failing on it until it expires.
  */
 async function loadStoredArtifact<T>(
   store: NardukDataStore,
@@ -1106,7 +1106,10 @@ async function loadStoredArtifact<T>(
       bytes: stored.bytes,
       accepted: await acceptBytes(url, stored.bytes, product, true, true),
     }
-  } catch {
+  } catch (error) {
+    // Intact bytes this caller cannot decode (a different `encoding` or ceiling)
+    // are the caller's failure and another consumer's good entry: keep them.
+    if ((await sha256Hex(stored.bytes)) === sha256) throw error
     await store.delete(key).catch(() => false)
     return undefined
   }

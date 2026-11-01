@@ -1711,9 +1711,11 @@ describe('trustValidatedStoreHits', () => {
     const { context, done } = settle()
     await createNardukDataClient(options).read(productOf(), context)
     await done()
+    const trusted = countingSchema()
     await expect(
       createNardukDataClient(options).read(
         productOf({
+          schema: trusted.schema,
           validate: () => {
             throw new Error('pair refused')
           },
@@ -1721,6 +1723,8 @@ describe('trustValidatedStoreHits', () => {
         context,
       ),
     ).rejects.toMatchObject({ reason: 'rejected' })
+    // The refusal came from `validate` on a trusted hit, not from a schema walk.
+    expect(trusted.state.walks).toBe(0)
   })
 
   it('validates a hit another build marked, then marks it for this one', async () => {
@@ -1792,14 +1796,14 @@ describe('trustValidatedStoreHits', () => {
     try {
       expect(await hashesFor(createNardukDataClient(options))).toBe(1)
       expect(upstream.calls).toHaveLength(2)
-      // An entry nobody marked, then one another build marked, are hashed.
+      // An entry with the option off (still marked build-1), then one another build marked, are hashed.
       expect(await hashesFor(createNardukDataClient(base))).toBe(1)
       expect(
         await hashesFor(
           createNardukDataClient({ ...base, trustValidatedStoreHits: { mark: 'build-0' } }),
         ),
       ).toBe(1)
-      // Re-marked for build-1 by the read above; now this build's mark skips the digest.
+      // Re-marked for build-0 by the read above; now this build's mark skips the digest.
       expect(
         await hashesFor(
           createNardukDataClient({ ...base, trustValidatedStoreHits: { mark: 'build-0' } }),
@@ -1860,6 +1864,22 @@ describe('trustValidatedStoreHits', () => {
     expect(result.data.stations).toEqual(['41008'])
     expect(after.state.walks).toBe(1)
     expect(upstream.calls).toHaveLength(3)
+  })
+
+  it('keeps a marked entry whose bytes are intact when this caller cannot decode them', async () => {
+    const { artifactKey, base, entries, upstream } = await setup()
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
+    const { context, done } = settle()
+    await createNardukDataClient(options).read(productOf(), context)
+    await done()
+    const key = artifactKey()
+    const before = entries.get(key)
+    // Another consumer of the same artifact URL reads it as gzip, which these bytes are not.
+    await expect(
+      createNardukDataClient(options).read(productOf({ encoding: 'gzip' }), context),
+    ).rejects.toMatchObject({ reason: 'schema' })
+    expect(entries.get(key)).toBe(before)
+    expect(upstream.calls).toHaveLength(2)
   })
 
   it('drops a marked hit that no longer decodes and reads upstream', async () => {
