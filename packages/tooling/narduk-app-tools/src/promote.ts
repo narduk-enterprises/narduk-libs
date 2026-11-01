@@ -75,10 +75,12 @@ import { dirname, join, resolve } from 'node:path'
 import { AppConfigError } from './app-config/resolve.js'
 import { fetchCloudflareEnvelope, listWorkerDeploymentsViaApi } from './cloudflare.js'
 import {
+  githubGet,
   resolveAncestry,
   resolveContainment,
   type Ancestry,
   type Containment,
+  type GitHubGet,
 } from './commit-containment.js'
 import { readCloudflareAppConfigDocument, readJsonc, resolveWranglerConfigPath } from './deploy.js'
 import { readDeploymentBlock } from './deployment-config.js'
@@ -1090,6 +1092,11 @@ export interface PromoteFlags {
    * default) looks once. See `--wait-for-version` (narduk-libs#695).
    */
   waitForVersionSeconds: number
+  /**
+   * True once `--wait-for-version` was given (even as 0). Unset, a promote under
+   * `workflow_run` waits `DEFAULT_WAIT_FOR_VERSION_SECONDS` (narduk-libs#2116).
+   */
+  waitForVersionSet: boolean
   /** Seconds between those re-listings. */
   waitIntervalSeconds: number
   /**
@@ -1152,6 +1159,7 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     allowRollback: false,
     maxVersions: DEFAULT_VERSION_SEARCH_LIMIT,
     waitForVersionSeconds: 0,
+    waitForVersionSet: false,
     waitIntervalSeconds: 30,
     gateVerified: null,
     gateOptOutReason: null,
@@ -1173,13 +1181,14 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
       flags.percentage = requirePercentage(requireValue(args, (index += 1), '--percentage'))
     else if (arg === '--max-versions')
       flags.maxVersions = requireMaxVersions(requireValue(args, (index += 1), '--max-versions'))
-    else if (arg === '--wait-for-version')
+    else if (arg === '--wait-for-version') {
+      flags.waitForVersionSet = true
       flags.waitForVersionSeconds = requireSeconds(
         requireValue(args, (index += 1), '--wait-for-version'),
         '--wait-for-version',
         0,
       )
-    else if (arg === '--wait-interval')
+    } else if (arg === '--wait-interval')
       flags.waitIntervalSeconds = requireSeconds(
         requireValue(args, (index += 1), '--wait-interval'),
         '--wait-interval',
@@ -1368,8 +1377,44 @@ export function formatPromoteResult(result: PromoteResult): string {
 /* Commands                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/** How long a `workflow_run` promote waits for the version when not told (narduk-libs#2116). */
+export const DEFAULT_WAIT_FOR_VERSION_SECONDS = 900
+
+/** The Workers Builds check-run on a commit, as far as GitHub shows it. */
+export type BuildCheckState =
+  | { state: 'pending' | 'success' | 'unknown' }
+  | { state: 'failed'; name: string; conclusion: string }
+
+const WORKERS_BUILDS_CHECK = /^Workers Builds/iu
+
+/**
+ * Reads the "Workers Builds: <worker>" check-run on `sha`. `unknown` when
+ * GitHub cannot be read or no such check exists: the wait then rests on the
+ * version listing alone.
+ */
+export function readWorkersBuildsCheck(sha: string, get: GitHubGet): BuildCheckState {
+  const body = get(`commits/${sha}/check-runs?per_page=100`) as {
+    check_runs?: Array<{ name?: unknown; status?: unknown; conclusion?: unknown }>
+  } | null
+  const runs = (body?.check_runs ?? []).filter(
+    (run) => typeof run.name === 'string' && WORKERS_BUILDS_CHECK.test(run.name),
+  )
+  if (runs.length === 0) return { state: 'unknown' }
+  for (const run of runs) {
+    if (run.status !== 'completed') continue
+    const conclusion = typeof run.conclusion === 'string' ? run.conclusion : 'unknown'
+    if (conclusion !== 'success' && conclusion !== 'neutral' && conclusion !== 'skipped')
+      return { state: 'failed', name: String(run.name), conclusion }
+  }
+  return runs.every((run) => run.status === 'completed')
+    ? { state: 'success' }
+    : { state: 'pending' }
+}
+
 export interface PromoteContext {
   appDir?: string
+  /** Injected in tests; the GitHub check-runs read (needs a token) otherwise. */
+  buildCheck?: (sha: string) => BuildCheckState
   env?: DeployEnv
   /** Injected in tests; built from the resolved Worker name otherwise. */
   client?: WranglerVersionsClient
@@ -1655,7 +1700,18 @@ async function promoteVersion(
     context.sleep ??
     ((milliseconds: number) => new Promise<void>((done) => setTimeout(done, milliseconds)))
   const waitStarted = now()
-  const deadline = waitStarted + flags.waitForVersionSeconds * 1000
+  const waitSeconds =
+    flags.waitForVersionSet || env.GITHUB_EVENT_NAME !== 'workflow_run' || flags.versionId
+      ? flags.waitForVersionSeconds
+      : DEFAULT_WAIT_FOR_VERSION_SECONDS
+  const deadline = waitStarted + waitSeconds * 1000
+  const buildCheck =
+    context.buildCheck ??
+    (env.GH_TOKEN || env.GITHUB_TOKEN
+      ? (checkSha: string) =>
+          readWorkersBuildsCheck(checkSha, githubGet(context.appDir ?? process.cwd(), env))
+      : null)
+  let failedBuild: Extract<BuildCheckState, { state: 'failed' }> | null = null
   let listAttempts = 0
   let listing: VersionListing
   for (;;) {
@@ -1673,6 +1729,12 @@ async function promoteVersion(
     if (resolveVersionForSha(listing.versions, sha).kind !== 'not-found') break
     const remaining = deadline - now()
     if (remaining <= 0) break
+    // A build that really failed will never upload: stop waiting and say so.
+    const build = buildCheck?.(sha)
+    if (build?.state === 'failed') {
+      failedBuild = build
+      break
+    }
     await sleep(Math.min(flags.waitIntervalSeconds * 1000, remaining))
   }
   const versions = listing.versions
@@ -1724,10 +1786,15 @@ async function promoteVersion(
         versionSearch,
         detail:
           describeVersionSearch(sha, match.searched, versionSearch) +
-          (flags.waitForVersionSeconds > 0
+          (failedBuild
+            ? ` The "${failedBuild.name}" check-run on this commit concluded ` +
+              `${failedBuild.conclusion}, so no version will be uploaded: fix the build, ` +
+              'not the promote.'
+            : '') +
+          (waitSeconds > 0
             ? ` Waited ${String(Math.round((now() - waitStarted) / 1000))}s over ` +
               `${String(listAttempts)} listings (--wait-for-version ` +
-              `${String(flags.waitForVersionSeconds)}).`
+              `${String(waitSeconds)}).`
             : ''),
         exitCode: PROMOTE_EXIT.versionNotFound,
       }

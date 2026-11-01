@@ -672,6 +672,14 @@ refusal or an ordering refusal is about the commit, not about timing, so each
 still answers on the first listing. On expiry the exit is still 3, and the
 detail adds how long it waited and how many listings it read.
 
+Under `workflow_run` (the event `promote.yml` starts on) the wait is on without
+the flag: 900 seconds, because a Fast-lane CI routinely finishes minutes before
+the Workers Builds upload (narduk-libs#2116). `--wait-for-version 0` restores
+looking once. With `GITHUB_TOKEN` in the step, each wait round also reads the
+"Workers Builds" check-run on the commit: if it concluded anything but success,
+no version is coming, so the promote stops waiting and the exit-3 detail names
+the failed check. On expiry nothing else is promoted; the exit stays 3.
+
 **`--sha` under `workflow_run`.** It defaults to `GITHUB_SHA` on every event but
 one. Under `on: workflow_run`, `GITHUB_SHA` is the default branch's head at
 trigger time rather than the commit whose run completed, so the command
