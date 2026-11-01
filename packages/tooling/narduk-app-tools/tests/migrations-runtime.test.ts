@@ -256,20 +256,24 @@ describe('wrangler process count (narduk-libs#704)', () => {
     expect(() => runMigrations(f.options, f.executor)).toThrow('Could not acquire')
   })
 
-  it('a warm --remote run takes no lock and sends each statement on its own', () => {
+  it('a warm --remote run is two read processes too, and takes no lock (#2149)', () => {
     const f = withHistory()
     runMigrations(f.options, f.executor)
     f.calls.length = 0
     expect(runMigrations(f.options, f.executor)).toMatchObject({ apply: 0, skip: 3 })
-    expect(spawns(f.calls).writes).toBe(0)
-    for (const args of f.calls) {
-      const sql = args[args.indexOf('--command') + 1]!
-      expect(
-        sql
-          .trim()
-          .split(';')
-          .filter((part) => part.trim()),
-      ).toHaveLength(1)
+    // Before: one wrangler process per statement, nine for this history, and
+    // two more per adoption evidence table -- minutes on a busy deploy runner.
+    expect(spawns(f.calls)).toEqual({ total: 2, reads: 2, writes: 0 })
+    expect(f.calls.every((args) => args.includes('--remote'))).toBe(true)
+    const second = f.calls[1]!
+    const sql = second[second.indexOf('--command') + 1]!
+    for (const table of [
+      MIGRATION_LOCK_TABLE,
+      '_narduk_migrations',
+      '_applied_migrations',
+      'd1_migrations',
+    ]) {
+      expect(sql).toContain(`FROM ${table}`)
     }
   })
 
