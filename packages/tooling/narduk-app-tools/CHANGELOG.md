@@ -1,5 +1,23 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.49.7
+
+### Patch Changes
+
+- a556177: `doctor --adoption --live --expect-sha` retries the smoke route it
+  grades for R5 — the build-version header and the document on that route — with
+  the same bound as `verify --live --attempts`: the app's `liveProof.attempts`
+  and `intervalSeconds`, otherwise 6 times 10 seconds apart, inside the
+  180-second deadline. Each attempt uses a new cache-busting query so a cached
+  copy of the previous release is not replayed. A stamp that still disagrees
+  after that bound fails R5 with the same detail as before. A run with no
+  `--expect-sha` still reads the route once.
+- 8629f03: The NAC `security` check names the Dependabot alerts it counted
+  (`#number package manifest`, at most eight) in its detail. The verdict and the
+  counting rule are unchanged; a cell that stays red after the vulnerable
+  version is gone can now be matched to the exact alerts GitHub still holds
+  open.
+
 ## 0.49.6
 
 ### Patch Changes
