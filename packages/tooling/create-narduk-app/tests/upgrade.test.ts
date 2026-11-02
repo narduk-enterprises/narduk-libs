@@ -888,6 +888,41 @@ describe('upgrade opt-outs and notices', () => {
     expect(await read(targetDir, '.github/workflows/ci.yml')).not.toContain('quality-level')
   })
 
+  // A repository the estate night dispatcher owns has no cron: its `ci.yml`
+  // declares the `nightly` input and routes a nightly run to the background
+  // runner by hand. `upgrade` edits single lines (pin, gate inputs) and never
+  // re-renders `on:` or `runner:`, so it can neither restore the cron nor undo
+  // that routing. This pins it.
+  it('keeps a night-dispatched ci.yml: no schedule comes back and the nightly routing survives', async () => {
+    const targetDir = await scaffold()
+    const background =
+      '      runner: ${{ ((github.event_name == \'schedule\' || github.event.inputs.nightly == \'true\') && vars.CI_BACKGROUND_RUNNER) || \'{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}\' }}\n'
+    await edit(targetDir, '.github/workflows/ci.yml', (contents) =>
+      contents
+        .replace(/ {6}runner: '.*'\n/u, background)
+        .replace(
+          /nuxt-cloudflare\.yml@[0-9a-f]{40}/u,
+          'nuxt-cloudflare.yml@' + NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS[0],
+        ),
+    )
+    const before = await read(targetDir, '.github/workflows/ci.yml')
+    expect(before).toContain('github.event.inputs.nightly')
+
+    const applied = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(applied, '.github/workflows/ci.yml')).toBe('drift')
+    const after = await read(targetDir, '.github/workflows/ci.yml')
+    expect(after).toBe(
+      before.replace(
+        /nuxt-cloudflare\.yml@[0-9a-f]{40}/u,
+        `nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`,
+      ),
+    )
+    const on = (parseYaml(after) as { on: Record<string, unknown> }).on
+    expect(Object.keys(on)).not.toContain('schedule')
+    expect(on.workflow_dispatch).toHaveProperty('inputs.nightly.type', 'boolean')
+    expect(after).not.toMatch(/^\s*- cron:/mu)
+  })
+
   it('creates a managed file that is missing entirely', async () => {
     const targetDir = await scaffold()
     await rm(join(targetDir, '.github/dependabot.yml'))
