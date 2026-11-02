@@ -1,4 +1,12 @@
 import { DEPENDABOT_COOLDOWN_DAYS, dependabotPolicyLines } from './dependency-policy.js'
+import {
+  applySchedule,
+  hasScheduleSlot,
+  readScheduleOverride,
+  scheduleFor,
+  scheduleLines,
+} from './dependabot-schedule.js'
+import type { DependabotSchedule } from './dependabot-schedule.js'
 import { isDisowned, UNMANAGED_MARKER, unmanagedMarkerFor } from './ownership.js'
 
 /**
@@ -145,10 +153,15 @@ export function registryEntries(contents: string): RegistryEntry[] {
  * placeholder `npm.nard.uk` registry on a GitHub Packages app, or a
  * scope-bearing GitHub Packages block on an `npm.nard.uk` app.
  */
-export function dependabotMatchesRegistry(contents: string, registry: PackageRegistry): boolean {
+export function dependabotMatchesRegistry(
+  contents: string,
+  registry: PackageRegistry,
+  schedule?: DependabotSchedule,
+): boolean {
   if (registry === 'unknown' || !hasPolicyCooldown(contents) || !hasNpmUpdateBlock(contents)) {
     return false
   }
+  if (schedule && !hasScheduleSlot(contents, schedule)) return false
   const entries = registryEntries(contents)
   const hosts = new Set(entries.map((entry) => registryHost(entry.url)))
   if (registry === 'github-packages') {
@@ -165,7 +178,10 @@ export function dependabotMatchesRegistry(contents: string, registry: PackageReg
 }
 
 /** Two-lane Dependabot file for an app that still installs from GitHub Packages. No placeholder token. */
-export function githubPackagesDependabot(): string {
+export function githubPackagesDependabot(
+  appName: string,
+  schedule: DependabotSchedule = scheduleFor(appName),
+): string {
   return [
     'version: 2',
     'registries:',
@@ -181,9 +197,7 @@ export function githubPackagesDependabot(): string {
     "      - 'npm-github'",
     '    schedule:',
     "      interval: 'weekly'",
-    "      day: 'monday'",
-    "      time: '06:00'",
-    "      timezone: 'America/Chicago'",
+    ...scheduleLines(schedule),
     '    labels:',
     "      - 'dependencies'",
     '    open-pull-requests-limit: 2',
@@ -208,9 +222,7 @@ export function githubPackagesDependabot(): string {
     "    directory: '/'",
     '    schedule:',
     "      interval: 'weekly'",
-    "      day: 'monday'",
-    "      time: '06:00'",
-    "      timezone: 'America/Chicago'",
+    ...scheduleLines(schedule),
     '    labels:',
     "      - 'dependencies'",
     '    open-pull-requests-limit: 1',
@@ -226,8 +238,17 @@ export function resolveDependabot(
   current: string | null,
   mirrorTemplate: string,
   registry: PackageRegistry,
+  appName: string,
 ): DependabotResolution {
-  const desired = registry === 'github-packages' ? githubPackagesDependabot() : mirrorTemplate
+  // The slot is the app's hash unless the file carries an explicit override,
+  // which a rewrite keeps.
+  const override = current === null ? null : readScheduleOverride(current)
+  const schedule = override ?? scheduleFor(appName)
+  const desired = applySchedule(
+    registry === 'github-packages' ? githubPackagesDependabot(appName) : mirrorTemplate,
+    schedule,
+    override,
+  )
   if (desired.includes(PLACEHOLDER_SECRET) && registry === 'github-packages') {
     return {
       detail: 'Refusing to add a placeholder-token registry to a GitHub Packages app.',
@@ -257,7 +278,7 @@ export function resolveDependabot(
       status: 'unmanaged',
     }
   }
-  if (registry !== 'unknown' && dependabotMatchesRegistry(current, registry)) {
+  if (registry !== 'unknown' && dependabotMatchesRegistry(current, registry, schedule)) {
     return {
       detail:
         'Dependabot already targets the app registry with the policy cooldown; left untouched.',

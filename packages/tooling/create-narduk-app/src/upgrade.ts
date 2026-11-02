@@ -1025,6 +1025,7 @@ function withMigrateWrapperCheck(
 }
 
 interface ResolveContext {
+  appName: string
   registry: PackageRegistry
   visibility: AppVisibility
   gate: CiGateContext
@@ -1087,7 +1088,7 @@ function resolveManagedTarget(
   if (target.mode === 'csp-preset') return resolveCspPreset(current, target.path, context.manifests)
   if (target.mode === 'dev-dependency') return resolveDevDependency(current, target)
   if (target.path === '.github/dependabot.yml' && desired !== undefined) {
-    return resolveDependabot(current, desired, registry)
+    return resolveDependabot(current, desired, registry, context.appName)
   }
   if (desired === undefined) {
     return {
@@ -1165,6 +1166,7 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
       'package.json',
       withMigrateWrapperCheck(
         resolveManagedTarget(packageTarget, packageNow, generated.get('package.json'), {
+          appName: profile.appName,
           gate: emptyGate(facts),
           manifests,
           registry,
@@ -1182,6 +1184,7 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
     resolved.set(
       cspTarget.path,
       resolveManagedTarget(cspTarget, currentOf.get(cspTarget.path) ?? null, undefined, {
+        appName: profile.appName,
         gate: emptyGate(facts),
         manifests,
         registry,
@@ -1195,6 +1198,7 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
     Object.keys((parseJsonOrNull(packageAfter)?.scripts as Record<string, string>) ?? {}),
   )
   const context: ResolveContext = {
+    appName: profile.appName,
     gate: {
       cspEnforcedHint: /\benforce\s*:\s*true\b/u.test(nuxtConfigAfter),
       layout: facts.layout,
