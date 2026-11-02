@@ -800,7 +800,12 @@ export function resolveVersionForSha(
   if (matches.length === 0) return { kind: 'not-found', searched: versions.length }
   // While an app moves to the runner upload, its Workers Build still uploads
   // the same commit: the one runner version is the build CI tested.
-  const runner = matches.filter((version) => isRunnerUpload(version))
+  const runner = matches.filter(
+    (version) =>
+      isRunnerUpload(version) &&
+      version.annotations?.[VERSION_TAG_ANNOTATION]?.trim().toLowerCase() ===
+        sha.trim().toLowerCase(),
+  )
   if (runner.length === 1) return { kind: 'found', version: runner[0], searched: versions.length }
   return { kind: 'ambiguous', versions: matches, searched: versions.length }
 }

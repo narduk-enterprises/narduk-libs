@@ -256,6 +256,8 @@ describe('sha to version resolution', () => {
       annotations: { 'workers/tag': SHA, 'workers/message': `Runner upload ${'0'.repeat(40)}` },
     })
     expect(resolveVersionForSha([build, other], SHA).kind).toBe('ambiguous')
+    // A short --sha never picks a runner upload: it may prefix two commits.
+    expect(resolveVersionForSha([build, runner], SHORT).kind).toBe('ambiguous')
   })
 
   it('takes GITHUB_SHA when no --sha is given, and prints the version it will replace', async () => {
