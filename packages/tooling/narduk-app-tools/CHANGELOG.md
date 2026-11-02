@@ -1,5 +1,19 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.49.10
+
+### Patch Changes
+
+- 6c75c6a: `versions-promote --sha` takes the one `Runner upload <sha>` version
+  when a Workers Build uploaded the same commit too, and reads that message as a
+  `main` build, so an app moving to the shared runner upload promotes without
+  `--version-id` or `--any-branch` (agent-infrastructure#4795). It needs the
+  full commit SHA; a re-run attempt that uploads a second runner version of a
+  commit still refuses, and `--version-id` names the one to take.
+- 296d060: `db migrate --remote` and `migrate-deployment` read D1 in one
+  wrangler process per inspection batch instead of one per statement. A no-op
+  promote migrate step drops from minutes to seconds (#2149).
+
 ## 0.49.9
 
 ### Patch Changes
