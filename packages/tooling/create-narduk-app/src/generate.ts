@@ -17,6 +17,7 @@ import { analyticsScaffoldFiles } from './analytics-scaffold.js'
 import { createMigrationWorkflowFiles, LINUX_DEPLOY_RUNNER_LABELS } from './migration-workflows.js'
 import { rateLimitNamespacePrefix } from './rate-limit-namespace.js'
 
+import { scheduleFor, scheduleLines } from './dependabot-schedule.js'
 import {
   createMigrationSourcesManifest,
   createProductSpec,
@@ -772,9 +773,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      - 'npm-nard-uk'",
         '    schedule:',
         "      interval: 'weekly'",
-        "      day: 'monday'",
-        "      time: '06:00'",
-        "      timezone: 'America/Chicago'",
+        ...scheduleLines(scheduleFor(appName)),
         '    labels:',
         "      - 'dependencies'",
         '    open-pull-requests-limit: 2',
@@ -799,9 +798,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "    directory: '/'",
         '    schedule:',
         "      interval: 'weekly'",
-        "      day: 'monday'",
-        "      time: '06:00'",
-        "      timezone: 'America/Chicago'",
+        ...scheduleLines(scheduleFor(appName)),
         '    labels:',
         "      - 'dependencies'",
         '    open-pull-requests-limit: 1',

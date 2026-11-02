@@ -127,8 +127,8 @@ describe('package registry detection', () => {
     expect(dependabotMatchesRegistry(githubWorking, 'github-packages')).toBe(true)
     expect(dependabotMatchesRegistry(githubWorking, 'narduk-mirror')).toBe(false)
     expect(dependabotMatchesRegistry(mirrorWorking, 'narduk-mirror')).toBe(true)
-    expect(githubPackagesDependabot()).not.toContain(PLACEHOLDER)
-    expect(githubPackagesDependabot()).toContain('https://npm.pkg.github.com')
+    expect(githubPackagesDependabot('demo-app')).not.toContain(PLACEHOLDER)
+    expect(githubPackagesDependabot('demo-app')).toContain('https://npm.pkg.github.com')
   })
 
   it('requires an npm update block before calling a mirror file clean', () => {
@@ -301,7 +301,7 @@ describe('upgrade dependabot registry', () => {
 
 describe('githubPackagesDependabot', () => {
   it('carries the toolchain ceilings and the estate cooldown exclusion', () => {
-    const text = githubPackagesDependabot()
+    const text = githubPackagesDependabot('demo-app')
     expect(text).toContain("dependency-name: 'typescript'")
     expect(text).toContain("dependency-name: '@playwright/test'")
     expect(text).toContain("      exclude:\n        - '@narduk-enterprises/*'")
