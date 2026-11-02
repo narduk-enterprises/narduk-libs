@@ -119,39 +119,41 @@ interface OgImageSecretRuntimeConfig {
 }
 
 /**
- * The signing secret a request resolves, in nuxt-og-image's own order
- * (`dist/runtime/server/utils.js` `useOgImageRuntimeConfig`): the
- * `runtimeConfig.ogImage.secret` env overlay (`NUXT_OG_IMAGE_SECRET`), then the
- * Worker's `NUXT_OG_IMAGE_SECRET` binding, then a secret baked at build.
- * Empty means the Worker has no secret and must refuse.
+ * The signing secret a request resolves: the Worker's `NUXT_OG_IMAGE_SECRET`
+ * binding (narduk-core's reader, which falls back to `process.env` off
+ * Workers), then `runtimeConfig.ogImage.secret` (Nitro's env overlay, or a
+ * secret baked at build), then the module's baked secret. The runtime binding
+ * comes first so it wins over a secret baked by an older build. Empty means
+ * the Worker has no secret and must refuse.
  */
 export function resolveRuntimeOgImageSigningSecret(input: {
   runtimeConfig: OgImageSecretRuntimeConfig
   workerSecret: unknown
 }): string {
   return (
-    resolveOgImageSigningSecret(input.runtimeConfig.ogImage?.secret) ||
     resolveOgImageSigningSecret(input.workerSecret) ||
+    resolveOgImageSigningSecret(input.runtimeConfig.ogImage?.secret) ||
     resolveOgImageSigningSecret(input.runtimeConfig['nuxt-og-image']?.security?.secret)
   )
 }
 
 /**
- * Write the resolved secret into this request's runtime config.
+ * Write the resolved secret, or `''` when there is none, into this request's
+ * runtime config.
  *
- * nuxt-og-image's server helper already reads the Worker binding, but its app
- * helper, which signs `og:image` URLs during SSR (`dist/runtime/app/utils.js`),
- * reads only `runtimeConfig.ogImage.secret`, which Nitro fills from
- * `process.env`. Writing both keys makes SSR signing, `/_og/` verification and
- * the preview resolver use the same runtime value. `runtimeConfig` must be the
- * per-request copy (`useRuntimeConfig(event)`), never the shared frozen one.
+ * nuxt-og-image's server helper prefers `runtimeConfig.ogImage.secret` over
+ * the Worker binding, and its app helper, which signs `og:image` URLs during
+ * SSR (`dist/runtime/app/utils.js`), reads only that key. Writing both keys
+ * makes SSR signing, `/_og/` verification and the preview resolver use one
+ * value; an untrimmed whitespace-only build secret is overwritten with `''`,
+ * so SSR emits unsigned URLs rather than signing with it. `runtimeConfig` must
+ * be the per-request copy (`useRuntimeConfig(event)`), never the shared one.
  */
 export function applyRuntimeOgImageSigningSecret(input: {
   runtimeConfig: OgImageSecretRuntimeConfig
   workerSecret: unknown
 }): string {
   const secret = resolveRuntimeOgImageSigningSecret(input)
-  if (!secret) return ''
   const { runtimeConfig } = input
   runtimeConfig.ogImage = { ...runtimeConfig.ogImage, secret }
   const moduleConfig = (runtimeConfig['nuxt-og-image'] ??= {})

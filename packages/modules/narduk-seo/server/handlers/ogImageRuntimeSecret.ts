@@ -11,6 +11,7 @@
  * (`dist/runtime/server/og-image/context.js` verifies only when a secret is
  * set). `nuxt dev` and prerender stay permissive.
  */
+import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
 import { readWorkerRuntimeEnvValue } from '@narduk-enterprises/narduk-core/server/utils/worker-env'
 
 import {
@@ -34,7 +35,7 @@ export default defineEventHandler((event) => {
   if (secret) return
   if (!hasLoggedMissingSecret) {
     hasLoggedMissingSecret = true
-    console.error(MISSING_OG_IMAGE_SECRET_MESSAGE)
+    useLogger(event).child('OgImage').error(MISSING_OG_IMAGE_SECRET_MESSAGE)
   }
   if (isOgImageRequestPath(event.path, runtimeConfig.app.baseURL)) {
     throw createError({

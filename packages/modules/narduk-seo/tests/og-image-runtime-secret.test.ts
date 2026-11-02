@@ -9,6 +9,21 @@ import {
 
 const RUNTIME_SECRET = 'runtime-worker-og-secret'
 
+const logger = vi.hoisted(() => {
+  const log = {
+    child: vi.fn(() => log),
+    debug: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  }
+  return log
+})
+
+vi.mock('@narduk-enterprises/narduk-core/server/utils/logger', () => ({
+  useLogger: () => logger,
+}))
+
 interface StubbedEvent {
   context: { cloudflare?: { env?: Record<string, unknown> } }
   path: string
@@ -61,23 +76,33 @@ afterEach(() => {
 })
 
 describe('runtime OG signing secret resolution', () => {
-  it('prefers the env overlay, then the Worker binding, then a baked secret', () => {
+  it('prefers the Worker binding, then the env overlay or baked key, then the module key', () => {
     const runtimeConfig = blankRuntimeConfig()
     expect(resolveRuntimeOgImageSigningSecret({ runtimeConfig, workerSecret: undefined })).toBe('')
     expect(
       resolveRuntimeOgImageSigningSecret({ runtimeConfig, workerSecret: RUNTIME_SECRET }),
     ).toBe(RUNTIME_SECRET)
     runtimeConfig['nuxt-og-image'].security.secret = 'baked-build-secret'
-    expect(
-      resolveRuntimeOgImageSigningSecret({ runtimeConfig, workerSecret: RUNTIME_SECRET }),
-    ).toBe(RUNTIME_SECRET)
     expect(resolveRuntimeOgImageSigningSecret({ runtimeConfig, workerSecret: '  ' })).toBe(
       'baked-build-secret',
     )
-    runtimeConfig.ogImage.secret = 'env-overlay-secret'
+    runtimeConfig.ogImage.secret = 'baked-build-secret'
+    // A build that baked a secret still yields to a different runtime binding.
     expect(
       resolveRuntimeOgImageSigningSecret({ runtimeConfig, workerSecret: RUNTIME_SECRET }),
-    ).toBe('env-overlay-secret')
+    ).toBe(RUNTIME_SECRET)
+    expect(resolveRuntimeOgImageSigningSecret({ runtimeConfig, workerSecret: undefined })).toBe(
+      'baked-build-secret',
+    )
+  })
+
+  it('overwrites a whitespace-only baked secret with an empty one', () => {
+    const runtimeConfig = blankRuntimeConfig()
+    runtimeConfig.ogImage.secret = '   '
+    runtimeConfig['nuxt-og-image'].security.secret = '   '
+    expect(applyRuntimeOgImageSigningSecret({ runtimeConfig, workerSecret: undefined })).toBe('')
+    expect(runtimeConfig.ogImage.secret).toBe('')
+    expect(runtimeConfig['nuxt-og-image'].security.secret).toBe('')
   })
 
   it('writes one secret into both keys nuxt-og-image signs and verifies with', () => {
@@ -134,7 +159,7 @@ describe('ogImageRuntimeSecret middleware', () => {
     vi.stubEnv('NUXT_OG_IMAGE_SECRET', '')
     const runtimeConfig = blankRuntimeConfig()
     stubNitroGlobals(runtimeConfig)
-    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    logger.error.mockClear()
     const handler = await loadHandler()
 
     const noSecret = { context: { cloudflare: { env: {} } } }
@@ -148,7 +173,7 @@ describe('ogImageRuntimeSecret middleware', () => {
     expect(handler({ ...noSecret, path: '/about' })).toBeUndefined()
     expect(runtimeConfig['nuxt-og-image'].security.secret).toBe('')
     expect(runtimeConfig.ogImage.secret).toBe('')
-    expect(errorLog).toHaveBeenCalledTimes(1)
-    expect(errorLog).toHaveBeenCalledWith(MISSING_OG_IMAGE_SECRET_MESSAGE)
+    expect(logger.error).toHaveBeenCalledTimes(1)
+    expect(logger.error).toHaveBeenCalledWith(MISSING_OG_IMAGE_SECRET_MESSAGE)
   })
 })

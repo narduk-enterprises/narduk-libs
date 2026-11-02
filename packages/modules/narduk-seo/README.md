@@ -43,20 +43,22 @@ production secrets (agent-infrastructure#4795). With no build secret,
 `nuxt-og-image` would bake a fresh random one into each build, so a rolling
 release would serve two secrets at once and cached signed URLs would 403; this
 layer blanks that generated value instead. On every request, Nitro middleware
-(`server/handlers/ogImageRuntimeSecret.ts`) resolves the secret in
-`nuxt-og-image`'s own order (the `NUXT_OG_IMAGE_SECRET` runtime-config overlay,
-then the Worker binding, then a secret baked at build), and writes it into that
-request's runtime config, so SSR signing, `/_og/` verification and the preview
-resolver all use one value. A Worker with no secret fails closed: every `/_og/`
-route answers 503, pages emit unsigned OG URLs, and the isolate logs the missing
-secret once. A secret present at build is still baked as a fallback, and the
-runtime value wins over it. `ogImage.security.strict: true` still needs the
-secret at build, because `nuxt-og-image` 6.8.0 throws without one. `nuxt dev`
-and prerender stay permissive. `nuxt-og-image` is an **optional peer**
-(narduk-libs#170) at `6.8.0`: omit the peer only for a static `defaultOgImage`
-by setting `ogImage.enabled: false`. This package types that key, so
-`nuxt typecheck` accepts it when the peer is not installed (narduk-libs#1162).
-Add `nuxt-og-image@6.8.0` when you need runtime OG or build-time prerender cards
+(`server/handlers/ogImageRuntimeSecret.ts`) resolves the secret: the Worker's
+`NUXT_OG_IMAGE_SECRET` binding (`process.env` off Workers), then the
+`ogImage.secret` runtime-config overlay, then a secret baked at build. It writes
+the result into that request's runtime config, so SSR signing, `/_og/`
+verification and the preview resolver all use one value. A Worker with no secret
+fails closed: every `/_og/` route answers 503, pages emit unsigned OG URLs, and
+the isolate logs the missing secret once. A secret present at build is still
+baked as a fallback, and the runtime binding wins over it. narduk-seo needs
+narduk-core 2.34.1 or later for the Worker env reader.
+`ogImage.security.strict: true` still needs the secret at build, because
+`nuxt-og-image` 6.8.0 throws without one. `nuxt dev` and prerender stay
+permissive. `nuxt-og-image` is an **optional peer** (narduk-libs#170) at
+`6.8.0`: omit the peer only for a static `defaultOgImage` by setting
+`ogImage.enabled: false`. This package types that key, so `nuxt typecheck`
+accepts it when the peer is not installed (narduk-libs#1162). Add
+`nuxt-og-image@6.8.0` when you need runtime OG or build-time prerender cards
 (`ogImage.zeroRuntime: true` still installs the module; it only disables the
 request-time renderer). If the package is not installed, this layer skips the
 renderer instead of failing the build, and `useSeo` falls back to the static

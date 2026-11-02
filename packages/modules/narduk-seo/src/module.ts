@@ -18,7 +18,9 @@ import {
   extendRouteRules,
   hasNuxtModule,
   installModule,
+  type Resolver,
   useLogger,
+  type useNuxt,
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
@@ -509,6 +511,61 @@ function applyOgImageSigningSecret(ogImage: ResolvedOgImageOptions): string {
   return secret
 }
 
+/**
+ * Build-time half of the OG signing secret. A build with no secret blanks the
+ * one nuxt-og-image would generate for itself and ships the request-time
+ * resolver (`server/handlers/ogImageRuntimeSecret.ts`); a build that signs with
+ * the CI placeholder marks its output so `narduk-app deploy` refuses it.
+ */
+function wireOgImageSigningSecret(
+  nuxt: ReturnType<typeof useNuxt>,
+  resolver: Resolver,
+  input: {
+    isDev: boolean
+    isPrepare: boolean
+    runtimeGenerationEnabled: boolean
+    secret: string
+  },
+): void {
+  const signsWithCiPlaceholder = assertOgImageSigningSecretForBuild(input)
+  if (shouldBlankGeneratedOgImageSecret(input)) {
+    // No build secret: nuxt-og-image would bake one it generates for this
+    // build alone. Blank it, so the deployed Worker signs and verifies only
+    // with its runtime NUXT_OG_IMAGE_SECRET and refuses `/_og/` without one.
+    // The hook is typed only when nuxt-og-image is installed; an opt-out app
+    // compiles this file without it (narduk-libs#1162).
+    const ogImageHooks = nuxt as unknown as {
+      hook: (
+        name: 'nuxt-og-image:runtime-config',
+        handler: (config: { security: { secret?: string } }) => void,
+      ) => void
+    }
+    ogImageHooks.hook('nuxt-og-image:runtime-config', (ogImageRuntimeConfig) => {
+      ogImageRuntimeConfig.security.secret = ''
+    })
+  }
+  // `nuxt dev` stays permissive, so the request-time resolver and refusal
+  // ship only in builds.
+  if (input.runtimeGenerationEnabled && !input.isDev) {
+    addServerHandler({
+      middleware: true,
+      handler: resolver.resolve('../server/handlers/ogImageRuntimeSecret'),
+    })
+  }
+  if (signsWithCiPlaceholder) {
+    // narduk-libs#1155: NARDUK_CLOUDFLARE_BUILD=1 is also set by most
+    // cf:build and ship:build scripts, so the script name cannot keep this
+    // output off a live Worker. The output itself carries the marker that
+    // `narduk-app deploy` refuses. Nitro empties its output directory before
+    // building, so the marker is written after compile.
+    nuxt.hook('nitro:init', (nitro) => {
+      nitro.hooks.hook('compiled', () => {
+        writeBuildCiOutputMarker(nitro.options.output.dir)
+      })
+    })
+  }
+}
+
 function resolveOgImageModuleState(input: {
   incomingOgImage: ResolvedOgImageOptions
   ogImage: ResolvedOgImageOptions
@@ -698,39 +755,12 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       })
     const publicRuntimeConfig = nuxtOptions.runtimeConfig.public as Record<string, unknown>
     publicRuntimeConfig.nardukSeoOgImageModule = ogImageModuleAvailable
-    const runtimeSecretInput = {
+    wireOgImageSigningSecret(nuxt, resolver, {
       isDev: Boolean(nuxtBuildFlags.dev),
       isPrepare: Boolean(nuxtBuildFlags._prepare),
       runtimeGenerationEnabled: runtimeOgAvailable,
       secret: resolvedOgImageSecret,
-    }
-    const signsWithCiPlaceholder = assertOgImageSigningSecretForBuild(runtimeSecretInput)
-    if (shouldBlankGeneratedOgImageSecret(runtimeSecretInput)) {
-      // No build secret: nuxt-og-image would bake one it generates for this
-      // build alone. Blank it, so the deployed Worker signs and verifies only
-      // with its runtime NUXT_OG_IMAGE_SECRET and refuses `/_og/` without one.
-      nuxt.hook('nuxt-og-image:runtime-config', (ogImageRuntimeConfig) => {
-        ogImageRuntimeConfig.security.secret = ''
-      })
-    }
-    if (runtimeOgAvailable) {
-      addServerHandler({
-        middleware: true,
-        handler: resolver.resolve('../server/handlers/ogImageRuntimeSecret'),
-      })
-    }
-    if (signsWithCiPlaceholder) {
-      // narduk-libs#1155: NARDUK_CLOUDFLARE_BUILD=1 is also set by most
-      // cf:build and ship:build scripts, so the script name cannot keep this
-      // output off a live Worker. The output itself carries the marker that
-      // `narduk-app deploy` refuses. Nitro empties its output directory before
-      // building, so the marker is written after compile.
-      nuxt.hook('nitro:init', (nitro) => {
-        nitro.hooks.hook('compiled', () => {
-          writeBuildCiOutputMarker(nitro.options.output.dir)
-        })
-      })
-    }
+    })
     if (!networkDirectoryConfigured) {
       extendRouteRules('/narduk-network', { robots: 'noindex, follow' })
       // robots adds an uppercase header; prerender responses use lowercase.
