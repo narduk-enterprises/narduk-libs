@@ -89,13 +89,14 @@ shards and merged evidence. Failure screenshots, retry traces and retained
 failure videos are attached to the reports. `quality:static` includes format,
 lint, knip, manifest cross-check, shared-UI pin, typecheck, `build:ci` and unit
 tests; `quality` adds browser tests. It builds with `build:ci`, the script CI
-builds with, so the local gate is not red where CI is green: plain `build`
-throws on any `seo` app with an empty `NUXT_OG_IMAGE_SECRET`, which used to make
-the documented local gate unrunnable without knowing two placeholder values out
-of band. `build:ci` exits 1 before it exports those placeholders when
-`WORKERS_CI`, `WORKERS_CI_BRANCH`, or `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` is
-set, so a Workers Builds or local-deploy command cannot use them. A successful
-`build:ci` writes `.narduk-build-ci` beside the Nitro output it produced:
+builds with, so the local gate is not red where CI is green: plain `build` used
+to throw on any `seo` app with an empty `NUXT_OG_IMAGE_SECRET` (narduk-seo now
+resolves it from the Worker's runtime secret instead), which made the documented
+local gate unrunnable without knowing two placeholder values out of band.
+`build:ci` exits 1 before it exports those placeholders when `WORKERS_CI`,
+`WORKERS_CI_BRANCH`, or `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` is set, so a
+Workers Builds or local-deploy command cannot use them. A successful `build:ci`
+writes `.narduk-build-ci` beside the Nitro output it produced:
 `apps/web/.output` for the apps/web layout, and `.output` for a root-layout app.
 `upgrade` chooses that directory from the layout it already infers.
 `narduk-app deploy` refuses to publish a marked output and names `cf:build`;

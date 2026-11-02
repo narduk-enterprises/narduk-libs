@@ -814,7 +814,7 @@ describe('create-narduk-app generation contract', () => {
       )
       expect(runbook, label).toContain('`NUXT_OG_IMAGE_SECRET`')
       expect(runbook, label).toContain(
-        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)  |',
+        '| `NUXT_OG_IMAGE_SECRET`        | Runtime Worker secret, not a build variable       |',
       )
       expect(runbook, label).toContain('`NUXT_SESSION_PASSWORD`')
       expect(runbook, label).toContain('scripts/gh-packages-run.mjs')

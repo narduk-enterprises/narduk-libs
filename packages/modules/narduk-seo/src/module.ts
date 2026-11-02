@@ -43,6 +43,7 @@ import { OG_IMAGE_NUXT_CONFIG_DECLARATION } from '../shared/ogImageNuxtConfig'
 import {
   assertOgImageSigningSecretForBuild,
   resolveOgImageSigningSecret,
+  shouldBlankGeneratedOgImageSecret,
 } from '../shared/ogImageSecret'
 import {
   type NardukSecurityTxtOptions,
@@ -697,12 +698,27 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       })
     const publicRuntimeConfig = nuxtOptions.runtimeConfig.public as Record<string, unknown>
     publicRuntimeConfig.nardukSeoOgImageModule = ogImageModuleAvailable
-    const signsWithCiPlaceholder = assertOgImageSigningSecretForBuild({
+    const runtimeSecretInput = {
       isDev: Boolean(nuxtBuildFlags.dev),
       isPrepare: Boolean(nuxtBuildFlags._prepare),
       runtimeGenerationEnabled: runtimeOgAvailable,
       secret: resolvedOgImageSecret,
-    })
+    }
+    const signsWithCiPlaceholder = assertOgImageSigningSecretForBuild(runtimeSecretInput)
+    if (shouldBlankGeneratedOgImageSecret(runtimeSecretInput)) {
+      // No build secret: nuxt-og-image would bake one it generates for this
+      // build alone. Blank it, so the deployed Worker signs and verifies only
+      // with its runtime NUXT_OG_IMAGE_SECRET and refuses `/_og/` without one.
+      nuxt.hook('nuxt-og-image:runtime-config', (ogImageRuntimeConfig) => {
+        ogImageRuntimeConfig.security.secret = ''
+      })
+    }
+    if (runtimeOgAvailable) {
+      addServerHandler({
+        middleware: true,
+        handler: resolver.resolve('../server/handlers/ogImageRuntimeSecret'),
+      })
+    }
     if (signsWithCiPlaceholder) {
       // narduk-libs#1155: NARDUK_CLOUDFLARE_BUILD=1 is also set by most
       // cf:build and ship:build scripts, so the script name cannot keep this

@@ -12,6 +12,7 @@ import {
   isOgImageSigningSecretConfigured,
   MISSING_OG_IMAGE_SECRET_MESSAGE,
   resolveOgImageSigningSecret,
+  shouldBlankGeneratedOgImageSecret,
 } from '../shared/ogImageSecret'
 import { BUILD_CI_OUTPUT_MARKER, writeBuildCiOutputMarker } from '../src/buildCiOutputMarker'
 
@@ -39,21 +40,29 @@ describe('OG image signing secret', () => {
     expect(isOgImageSigningSecretConfigured(REAL_OG_SECRET)).toBe(true)
   })
 
-  it('fails a non-dev build when runtime OG is enabled without a secret', () => {
-    expect(() =>
-      assertOgImageSigningSecretForBuild({
-        isDev: false,
-        runtimeGenerationEnabled: true,
-        secret: '',
-      }),
-    ).toThrow(MISSING_OG_IMAGE_SECRET_MESSAGE)
-    expect(() =>
-      assertOgImageSigningSecretForBuild({
-        isDev: false,
-        runtimeGenerationEnabled: true,
-        secret: '   ',
-      }),
-    ).toThrow(/NUXT_OG_IMAGE_SECRET/u)
+  it('accepts a non-dev build with no secret and leaves signing to the Worker', () => {
+    // The refusal moved to request time (server/handlers/ogImageRuntimeSecret.ts),
+    // so CI builds the production output without the production secret.
+    for (const secret of ['', '   ', undefined]) {
+      const input = { isDev: false, runtimeGenerationEnabled: true, secret }
+      expect(assertOgImageSigningSecretForBuild(input)).toBe(false)
+      expect(shouldBlankGeneratedOgImageSecret(input)).toBe(true)
+    }
+  })
+
+  it('blanks the generated secret only for a non-dev runtime build without one', () => {
+    const base = { isDev: false, runtimeGenerationEnabled: true, secret: '' }
+    expect(shouldBlankGeneratedOgImageSecret({ ...base, isDev: true })).toBe(false)
+    expect(shouldBlankGeneratedOgImageSecret({ ...base, isPrepare: true })).toBe(false)
+    expect(shouldBlankGeneratedOgImageSecret({ ...base, runtimeGenerationEnabled: false })).toBe(
+      false,
+    )
+    expect(shouldBlankGeneratedOgImageSecret({ ...base, secret: REAL_OG_SECRET })).toBe(false)
+  })
+
+  it('names the runtime Worker secret, not a build variable, when one is missing', () => {
+    expect(MISSING_OG_IMAGE_SECRET_MESSAGE).toContain('runtime Worker secret')
+    expect(MISSING_OG_IMAGE_SECRET_MESSAGE).not.toContain('Build variable')
   })
 
   it('stays permissive in dev, prepare, and when runtime generation is off', () => {
