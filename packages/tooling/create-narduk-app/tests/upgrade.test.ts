@@ -1,3 +1,4 @@
+import { scheduleFor } from '../src/dependabot-schedule.js'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -997,7 +998,16 @@ describe('upgrade profile inference', () => {
     )
     const renamed = await upgradeNardukApp({ targetDir })
     expect(renamed.profile.appName).toBe('renamed-app')
-    expect(renamed.driftCount).toBe(0)
+    // The app name is the one input a managed unit may depend on: it seeds the
+    // Dependabot night slot, so a rename moves that file and nothing else.
+    expect(
+      renamed.changes.filter((change) => change.status === 'drift').map((change) => change.path),
+    ).toEqual(
+      scheduleFor('upgrade-fixture').time === scheduleFor('renamed-app').time &&
+        scheduleFor('upgrade-fixture').day === scheduleFor('renamed-app').day
+        ? []
+        : ['.github/dependabot.yml'],
+    )
   })
 })
 
