@@ -237,6 +237,27 @@ describe('sha to version resolution', () => {
     expect(calls.deployed).toEqual([])
   })
 
+  it('takes the one runner upload when a Workers Build uploaded the same commit too', async () => {
+    const runner = version('v-runner', SHA, {
+      annotations: { 'workers/tag': SHA, 'workers/message': `Runner upload ${SHA}` },
+    })
+    const build = version('v-build', SHA, {
+      annotations: { 'workers/tag': SHA, 'workers/message': `Workers Builds main @ ${SHORT}` },
+    })
+    expect(resolveVersionForSha([build, runner], SHA)).toMatchObject({
+      kind: 'found',
+      version: { id: 'v-runner' },
+    })
+    // Two runner versions of one commit are still a refusal, and a message
+    // naming another commit is not a runner upload of this one.
+    const twice = version('v-runner-2', SHA, { annotations: { ...runner.annotations } })
+    expect(resolveVersionForSha([build, runner, twice], SHA).kind).toBe('ambiguous')
+    const other = version('v-other', SHA, {
+      annotations: { 'workers/tag': SHA, 'workers/message': `Runner upload ${'0'.repeat(40)}` },
+    })
+    expect(resolveVersionForSha([build, other], SHA).kind).toBe('ambiguous')
+  })
+
   it('takes GITHUB_SHA when no --sha is given, and prints the version it will replace', async () => {
     const { context: ctx, calls } = context(
       [
@@ -756,6 +777,10 @@ describe('S2 -- a non-production branch build is not promotable', () => {
     expect(versionBranch(numbered('v1', SHA, 2, 'main'))).toBe('main')
     expect(versionBranch(numbered('v1', SHA, 2, 'feature/a b'))).toBe('feature/a b')
     expect(versionBranch(version('v1', SHA))).toBeNull()
+    const runner = { 'workers/tag': SHA, 'workers/message': `Runner upload ${SHA}` }
+    expect(versionBranch(version('v1', SHA, { annotations: runner }))).toBe('main')
+    const short = { 'workers/tag': SHORT, 'workers/message': `Runner upload ${SHORT}` }
+    expect(versionBranch(version('v1', SHORT, { annotations: short }))).toBeNull()
     expect(
       versionBranch({ id: 'v', annotations: { 'workers/message': 'narduk-app promote abc' } }),
     ).toBeNull()

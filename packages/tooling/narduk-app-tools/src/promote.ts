@@ -798,6 +798,10 @@ export function resolveVersionForSha(
   )
   if (matches.length === 1) return { kind: 'found', version: matches[0], searched: versions.length }
   if (matches.length === 0) return { kind: 'not-found', searched: versions.length }
+  // While an app moves to the runner upload, its Workers Build still uploads
+  // the same commit: the one runner version is the build CI tested.
+  const runner = matches.filter((version) => isRunnerUpload(version))
+  if (runner.length === 1) return { kind: 'found', version: runner[0], searched: versions.length }
   return { kind: 'ambiguous', versions: matches, searched: versions.length }
 }
 
@@ -986,7 +990,22 @@ export function compareVersionRecency(a: WorkerVersion, b: WorkerVersion): numbe
  */
 export const VERSION_MESSAGE_PREFIX = 'Workers Builds '
 
+/**
+ * workflows' cloudflare-version-upload.yml writes `--message "Runner upload
+ * <sha>"` beside `--tag <sha>`, and runs only for a push to (or dispatch on)
+ * `main`, so that message names a main build of its own tag.
+ */
+export const RUNNER_MESSAGE_PREFIX = 'Runner upload '
+export const RUNNER_UPLOAD_BRANCH = 'main'
+
+export function isRunnerUpload(version: WorkerVersion): boolean {
+  const tag = version.annotations?.[VERSION_TAG_ANNOTATION]?.trim()
+  const message = version.annotations?.[VERSION_MESSAGE_ANNOTATION]?.trim()
+  return Boolean(tag && FULL_SHA_PATTERN.test(tag) && message === RUNNER_MESSAGE_PREFIX + tag)
+}
+
 export function versionBranch(version: WorkerVersion): string | null {
+  if (isRunnerUpload(version)) return RUNNER_UPLOAD_BRANCH
   const message = version.annotations?.[VERSION_MESSAGE_ANNOTATION]?.trim()
   if (!message?.toLowerCase().startsWith(VERSION_MESSAGE_PREFIX.toLowerCase())) return null
   // Split on the last ` @ `, not a regexp: a branch name may contain anything,
