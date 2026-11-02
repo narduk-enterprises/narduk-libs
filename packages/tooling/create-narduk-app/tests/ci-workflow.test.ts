@@ -288,6 +288,43 @@ describe('generated CI boundaries', () => {
     }
   })
 
+  // The estate night dispatcher replaces `schedule:` crons (GitHub fires them
+  // 5-10 hours late). A workflow it lists must declare `nightly`, because
+  // GitHub refuses a dispatch that carries an undeclared input, and must not
+  // keep a cron, because it would run twice. The generator emits neither a cron
+  // nor a workflow the dispatcher cannot start.
+  it('declares the nightly dispatch input and never writes a schedule trigger', () => {
+    for (const visibility of ['private', 'public'] as const) {
+      const generated = buildGeneratedFiles({
+        appName: 'night-dispatch',
+        targetDir: '/tmp/night-dispatch',
+        noGit: true,
+        visibility,
+      })
+      const ci = generated.find((file) => file.path === '.github/workflows/ci.yml')?.contents ?? ''
+      const on = (YAML.parse(ci) as { on: Record<string, unknown> }).on
+      expect(on.workflow_dispatch, visibility).toEqual({
+        inputs: {
+          nightly: {
+            description: 'Set by the estate night dispatcher; behave like the old schedule run',
+            type: 'boolean',
+            default: false,
+          },
+        },
+      })
+      for (const file of generated.filter((entry) => entry.path.startsWith('.github/workflows/'))) {
+        const triggers = (YAML.parse(file.contents) as { on?: unknown }).on
+        const names =
+          typeof triggers === 'string'
+            ? [triggers]
+            : Array.isArray(triggers)
+              ? triggers.map(String)
+              : Object.keys((triggers as Record<string, unknown>) ?? {})
+        expect(names, `${visibility} ${file.path}`).not.toContain('schedule')
+      }
+    }
+  })
+
   it('does not emit a Copilot setup workflow', () => {
     for (const visibility of ['private', 'public'] as const) {
       const generated = buildGeneratedFiles({

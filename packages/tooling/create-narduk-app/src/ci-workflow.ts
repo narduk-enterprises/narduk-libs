@@ -455,6 +455,28 @@ echo "sha=$head" >> "$GITHUB_OUTPUT"
 `
 }
 
+/**
+ * The `nightly` input of a generated `workflow_dispatch:`. The estate night
+ * dispatcher (fleet `Config/night-dispatch.json`) starts the nightly workflows
+ * that used to carry a `schedule:` cron, because GitHub fires crons hours late.
+ * A dispatched run is not a scheduled run (`github.event_name` is
+ * `workflow_dispatch`), so the dispatcher sends `nightly=true` and a workflow
+ * reads `github.event.inputs.nightly == 'true'` where it used to read
+ * `github.event_name == 'schedule'` (narduk-enterprises/workflows README,
+ * "Night-dispatched runs"). GitHub answers HTTP 422 to an input a workflow does
+ * not declare, so a workflow the dispatcher lists must declare this one.
+ *
+ * Generated workflows never carry a `schedule:` trigger: the dispatcher owns
+ * the night, and a workflow that kept its cron would run twice.
+ */
+export const NIGHTLY_DISPATCH_INPUT: readonly string[] = [
+  '    inputs:',
+  '      nightly:',
+  '        description: Set by the estate night dispatcher; behave like the old schedule run',
+  '        type: boolean',
+  '        default: false',
+]
+
 export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
@@ -464,6 +486,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '  push:',
     '    branches: [main]',
     '  workflow_dispatch:',
+    ...NIGHTLY_DISPATCH_INPUT,
     '',
     // Cancel superseded pull-request runs only. A push run (main) queues
     // instead of being cancelled, so the commit that actually merged keeps a
