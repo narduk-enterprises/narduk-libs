@@ -1078,18 +1078,43 @@ describe('narduk-seo module', () => {
     expect(ogImage.security?.secret).toBeUndefined()
   })
 
-  it('fails a non-dev build when runtime OG generation has no signing secret', async () => {
-    await expect(setupModule({ nuxtOptions: { dev: false } })).rejects.toThrow(
-      /NUXT_OG_IMAGE_SECRET/u,
-    )
+  it('builds non-dev with no signing secret and leaves signing to the Worker', async () => {
+    for (const secret of ['', '   ']) {
+      vi.resetModules()
+      vi.clearAllMocks()
+      vi.stubEnv('NUXT_OG_IMAGE_SECRET', secret)
+      const { addServerHandler, nuxt } = await setupModule({ nuxtOptions: { dev: false } })
+
+      // The per-build secret nuxt-og-image would generate is blanked, not baked.
+      const hookCalls = (nuxt.hook as ReturnType<typeof vi.fn>).mock.calls.filter(
+        ([name]) => name === 'nuxt-og-image:runtime-config',
+      )
+      expect(hookCalls).toHaveLength(1)
+      const ogImageRuntimeConfig = { security: { secret: 'generated-per-build' } }
+      ;(hookCalls[0]![1] as (config: typeof ogImageRuntimeConfig) => void)(ogImageRuntimeConfig)
+      expect(ogImageRuntimeConfig.security.secret).toBe('')
+
+      // The request-time resolver that refuses /_og/ without a runtime secret.
+      expect(addServerHandler).toHaveBeenCalledWith({
+        middleware: true,
+        handler: expect.stringContaining('/server/handlers/ogImageRuntimeSecret'),
+      })
+    }
   })
 
-  it('fails a non-dev build when the OG secret is only whitespace', async () => {
-    vi.stubEnv('NUXT_OG_IMAGE_SECRET', '   ')
+  it('keeps an explicit build secret and still resolves the runtime one', async () => {
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', 'explicit-build-secret')
+    const { addServerHandler, nuxt } = await setupModule({ nuxtOptions: { dev: false } })
 
-    await expect(setupModule({ nuxtOptions: { dev: false } })).rejects.toThrow(
-      /NUXT_OG_IMAGE_SECRET/u,
+    expect((nuxt.options.ogImage as { security?: { secret?: unknown } }).security?.secret).toBe(
+      'explicit-build-secret',
     )
+    expect(
+      (nuxt.hook as ReturnType<typeof vi.fn>).mock.calls.some(
+        ([name]) => name === 'nuxt-og-image:runtime-config',
+      ),
+    ).toBe(false)
+    expect(addServerHandler).toHaveBeenCalledWith(expect.objectContaining({ middleware: true }))
   })
 
   it('keeps prepare and disabled-runtime builds from requiring a secret', async () => {
