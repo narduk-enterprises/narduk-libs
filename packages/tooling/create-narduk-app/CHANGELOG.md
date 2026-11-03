@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.24.1
+
+### Patch Changes
+
+- 2264655: `FieldLayer.setRange(range)`: change a field layer's stored-unit ramp
+  range in place, with no tile reload, e.g. for a contrast stretch to the values
+  in view. create-narduk-app picks up the narduk-maps 0.3.1 pin.
+
 ## 0.24.0
 
 ### Minor Changes
