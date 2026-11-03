@@ -20,12 +20,14 @@ export default defineConfig({
         svg: resolve(__dirname, 'src/svg.ts'),
         style: resolve(__dirname, 'src/style.ts'),
         gl: resolve(__dirname, 'src/gl.ts'),
+        geo: resolve(__dirname, 'src/geo.ts'),
       },
       formats: ['es'],
     },
     rollupOptions: {
       // The GL library is an optional peer: never bundled, only ever dynamically imported.
-      external: ['vue', 'maplibre-gl'],
+      // pmtiles is a dependency of the geo entry, resolved by the consumer's bundler.
+      external: ['vue', 'maplibre-gl', 'pmtiles'],
       output: {
         entryFileNames: '[name].js',
         chunkFileNames: 'chunks/[name]-[hash].js',
