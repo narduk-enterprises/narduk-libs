@@ -48,6 +48,7 @@ uniform vec3 u_srcB;
 uniform float u_t;
 uniform vec2 u_range;
 uniform float u_opacity;
+uniform float u_bleed;
 uniform int u_mode;
 uniform vec4 u_bbox;
 uniform vec4 u_fadeOn;
@@ -81,6 +82,23 @@ vec4 sampleTex(usampler2D tex, vec3 src) {
         acc += w * vec4(vec3(px.rgb) / 255.0 * a, a);
       }
     }
+  }
+  // Bleed (opt-in): a texel with no data takes the mean of its neighbours that have some, one texel out, so a field
+  // reaches the coastline a chart's land mask draws over it instead of stopping a step short of it.
+  if (u_bleed > 0.5 && (u_mode == 0 ? wsum : acc.a) < 0.5) {
+    ivec2 ic = ivec2(floor(p + 0.5));
+    vec4 racc = vec4(0.0);
+    float rn = 0.0;
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        uvec4 px = texelFetch(tex, clamp(ic + ivec2(dx, dy), ivec2(0), size - 1), 0);
+        if (px.a == 0u) continue;
+        if (u_mode == 0) racc.x += terrarium(px);
+        else racc += vec4(vec3(px.rgb) / 255.0, 1.0) * (float(px.a) / 255.0);
+        rn += 1.0;
+      }
+    }
+    if (rn > 0.0) return u_mode == 0 ? vec4(racc.x / rn, 0.0, 0.0, 1.0) : racc / rn;
   }
   if (u_mode == 0) return vec4(wsum > 0.0 ? acc.x / wsum : 0.0, 0.0, 0.0, wsum);
   return acc;
@@ -130,6 +148,12 @@ export interface FieldLayerOptions {
   range?: [number, number]
   /** An absent tile shows its nearest ancestor (catalog `sparse`); otherwise it is no data. */
   sparse?: boolean
+  /**
+   * Carry data one texel past its own edge. For a map that draws land over the layer (a land mask from the same
+   * coastline as its base), so the layer meets that coastline instead of stopping a step short; without one, the extra
+   * texel paints over land.
+   */
+  bleed?: boolean
 }
 
 type TileState = 'loading' | 'ready' | 'empty' | 'error'
@@ -246,6 +270,7 @@ export class FieldLayer implements CustomLayerInterface {
       'u_t',
       'u_range',
       'u_opacity',
+      'u_bleed',
       'u_mode',
       'u_bbox',
       'u_fadeOn',
@@ -632,6 +657,7 @@ export class FieldLayer implements CustomLayerInterface {
     )
     gl.uniform1i(u.u_mode!, this.o.mode === 'field' ? 0 : 1)
     gl.uniform1f(u.u_opacity!, this.o.opacity ?? 1)
+    gl.uniform1f(u.u_bleed!, this.o.bleed ? 1 : 0)
     const range = this.o.range ?? [0, 1]
     gl.uniform2f(u.u_range!, range[0], range[1])
     const [w, s, e, n] = this.o.bbox
