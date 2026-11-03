@@ -28,10 +28,13 @@ output here and is only ever loaded with a dynamic `import('maplibre-gl')` from
 | `@narduk-enterprises/narduk-maps/svg`       | the same as `.`                                                            | never               |
 | `@narduk-enterprises/narduk-maps/style`     | `createBasemapStyle(tokens, options)`: OpenFreeMap style JSON as pure data | never               |
 | `@narduk-enterprises/narduk-maps/gl`        | `NardukMap`                                                                | dynamic import only |
+| `@narduk-enterprises/narduk-maps/geo`       | Narduk Geo catalog v2 on MapLibre: loader, field layer, frames, readout    | types only          |
 | `@narduk-enterprises/narduk-maps/style.css` | tokens and component CSS (import once)                                     | no                  |
 
 `src/dist.test.ts` builds the package and proves the `.`, `./svg` and `./style`
-outputs (and everything they import) never mention `maplibre`.
+outputs (and everything they import) never mention `maplibre`, and that `./geo`
+imports neither Vue nor `maplibre-gl` (it takes MapLibre's functions as
+arguments and uses its types only).
 
 ## SVG map
 
@@ -153,6 +156,63 @@ house numbers. Options: `scheme` (`light` or `dark`, each with its own chosen
 values), `labels` (`places` or `none`), `tokens` overrides, `hideNames` (names
 you draw yourself). `metadata['narduk:slots']` names the layers the caller's own
 layers go under.
+
+## Geo field layers (`./geo`)
+
+Framework-free TypeScript for drawing [Narduk Geo catalog v2] products on a
+MapLibre map. It needs `maplibre-gl@^6` in the app (for the map itself) and
+brings `pmtiles` as its own dependency.
+
+[Narduk Geo catalog v2]:
+  https://github.com/narduk-enterprises/narduk-data/blob/main/docs/standards/GEO-PRODUCTS.md
+
+```ts
+import { addProtocol, Map, setWorkerUrl } from 'maplibre-gl'
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
+import {
+  FieldLayer,
+  formatFieldValue,
+  frameAt,
+  loadGeo,
+  pmtilesSource,
+  prefetchFrames,
+  rampTexture,
+  setupMapLibre,
+} from '@narduk-enterprises/narduk-maps/geo'
+
+setupMapLibre({ addProtocol, setWorkerUrl }, { workerUrl }) // once per page
+const { catalogs } = await loadGeo('https://tiles.nard.uk/geo/')
+const L = catalogs[0]!.layers.find(l => l.kind === 'field')!
+const field = new FieldLayer(`geo-${L.id}`, {
+  mode: 'field',
+  bbox: L.bbox,
+  minZoom: L.minZoom,
+  maxZoom: L.maxZoom,
+  frames: L.frames.map(f =>
+    f.archives.map(a => ({ ...a, source: pmtilesSource(a.url) })),
+  ),
+  range: L.field!.range,
+  ramp: rampTexture(L.field!.ramp, L.field!.range),
+})
+map.addLayer(field)
+const f = frameAt(days, playhead)
+field.setDraw(f.a, f.b, f.t, prefetchFrames(f))
+const v = field.sample(lng, lat, f.t > 0.5 ? f.b : f.a) // stored units, null = no data
+if (typeof v === 'number') formatFieldValue(L, v) // { primary: '77.0 °F', secondary: '25.0 °C' }
+```
+
+| Module      | What it gives you                                                                                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| catalog     | `loadGeo(base)`: index → product catalogs → layers. A malformed or unknown layer is skipped with a reason; a product whose catalog fails is reported in `failed`, never fatal. `parseIndex`, `parseCatalog`. |
+| field       | `decodeTerrarium`, `decodeUv`, `bilinear` over texels with data, `rampTexture` (per-stop alpha), `rampCss`, `formatFieldValue` (display units first, log10 undone), `displayUnits`, `fieldTicks`.            |
+| field-layer | `FieldLayer`: a MapLibre custom WebGL2 layer. Exact tile bytes into RGBA8UI textures, the shader's own bilinear, cross-fade between frames, ancestor fallback, feathered product edges, `sample()` readout.  |
+| png         | `decodePng` / `decodeImage`: an exact PNG decoder, so terrarium bytes never pass through colour management.                                                                                                  |
+| tiles       | Web Mercator tile maths, `pmtilesSource(url)` (one shared reader per archive), `xyzSource(template)`.                                                                                                        |
+| frames      | Frame time as fractional UTC days: `dayNumber`, `frameAt`, `frameSpacing`, cadence-aware `shortDate` / `longDate`, URL playhead codec, `prefetchFrames` (the next two frames after b).                       |
+| setup       | `setupMapLibre({ addProtocol, setWorkerUrl }, { workerUrl })` and `registerPmtilesProtocol`, idempotent per MapLibre module.                                                                                 |
+
+The shader mirrors `decodeTerrarium` and `bilinear` line for line, so the
+readout is the value the pixel was coloured from.
 
 ## Baked cutout basemap
 

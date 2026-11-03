@@ -44,15 +44,17 @@ describe('built package', () => {
     if (out) rmSync(out, { recursive: true, force: true })
   })
 
-  it('emits the four entries and the stylesheet', () => {
+  it('emits the five entries and the stylesheet', () => {
     for (const file of [
       'index.js',
       'svg.js',
       'style.js',
       'gl.js',
+      'geo.js',
       'narduk-maps.css',
       'index.d.ts',
       'gl.d.ts',
+      'geo.d.ts',
     ]) {
       expect(existsSync(join(out, file)), file).toBe(true)
     }
@@ -72,6 +74,17 @@ describe('built package', () => {
     expect(closure).toMatch(/import\(\s*["']maplibre-gl["']\s*\)/)
     expect(closure).not.toMatch(/^\s*import[^(]*from\s*["']maplibre-gl["']/m)
     expect(code.length).toBeGreaterThan(0)
+  })
+
+  it('geo.js is framework-free: no vue, no component chunk, maplibre-gl only as types', () => {
+    const modules = staticClosure(join(out, 'geo.js'))
+    for (const [file, code] of modules) {
+      expect(code, file).not.toMatch(/from\s*["']vue["']/)
+      expect(code, file).not.toMatch(/from\s*["']maplibre-gl["']/)
+      expect(code, file).not.toMatch(/import\(\s*["']maplibre-gl["']\s*\)/)
+    }
+    // pmtiles stays external for the consumer's bundler to resolve.
+    expect(readFileSync(join(out, 'geo.js'), 'utf8')).toMatch(/from\s*["']pmtiles["']/)
   })
 
   it('the two svg entries expose the same names', async () => {
