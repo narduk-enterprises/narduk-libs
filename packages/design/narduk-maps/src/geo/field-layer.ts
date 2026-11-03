@@ -4,6 +4,8 @@
 // premultiplication or colour conversion anywhere; the shader does its own bilinear over the texels
 // that have data. Playback cross-fades frame a into frame b in one pass, both opaque.
 // A tile still loading borrows the nearest loaded ancestor, so panning and zooming never flash.
+// A sparse layer (catalog `sparse`) does the same for a tile that does not exist: its finest zooms
+// are only where a finer source is, and everywhere else the coarser tile above shows through.
 
 import { bilinear, RAMP_SIZE } from './field'
 import { type DecodedImage, decodeImage } from './png'
@@ -126,6 +128,8 @@ export interface FieldLayerOptions {
   /** Field mode: the stored-unit range the ramp spans, and the ramp texels. */
   ramp?: Uint8Array
   range?: [number, number]
+  /** An absent tile shows its nearest ancestor (catalog `sparse`); otherwise it is no data. */
+  sparse?: boolean
 }
 
 type TileState = 'loading' | 'ready' | 'empty' | 'error'
@@ -408,7 +412,10 @@ export class FieldLayer implements CustomLayerInterface {
       for (const t of tiles) {
         const e = this.entries.get(this.key(frame, t))
         if (!e || (e.state === 'error' && (e.retryAt ?? 0) < now)) this.queue.push({ frame, t })
-        else e.used = ++this.clock
+        else {
+          e.used = ++this.clock
+          if (e.state === 'empty') this.enqueueParent(frame, t)
+        }
       }
     }
     this.pump()
@@ -425,6 +432,24 @@ export class FieldLayer implements CustomLayerInterface {
       if (seen.has(k) || this.entries.has(k)) continue
       seen.add(k)
       this.queue.push({ frame, t: a })
+    }
+  }
+
+  /**
+   * A sparse layer's absent tile asks for the first ancestor not yet requested, which then stands
+   * in for it (see resolve); an ancestor that is absent too passes the request further up.
+   */
+  private enqueueParent(frame: number, t: TileId) {
+    if (!this.o.sparse) return
+    for (let dz = 1; dz <= ANCESTORS && t.z - dz >= this.o.minZoom; dz++) {
+      const a = { z: t.z - dz, x: t.x >> dz, y: t.y >> dz }
+      const e = this.entries.get(this.key(frame, a))
+      if (!e || (e.state === 'error' && (e.retryAt ?? 0) < performance.now())) {
+        if (!this.queue.some(j => j.frame === frame && tileKey(j.t) === tileKey(a)))
+          this.queue.push({ frame, t: a })
+        return
+      }
+      if (e.state !== 'empty') return
     }
   }
 
@@ -448,6 +473,7 @@ export class FieldLayer implements CustomLayerInterface {
       const archive = this.archiveFor(job.frame, job.t)
       if (!archive) {
         this.entries.set(key, { frame: job.frame, t: job.t, state: 'empty', used: ++this.clock })
+        this.enqueueParent(job.frame, job.t)
         continue
       }
       const abort = new AbortController()
@@ -471,8 +497,10 @@ export class FieldLayer implements CustomLayerInterface {
     try {
       const data = await source.get(entry.t, signal)
       if (signal.aborted) return
-      if (!data || data.byteLength === 0) entry.state = 'empty'
-      else {
+      if (!data || data.byteLength === 0) {
+        entry.state = 'empty'
+        this.enqueueParent(entry.frame, entry.t)
+      } else {
         entry.img = await decodeImage(data)
         entry.state = 'ready'
       }
@@ -519,11 +547,19 @@ export class FieldLayer implements CustomLayerInterface {
 
   /** The loaded tile (or nearest loaded ancestor) that covers t for a frame. */
   private resolve(frame: number, t: TileId): Resolved | null {
+    let absent: Entry | undefined
     for (let dz = 0; dz <= ANCESTORS && t.z - dz >= 0; dz++) {
       const a = { z: t.z - dz, x: t.x >> dz, y: t.y >> dz }
       const e = this.entries.get(this.key(frame, a))
       if (!e) continue
-      if (e.state === 'empty') return { entry: e, src: [0, 0, 0] }
+      if (e.state === 'empty') {
+        // Sparse: an absent tile is not "no data here" while a tile above it may hold some.
+        if (this.o.sparse && a.z > this.o.minZoom) {
+          absent ??= e
+          continue
+        }
+        return { entry: e, src: [0, 0, 0] }
+      }
       if (e.state !== 'ready' || !e.img) continue
       const k = 2 ** dz
       const per = e.img.width / k
@@ -534,7 +570,20 @@ export class FieldLayer implements CustomLayerInterface {
         src: [(t.x - a.x * k) * per, (t.y - a.y * k) * per, per],
       }
     }
+    // Every ancestor that has resolved is absent too, and none above is still on its way: no data.
+    if (absent && !this.pendingAbove(frame, t)) return { entry: absent, src: [0, 0, 0] }
     return null
+  }
+
+  /** Whether some ancestor of t (within ANCESTORS, at or above minZoom) is loading, queued or to be retried. */
+  private pendingAbove(frame: number, t: TileId): boolean {
+    for (let dz = 1; dz <= ANCESTORS && t.z - dz >= this.o.minZoom; dz++) {
+      const a = { z: t.z - dz, x: t.x >> dz, y: t.y >> dz }
+      const e = this.entries.get(this.key(frame, a))
+      if (e?.state === 'loading' || e?.state === 'error') return true
+      if (!e && this.queue.some(j => j.frame === frame && tileKey(j.t) === tileKey(a))) return true
+    }
+    return false
   }
 
   // ---------- GPU ----------

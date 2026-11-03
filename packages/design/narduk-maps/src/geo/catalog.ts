@@ -95,6 +95,11 @@ export interface GeoLayer {
   minZoom: number
   notForNavigation: boolean
   source: GeoSource
+  /**
+   * The finest zooms exist only where a finer source does: a tile absent at its zoom (no archive
+   * covers it, or its archive has no such tile) shows its nearest ancestor instead of nothing.
+   */
+  sparse?: boolean
   title: string
   twin?: string
   units?: string
@@ -306,6 +311,7 @@ export function parseLayer(v: unknown, catalogUrl: string): GeoLayer | string {
     caveats: Array.isArray(v.caveats) ? v.caveats.filter(isStr) : [],
     vector,
     notForNavigation: v.notForNavigation !== false,
+    sparse: v.sparse === true ? true : undefined,
   }
 }
 
