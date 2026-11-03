@@ -68,11 +68,13 @@ vec4 sampleTex(usampler2D tex, vec3 src) {
   ivec2 i0 = ivec2(floor(p));
   vec4 acc = vec4(0.0);
   float wsum = 0.0;
+  float cover = 0.0;
   for (int j = 0; j < 2; j++) {
     for (int i = 0; i < 2; i++) {
       ivec2 c = clamp(i0 + ivec2(i, j), ivec2(0), size - 1);
       uvec4 px = texelFetch(tex, c, 0);
       float w = (i == 1 ? f.x : 1.0 - f.x) * (j == 1 ? f.y : 1.0 - f.y);
+      cover += px.a > 0u ? w : 0.0;
       if (u_mode == 0) {
         float m = px.a > 0u ? 1.0 : 0.0;
         acc.x += w * m * terrarium(px);
@@ -83,9 +85,10 @@ vec4 sampleTex(usampler2D tex, vec3 src) {
       }
     }
   }
-  // Bleed (opt-in): a texel with no data takes the mean of its neighbours that have some, one texel out, so a field
-  // reaches the coastline a chart's land mask draws over it instead of stopping a step short of it.
-  if (u_bleed > 0.5 && (u_mode == 0 ? wsum : acc.a) < 0.5) {
+  // Bleed (opt-in): where under half the footprint has data, take the mean of the nearest texel's neighbours that have
+  // some (about a texel and a half out), so a field reaches the coastline a chart's land mask draws over it instead of
+  // stopping a step short of it. Coverage, not alpha, decides, so a translucent image layer is left alone.
+  if (u_bleed > 0.5 && cover < 0.5) {
     ivec2 ic = ivec2(floor(p + 0.5));
     vec4 racc = vec4(0.0);
     float rn = 0.0;
@@ -149,7 +152,7 @@ export interface FieldLayerOptions {
   /** An absent tile shows its nearest ancestor (catalog `sparse`); otherwise it is no data. */
   sparse?: boolean
   /**
-   * Carry data one texel past its own edge. For a map that draws land over the layer (a land mask from the same
+   * Carry data about a texel and a half past its own edge. For a map that draws land over the layer (a land mask from the same
    * coastline as its base), so the layer meets that coastline instead of stopping a step short; without one, the extra
    * texel paints over land.
    */
