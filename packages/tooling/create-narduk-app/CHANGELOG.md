@@ -1,5 +1,41 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.24.0
+
+### Minor Changes
+
+- 9c7fd3b: Stagger Dependabot across the quiet-hours window. The generator and
+  `upgrade` derive each app's weekly day and time from a hash of its name
+  (Mon-Fri nights, 22:00-05:45 America/Chicago, 15-minute steps) instead of
+  pinning every app to Monday 06:00. `upgrade` treats a file whose day or time
+  is not the app's slot as drift and rewrites it; a
+  `# narduk:dependabot-schedule day=<day> time=<HH:MM>` comment is an explicit
+  per-repo slot that `upgrade` keeps.
+- bc88fbf: Generated `ci.yml` declares a `nightly` boolean input on
+  `workflow_dispatch`, so the estate night dispatcher (fleet
+  `Config/night-dispatch.json`, which replaces the late-firing `schedule:`
+  crons) can start it: GitHub answers HTTP 422 to a dispatch that carries an
+  input the workflow does not declare. A workflow reads it as
+  `github.event.inputs.nightly == 'true'` where it used to read
+  `github.event_name == 'schedule'` (narduk-enterprises/workflows README,
+  "Night-dispatched runs"). The generator never writes a `schedule:` trigger
+  into a workflow, and tests pin that for every generated workflow and that
+  `upgrade --write` leaves a converted `ci.yml` (nightly input,
+  background-runner routing, no cron) alone.
+
+### Patch Changes
+
+- bf0f263: narduk-maps gains a framework-free `./geo` entry for Narduk Geo
+  catalog v2 on MapLibre, moved from earth-web rather than rewritten: the
+  catalog loader (index → catalogs → layers, malformed layers skipped with a
+  reason), terrarium and uv decode, bilinear over texels with data, the ramp
+  texture with per-stop alpha, readout formatting in display units (log10
+  undone), the `FieldLayer` custom WebGL2 layer, an exact PNG decoder, PMTiles
+  and XYZ tile sources, frame-time helpers with cadence-aware labels and the
+  prefetch policy, and `setupMapLibre` / `registerPmtilesProtocol`. `pmtiles` is
+  a new dependency; `maplibre-gl` stays an optional peer and `./geo` uses only
+  its types. The generator's narduk-maps pin moves with the release.
+
 ## 0.23.40
 
 ### Patch Changes

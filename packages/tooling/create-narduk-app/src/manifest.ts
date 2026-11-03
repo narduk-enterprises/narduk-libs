@@ -50,7 +50,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-charts': '2.12.2',
   '@narduk-enterprises/narduk-core': '2.42.1',
   '@narduk-enterprises/narduk-logging': '0.6.1',
-  '@narduk-enterprises/narduk-maps': '0.2.2',
+  '@narduk-enterprises/narduk-maps': '0.3.0',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
   // narduk-auth each ship it as `workspace:*`, so the app installs it three
