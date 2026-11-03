@@ -2059,6 +2059,10 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(region, label).toContain(
         '- Lint: 0 errors, 0 warnings. `narduk-lint` fails any warning, and there is no warning budget: fix a warning, never record it, and delete any `lint-budget.json` the app still has.',
       )
+      // narduk-libs#2127: agents look up libs exports before writing a helper.
+      expect(region, label).toContain(
+        'Before writing a composable, util, server helper or component, search what libs ships: `~/.local/share/agent-infrastructure/scripts/libs-find <need>`. Mark a copy you keep on purpose with `// LIBS-KEEP: <export> <reason>`.',
+      )
       // The social-previews line stays as it was.
       expect(region, label).toContain(
         'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
