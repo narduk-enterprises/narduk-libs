@@ -508,9 +508,12 @@ deployment override. Production and preview deploys are allowed in Cloudflare
 Workers Builds only when its injected `CI`, `WORKERS_CI`, build UUID, commit
 SHA, and branch variables form a complete attestation. A real local deploy
 requires the explicit `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1` recovery opt-in;
-unrelated environment flags never bypass that guard. A package-manager
-passthrough separator is normalized before invoking Wrangler so it cannot
-neutralize `--dry-run`.
+unrelated environment flags never bypass that guard. The refusal points at the
+default delivery path, a merge to main where CI builds once and the
+`linux-deploy` runner uploads the version (agent-infrastructure
+`docs/standards/CLOUDFLARE-RUNNER-UPLOAD.md`); Workers Builds is the legacy path
+for apps not yet cut over. A package-manager passthrough separator is normalized
+before invoking Wrangler so it cannot neutralize `--dry-run`.
 
 `deploy` and `versions-upload` also refuse an `.output` that contains
 `.narduk-build-ci`. `build:ci` writes that file after baking the public

@@ -13,6 +13,7 @@ import { parseFoundationCheckArgs } from '../src/commands/foundation-check.js'
 import { buildDevInvocation, parseDevArgs } from '../src/dev.js'
 import {
   buildWranglerCommandArgs,
+  getDeployGuardMessage,
   isDryRunDeploy,
   isLocalDeployAllowed,
   isWorkersBuildDeployAllowed,
@@ -133,6 +134,26 @@ describe('app-local command planning', () => {
       '--env=',
       '--keep-vars',
     ])
+  })
+
+  it('points a refused local deploy at runner upload, not Workers Builds', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'narduk-deploy-guard-'))
+    tempDirs.push(dir)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(runDeploy(['deploy'], dir, {})).toBe(1)
+      const message = String(error.mock.calls[0]?.[0])
+      expect(message).toContain('Local wrangler deploy is disabled by default')
+      expect(message).toContain('CLOUDFLARE-RUNNER-UPLOAD.md')
+      expect(message).toContain('linux-deploy runner')
+      expect(message).toContain('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1')
+      expect(message).not.toContain('Workers Builds')
+    } finally {
+      error.mockRestore()
+    }
+    expect(getDeployGuardMessage('versions-upload')).toContain(
+      'Local wrangler versions upload is disabled',
+    )
   })
 
   it('guards generated remote migrations behind Workers Builds attestation', () => {

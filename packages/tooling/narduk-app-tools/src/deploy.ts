@@ -57,7 +57,7 @@ export function getDeployGuardMessage(action: DeployAction): string {
       : action === 'versions-upload'
         ? 'wrangler versions upload'
         : 'wrangler triggers deploy'
-  return `Local ${label} is disabled by default. Push to the configured Workers Builds branch, or set NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 for intentional recovery work.`
+  return `Local ${label} is disabled by default. Merge to main: CI builds once and the linux-deploy runner uploads the version, then the app's promote workflow promotes it (agent-infrastructure docs/standards/CLOUDFLARE-RUNNER-UPLOAD.md). Set NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 only for intentional recovery work.`
 }
 
 export function parseDeployArgs(args: string[]): {
