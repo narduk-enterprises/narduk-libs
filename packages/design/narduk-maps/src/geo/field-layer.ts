@@ -311,11 +311,12 @@ export class FieldLayer implements CustomLayerInterface {
 
   /**
    * Field mode: the stored-unit range the ramp spans, changed in place (no tile reload), e.g. a contrast stretch to
-   * the values in view.
+   * the values in view. The same colours spread over the new range; a legend should be drawn for it too.
    */
   setRange(range: [number, number]) {
-    if (!(range[1] > range[0])) return
-    this.o.range = range
+    const [lo, hi] = range
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > lo)) return
+    this.o.range = [lo, hi]
     this.map?.triggerRepaint()
   }
 
