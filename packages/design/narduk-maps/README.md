@@ -193,6 +193,7 @@ const field = new FieldLayer(`geo-${L.id}`, {
   ),
   range: L.field!.range,
   ramp: rampTexture(L.field!.ramp, L.field!.range),
+  sparse: L.sparse, // static layers whose finest zooms exist only in places
 })
 map.addLayer(field)
 const f = frameAt(days, playhead)
@@ -206,6 +207,7 @@ if (typeof v === 'number') formatFieldValue(L, v) // { primary: '77.0 °F', seco
 | catalog     | `loadGeo(base)`: index → product catalogs → layers. A malformed or unknown layer is skipped with a reason; a product whose catalog fails is reported in `failed`, never fatal. `parseIndex`, `parseCatalog`. |
 | field       | `decodeTerrarium`, `decodeUv`, `bilinear` over texels with data, `rampTexture` (per-stop alpha), `rampCss`, `formatFieldValue` (display units first, log10 undone), `displayUnits`, `fieldTicks`.            |
 | field-layer | `FieldLayer`: a MapLibre custom WebGL2 layer. Exact tile bytes into RGBA8UI textures, the shader's own bilinear, cross-fade between frames, ancestor fallback, feathered product edges, `sample()` readout.  |
+|             | A catalog layer with `sparse: true` (pass `sparse: L.sparse`) also shows the nearest ancestor for a tile that does not exist, so a static product keeps its finest zooms only where a finer source is.       |
 | png         | `decodePng` / `decodeImage`: an exact PNG decoder, so terrarium bytes never pass through colour management.                                                                                                  |
 | tiles       | Web Mercator tile maths, `pmtilesSource(url)` (one shared reader per archive), `xyzSource(template)`.                                                                                                        |
 | frames      | Frame time as fractional UTC days: `dayNumber`, `frameAt`, `frameSpacing`, cadence-aware `shortDate` / `longDate`, URL playhead codec, `prefetchFrames` (the next two frames after b).                       |

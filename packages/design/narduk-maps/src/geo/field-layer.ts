@@ -444,7 +444,7 @@ export class FieldLayer implements CustomLayerInterface {
     for (let dz = 1; dz <= ANCESTORS && t.z - dz >= this.o.minZoom; dz++) {
       const a = { z: t.z - dz, x: t.x >> dz, y: t.y >> dz }
       const e = this.entries.get(this.key(frame, a))
-      if (!e) {
+      if (!e || (e.state === 'error' && (e.retryAt ?? 0) < performance.now())) {
         if (!this.queue.some(j => j.frame === frame && tileKey(j.t) === tileKey(a)))
           this.queue.push({ frame, t: a })
         return
@@ -575,12 +575,12 @@ export class FieldLayer implements CustomLayerInterface {
     return null
   }
 
-  /** Whether some ancestor of t (within ANCESTORS, at or above minZoom) is still loading or queued. */
+  /** Whether some ancestor of t (within ANCESTORS, at or above minZoom) is loading, queued or to be retried. */
   private pendingAbove(frame: number, t: TileId): boolean {
     for (let dz = 1; dz <= ANCESTORS && t.z - dz >= this.o.minZoom; dz++) {
       const a = { z: t.z - dz, x: t.x >> dz, y: t.y >> dz }
       const e = this.entries.get(this.key(frame, a))
-      if (e?.state === 'loading') return true
+      if (e?.state === 'loading' || e?.state === 'error') return true
       if (!e && this.queue.some(j => j.frame === frame && tileKey(j.t) === tileKey(a))) return true
     }
     return false

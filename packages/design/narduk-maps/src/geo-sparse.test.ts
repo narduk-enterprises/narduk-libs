@@ -34,7 +34,7 @@ type Internals = {
 }
 const inside = (l: FieldLayer) => l as unknown as Internals
 
-function put(l: FieldLayer, t: TileId, state: 'empty' | 'ready' | 'loading') {
+function put(l: FieldLayer, t: TileId, state: 'empty' | 'ready' | 'loading' | 'error') {
   const i = inside(l)
   i.entries.set(i.key(0, t), {
     frame: 0,
@@ -130,5 +130,14 @@ describe('sparse field layers', () => {
     for (let z = 13; z >= 8; z--) put(l, { z, x: 4500 >> (14 - z), y: 7000 >> (14 - z) }, 'empty')
     const r = inside(l).resolve(0, z14)!
     expect(r.src).toEqual([0, 0, 0])
+  })
+
+  it('retries an ancestor that failed rather than calling the tile empty', () => {
+    const l = layer(true)
+    put(l, z14, 'empty')
+    put(l, { z: 13, x: 2250, y: 3500 }, 'error') // retryAt unset: due now
+    expect(inside(l).resolve(0, z14)).toBeNull()
+    inside(l).enqueueParent(0, z14)
+    expect(inside(l).queue.map(j => j.t)).toEqual([{ z: 13, x: 2250, y: 3500 }])
   })
 })
