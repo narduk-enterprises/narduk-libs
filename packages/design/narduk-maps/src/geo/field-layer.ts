@@ -309,6 +309,16 @@ export class FieldLayer implements CustomLayerInterface {
     this.map?.triggerRepaint()
   }
 
+  /**
+   * Field mode: the stored-unit range the ramp spans, changed in place (no tile reload), e.g. a contrast stretch to
+   * the values in view.
+   */
+  setRange(range: [number, number]) {
+    if (!(range[1] > range[0])) return
+    this.o.range = range
+    this.map?.triggerRepaint()
+  }
+
   /** Every tile the current view needs for frame i has resolved (data, no data, or failed). */
   frameReady(i: number): boolean {
     const c = this.cover
