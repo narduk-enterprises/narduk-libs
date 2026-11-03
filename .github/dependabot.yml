@@ -8,8 +8,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "04:00"
-      timezone: "Etc/UTC"
+      time: "05:44"
+      timezone: "America/Chicago"
     open-pull-requests-limit: 5
     ignore:
       # changesets/action v2 requires Changesets CLI v3; this repo is on CLI v2.
