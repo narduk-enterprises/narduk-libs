@@ -135,7 +135,7 @@ float storedAt(usampler2D tex, vec2 p) {
 // neighbour there would read as flat and draw the tile edge as a line), in stored units per texel.
 float slopeAlong(usampler2D tex, vec2 p, vec2 dir, float c) {
   ivec2 size = textureSize(tex, 0);
-  // Only the axis of `dir` decides whether a neighbour exists: the other coordinate is the fragment's own, which runs
+  // Only the axis of dir decides whether a neighbour exists: the other coordinate is the fragment's own, which runs
   // half a texel past the texture at a tile edge.
   float h = dot(vec2(size - 1), dir);
   vec2 a = p + dir, b = p - dir;
