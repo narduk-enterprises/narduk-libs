@@ -288,11 +288,6 @@ describe('generated CI boundaries', () => {
     }
   })
 
-  // The estate night dispatcher replaces `schedule:` crons (GitHub fires them
-  // 5-10 hours late). A workflow it lists must declare `nightly`, because
-  // GitHub refuses a dispatch that carries an undeclared input, and must not
-  // keep a cron, because it would run twice. The generator emits neither a cron
-  // nor a workflow the dispatcher cannot start.
   it('re-runs the deferred draft gate when a draft is marked ready', () => {
     for (const visibility of ['private', 'public'] as const) {
       const on = (YAML.parse(createCiWorkflow(visibility)) as { on: Record<string, unknown> }).on
@@ -302,6 +297,11 @@ describe('generated CI boundaries', () => {
     }
   })
 
+  // The estate night dispatcher replaces `schedule:` crons (GitHub fires them
+  // 5-10 hours late). A workflow it lists must declare `nightly`, because
+  // GitHub refuses a dispatch that carries an undeclared input, and must not
+  // keep a cron, because it would run twice. The generator emits neither a cron
+  // nor a workflow the dispatcher cannot start.
   it('declares the nightly dispatch input and never writes a schedule trigger', () => {
     for (const visibility of ['private', 'public'] as const) {
       const generated = buildGeneratedFiles({
