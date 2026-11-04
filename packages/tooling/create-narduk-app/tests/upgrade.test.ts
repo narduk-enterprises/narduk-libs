@@ -899,7 +899,7 @@ describe('upgrade opt-outs and notices', () => {
       '      runner: ${{ ((github.event_name == \'schedule\' || github.event.inputs.nightly == \'true\') && vars.CI_BACKGROUND_RUNNER) || \'{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}\' }}\n'
     await edit(targetDir, '.github/workflows/ci.yml', (contents) =>
       contents
-        .replace(/ {6}runner: '.*'\n/u, background)
+        .replace(/^ {6}node-version-file: .*\n/mu, (line) => background + line)
         .replace(
           /nuxt-cloudflare\.yml@[0-9a-f]{40}/u,
           'nuxt-cloudflare.yml@' + NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS[0],

@@ -54,8 +54,6 @@ export const SHARED_WORKFLOW_CALLER_PERMISSIONS = [
 
 // Resolved from fleet's organization routes. Creating files does not grant
 // selected-repository membership; onboarding remains an explicit fleet action.
-const linuxRoute =
-  '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}'
 const browserRoute =
   '{"group":"playwright-isolated","labels":["self-hosted","Linux","X64","proxmox-playwright-x64"]}'
 
@@ -258,7 +256,11 @@ export function publicRepositoryGateSteps(): string[] {
  */
 function privateCallerInputs(): string[] {
   return [
-    `      runner: '${linuxRoute}'`,
+    // No `runner:`: the shared workflow's empty default is the linux-ci
+    // route, and from workflows#241 on it picks the tier by event itself
+    // (scheduled, nightly, Dependabot, lane-automation and draft runs take
+    // linux-ci-background), so a per-caller runner expression would only
+    // duplicate that routing and drift from it.
     // `node-version-file` (workflows#97) instead of a literal: the shared
     // workflow passes it straight through to actions/setup-node, so the
     // caller reads the app's declared Node source rather than carrying a
@@ -659,8 +661,8 @@ export function createCiWorkflow(visibility: AppVisibility): string {
  * merged by GITHUB_TOKEN at all, so both stay a deliberate person/agent PR.
  *
  * Runner: private apps route through the same self-hosted `linux-ci` group
- * ci.yml's reusable-workflow caller uses (`linuxRoute` above, expressed here
- * as a literal `runs-on:` block since this job calls no reusable workflow).
+ * ci.yml's shared workflow defaults to, expressed here as a literal
+ * `runs-on:` block since this job calls no reusable workflow.
  * Public apps must use a GitHub-hosted runner -- no self-hosted runner ever
  * sees a fork PR's or a bot's code (D-VIS-1) -- so they get `ubuntu-24.04`,
  * matching the public path's own jobs above.

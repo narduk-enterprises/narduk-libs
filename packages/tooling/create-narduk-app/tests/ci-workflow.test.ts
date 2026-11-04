@@ -37,9 +37,10 @@ function callerEnvWithoutNpmConfig(): NodeJS.ProcessEnv {
 describe('generated CI boundaries', () => {
   it('keeps all private gates in the pinned shared workflow with separate runner classes', () => {
     const workflow = createCiWorkflow('private')
-    const runner = JSON.parse(workflow.match(/runner: '(.*)'/u)![1]!)
     const browser = JSON.parse(workflow.match(/e2e-runner: '(.*)'/u)![1]!)
-    expect(runner.group).toBe('linux-ci')
+    // workflows#241: the shared workflow routes the linux-ci tier by event,
+    // so the caller passes no runner of its own.
+    expect(workflow).not.toMatch(/^ {6}runner:/mu)
     expect(browser.group).toBe('playwright-isolated')
     expect(browser.labels).toContain('proxmox-playwright-x64')
     expect(workflow).toContain(`nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`)
