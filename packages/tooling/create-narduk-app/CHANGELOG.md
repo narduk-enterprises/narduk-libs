@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.24.4
+
+### Patch Changes
+
+- b3d27e0: Generated apps pin `@narduk-enterprises/narduk-maps` 0.6.0
+  (FieldLayer `relief`).
+
 ## 0.24.3
 
 ### Patch Changes
