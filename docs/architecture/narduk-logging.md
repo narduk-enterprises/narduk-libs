@@ -58,5 +58,29 @@ this repository. They moved on 2026-10-07 to
 [narduk-enterprises/narduk-sound](https://github.com/narduk-enterprises/narduk-sound),
 and the Beat Blaster app to the private narduk-enterprises/beat-blaster. The
 Swift tags `v0.3.0` through `v0.4.1` carried the `NardukMusic*` and
-`NardukSound*` products from here; later releases live in narduk-sound. This
-repository's `Package.swift` declares NardukLogging and NardukAuthKit only.
+`NardukSound*` products from here; later releases live in narduk-sound.
+
+## Apple kits
+
+Status: accepted by Logan, 2026-11-04 ("move anything in stocks into libs that
+should be in libs"), when Tally became the second Mac app in the Stocks shape.
+
+`packages/apple/<kit>/` holds what those apps share: `NardukAppKit`,
+`NardukUpdateKit` (with `NardukUpdateKitTesting`) and `NardukActivityKit`. They
+are SwiftPM products of the root manifest on the same `vX.Y.Z` tags, `v0.6.0`
+first, and not a pnpm workspace family. The manifest declares them only on an
+Apple host, and `.github/workflows/apple-kits-swift.yml` gates them on a
+GitHub-hosted macOS image, tests included on Xcode 26.0.1 (Swift 6.2).
+
+This repository is public: every app-specific string is a parameter, and each
+app keeps its own Sparkle public key. Sparkle is an up-to-next-major range in
+the root manifest, so each app's exact pin decides the version; only
+`NardukUpdateKit` links it. SwiftPM still resolves the range for every consumer
+of this package, so from `v0.6.0` an app that pins Sparkle needs 2.9.4 or later,
+and an app without it gains a Sparkle pin it never builds. `ActivityEvent`'s
+JSON line is a stable format: Stocks' existing logs define it, so `subject`
+stays `symbol` on disk.
+
+Stocks' `Theme.swift` stays in Stocks: only Stocks uses it, so extracting it
+waits for a second consumer. `ActivityReportStyle` and `UpdatePill`'s tint take
+an app's colours in the meantime.

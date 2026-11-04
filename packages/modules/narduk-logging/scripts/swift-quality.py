@@ -44,6 +44,8 @@ def main() -> None:
         tree = ROOT / "packages/modules/narduk-auth/swift"
         for directory in ("Sources", "Tests"):
             shutil.copytree(tree / directory, source / tree.relative_to(ROOT) / directory)
+        # So does it declare the Apple kits.
+        shutil.copytree(ROOT / "packages/apple", source / "packages/apple")
         run("git", "init", "--quiet", cwd=source)
         run("git", "add", ".", cwd=source)
         run(
