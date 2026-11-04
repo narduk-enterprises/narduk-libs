@@ -124,7 +124,7 @@ float storedAt(usampler2D tex, vec2 p) {
       if (px.a == 0u) continue;
       float k = (i == 1 ? f.x : 1.0 - f.x) * (j == 1 ? f.y : 1.0 - f.y);
       float v = terrarium(px);
-      acc += k * (u_log > 0.5 ? log(1.0 + pow(10.0, v) / 5.0) / log(10.0) : v);
+      acc += k * (u_log > 0.5 ? log(1.0 + pow(10.0, clamp(v, -10.0, 30.0)) / 5.0) / log(10.0) : v);
       w += k;
     }
   }
@@ -135,10 +135,12 @@ float storedAt(usampler2D tex, vec2 p) {
 // neighbour there would read as flat and draw the tile edge as a line), in stored units per texel.
 float slopeAlong(usampler2D tex, vec2 p, vec2 dir, float c) {
   ivec2 size = textureSize(tex, 0);
-  vec2 hi = vec2(size - 1);
+  // Only the axis of `dir` decides whether a neighbour exists: the other coordinate is the fragment's own, which runs
+  // half a texel past the texture at a tile edge.
+  float h = dot(vec2(size - 1), dir);
   vec2 a = p + dir, b = p - dir;
-  bool hasA = all(greaterThanEqual(a, vec2(0.0))) && all(lessThanEqual(a, hi));
-  bool hasB = all(greaterThanEqual(b, vec2(0.0))) && all(lessThanEqual(b, hi));
+  bool hasA = dot(a, dir) >= 0.0 && dot(a, dir) <= h;
+  bool hasB = dot(b, dir) >= 0.0 && dot(b, dir) <= h;
   float va = hasA ? storedAt(tex, a) : -1e9;
   float vb = hasB ? storedAt(tex, b) : -1e9;
   bool okA = va > -1e8, okB = vb > -1e8;
@@ -188,9 +190,10 @@ void main() {
   vec4 sb = sampleTex(u_texB, u_srcB);
   vec4 ca = u_mode == 0 ? fieldColor(sa) : sa;
   vec4 cb = u_mode == 0 ? fieldColor(sb) : sb;
+  // Shade only the frames that show: a still layer or a paused frame pays for one hillshade, not two.
   if (u_mode == 0 && u_relief.x > 0.0) {
-    ca.rgb = min(ca.rgb * 2.0 * reliefFactor(u_texA, u_srcA), vec3(ca.a));
-    cb.rgb = min(cb.rgb * 2.0 * reliefFactor(u_texB, u_srcB), vec3(cb.a));
+    if (u_t < 1.0) ca.rgb = min(ca.rgb * 2.0 * reliefFactor(u_texA, u_srcA), vec3(ca.a));
+    if (u_t > 0.0) cb.rgb = min(cb.rgb * 2.0 * reliefFactor(u_texB, u_srcB), vec3(cb.a));
   }
   vec4 c = mix(ca, cb, u_t);
   // Feather the product's own edges (never the edge of the world) instead of a hard cut.
@@ -231,6 +234,8 @@ export interface FieldLayerOptions {
   /**
    * Field mode: light and shade from the field's own slopes (a hillshade, light from the north-west), overlaid on its
    * colour. For depth: `log10` when the stored value is log10(depth), which shades the banks as well as the walls.
+   * Defaults: gain 2.4, darkest 0.3 and lightest 0.76 (overlay factors, 0.5 = unchanged), exaggeration 8 (log mode:
+   * per log unit a texel; linear mode: metres per metre, scaled up to 6x more as texels shrink below 2 km).
    */
   relief?: { log10?: boolean; gain?: number; darkest?: number; lightest?: number; exaggeration?: number }
 }
