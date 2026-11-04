@@ -482,7 +482,12 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     'name: CI',
     '',
     'on:',
+    // The shared workflow defers its expensive validation on a draft; listing
+    // `ready_for_review` runs it when the draft is marked ready. `types`
+    // replaces GitHub's defaults, so they are listed too (agent-infrastructure
+    // drafts-and-stacks.md; 73 of 75 callers lacked it on 2026-11-04).
     '  pull_request:',
+    '    types: [opened, synchronize, reopened, ready_for_review]',
     '  push:',
     '    branches: [main]',
     '  workflow_dispatch:',

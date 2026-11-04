@@ -288,6 +288,15 @@ describe('generated CI boundaries', () => {
     }
   })
 
+  it('re-runs the deferred draft gate when a draft is marked ready', () => {
+    for (const visibility of ['private', 'public'] as const) {
+      const on = (YAML.parse(createCiWorkflow(visibility)) as { on: Record<string, unknown> }).on
+      expect(on.pull_request, visibility).toEqual({
+        types: ['opened', 'synchronize', 'reopened', 'ready_for_review'],
+      })
+    }
+  })
+
   // The estate night dispatcher replaces `schedule:` crons (GitHub fires them
   // 5-10 hours late). A workflow it lists must declare `nightly`, because
   // GitHub refuses a dispatch that carries an undeclared input, and must not
