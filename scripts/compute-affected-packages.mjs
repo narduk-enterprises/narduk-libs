@@ -194,14 +194,14 @@ function isInertPath(path) {
 }
 
 // Paths whose gate is planned outside this script: the root SwiftPM manifest,
-// its lockfile and the swift-format config feed only the Swift gates
-// (auth-kit-ci-plan.mjs and logging-ci-plan.mjs select on them). A diff of only
-// these paths selects no npm package and forces no full run, and the Swift
-// planners still run their own gates (#1538). Keep this list to paths a planner
-// already owns; a path no planner selects must stay unclassified so it fails
-// closed to the full run.
+// its lockfile, the swift-format config and the SwiftPM-only Apple kits feed
+// only the Swift gates (apple-kits-ci-plan.mjs, auth-kit-ci-plan.mjs and
+// logging-ci-plan.mjs select on them). A diff of only these paths selects no
+// npm package and forces no full run, and the Swift planners still run their
+// own gates (#1538). Keep this list to paths a planner already owns; a path no
+// planner selects must stay unclassified so it fails closed to the full run.
 function isNonNpmGatedPath(path) {
-  return /^(?:Package\.(?:swift|resolved)|\.swift-format)$/u.test(path)
+  return /^(?:Package\.(?:swift|resolved)|\.swift-format|packages\/apple\/.+)$/u.test(path)
 }
 
 function isPackageValidationOnly(relativePath) {

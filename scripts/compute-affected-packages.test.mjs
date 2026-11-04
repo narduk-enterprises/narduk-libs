@@ -270,7 +270,12 @@ test('inert repository paths select no packages and do not force a full run', ()
 test('the root Package.swift selects no npm package; it fans out to the Swift gates only (#1538)', () => {
   const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
   try {
-    for (const file of ['Package.swift', 'Package.resolved', '.swift-format']) {
+    for (const file of [
+      'Package.swift',
+      'Package.resolved',
+      '.swift-format',
+      'packages/apple/NardukAppKit/Sources/NardukAppKit/AppIdentity.swift',
+    ]) {
       const result = computeAffectedSet({ root, changedFiles: [file] })
       assert.deepEqual(names(result), [], file)
       assert.equal(result.fullRun, false, file)

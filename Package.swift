@@ -30,6 +30,50 @@ let package = Package(
 // logging gate keeps building NardukLogging alone.
 #if canImport(Darwin)
     package.products.append(.library(name: "NardukAuthKit", targets: ["NardukAuthKit"]))
+    // The Apple kits are what every Narduk Mac app shares (updates, identity, persistence, activity).
+    // Sparkle is a range, so each app's own exact pin decides the version, and a Linux manifest
+    // evaluation never sees it. Only NardukUpdateKit links it, and only on macOS.
+    package.dependencies.append(
+        .package(url: "https://github.com/sparkle-project/Sparkle", .upToNextMajor(from: "2.9.4")))
+    package.products += [
+        .library(name: "NardukAppKit", targets: ["NardukAppKit"]),
+        .library(name: "NardukUpdateKit", targets: ["NardukUpdateKit"]),
+        .library(name: "NardukUpdateKitTesting", targets: ["NardukUpdateKitTesting"]),
+        .library(name: "NardukActivityKit", targets: ["NardukActivityKit"]),
+    ]
+    package.targets += [
+        .target(name: "NardukAppKit", path: "packages/apple/NardukAppKit/Sources/NardukAppKit"),
+        .testTarget(
+            name: "NardukAppKitTests", dependencies: ["NardukAppKit"],
+            path: "packages/apple/NardukAppKit/Tests/NardukAppKitTests"
+        ),
+        .target(
+            name: "NardukUpdateKit",
+            dependencies: [
+                "NardukAppKit",
+                .product(
+                    name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
+            ],
+            path: "packages/apple/NardukUpdateKit/Sources/NardukUpdateKit"
+        ),
+        .target(
+            name: "NardukUpdateKitTesting", dependencies: ["NardukAppKit", "NardukUpdateKit"],
+            path: "packages/apple/NardukUpdateKit/Sources/NardukUpdateKitTesting"
+        ),
+        .testTarget(
+            name: "NardukUpdateKitTests",
+            dependencies: ["NardukAppKit", "NardukUpdateKit", "NardukUpdateKitTesting"],
+            path: "packages/apple/NardukUpdateKit/Tests/NardukUpdateKitTests"
+        ),
+        .target(
+            name: "NardukActivityKit",
+            path: "packages/apple/NardukActivityKit/Sources/NardukActivityKit"
+        ),
+        .testTarget(
+            name: "NardukActivityKitTests", dependencies: ["NardukActivityKit"],
+            path: "packages/apple/NardukActivityKit/Tests/NardukActivityKitTests"
+        ),
+    ]
     package.targets += [
         .target(
             name: "NardukAuthKit",

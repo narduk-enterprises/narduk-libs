@@ -9,9 +9,10 @@ or Command control plane. The decommission ledger and archive gates live in
 
 ## Packages
 
-`packages/` is organized into four families (company-hq `D-WEBFOUND-2` Q2 (a),
-2026-09-04). Directory layout only -- published package names are unchanged and
-every package still releases independently through Changesets.
+`packages/` is organized into four npm families (company-hq `D-WEBFOUND-2` Q2
+(a), 2026-09-04) and the SwiftPM-only Apple kits. Directory layout only --
+published package names are unchanged and every npm package still releases
+independently through Changesets.
 
 ### `packages/modules/` -- Nuxt runtime modules and libraries
 
@@ -57,6 +58,20 @@ every package still releases independently through Changesets.
 ### `packages/contracts/` -- shared contracts
 
 - [`@narduk-enterprises/narduk-platform`](packages/contracts/narduk-platform/README.md)
+
+### `packages/apple/` -- Apple kits (SwiftPM only)
+
+Products of the root `Package.swift`, released on the repository `vX.Y.Z` tags;
+not a pnpm workspace family. See
+[the Apple kits decision](docs/architecture/narduk-logging.md#apple-kits).
+
+- `NardukAppKit` -- app identity, owner-only atomic files, undoable preferences,
+  the smoke gate and flush-on-quit (macOS and iOS)
+- `NardukUpdateKit` -- Sparkle updates: 15-minute poll, notification, status-bar
+  pill, Check for Updates, plus `NardukUpdateKitTesting` for the delivery
+  contract test (macOS)
+- `NardukActivityKit` -- on-device activity log, recorder and report window (log
+  on macOS and iOS, recorder and report on macOS)
 
 ## Find And Use Shared Capabilities
 

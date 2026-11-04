@@ -1,0 +1,63 @@
+name: Apple kits Swift
+
+# NardukAppKit, NardukUpdateKit and NardukActivityKit need AppKit and Sparkle, so
+# they build only on an Apple host. This public repository runs them on a
+# GitHub-hosted macOS image (fleet policy: a public repository never takes the
+# fleet Apple runner class); the Linux Swift job in logging-languages.yml never
+# sees their targets.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  swift-macos:
+    name: Apple kits macOS
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      # Xcode 26.6 / Swift 6.3.3 is narduk-logging's declared toolchain. The last
+      # step repeats the kits' tests and the consumer on Xcode 26.0.1 (Swift 6.2),
+      # the version the fleet Apple runners carry, which the hosted image also ships.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      SWIFTLINT_VERSION: 0.63.3
+      SWIFTLINT_SHA256: fb045e85e7cb3374f42a4840b6b85a0106302afa69035c0c6f29af4a44c810b6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the declared Xcode toolchains on this runner image
+        run: |
+          set -euo pipefail
+          missing=0
+          for xcode in Xcode_26.6 Xcode_26.0.1; do
+            if [ ! -d "/Applications/${xcode}.app/Contents/Developer" ]; then
+              echo "::error::/Applications/${xcode}.app is not on this runner image (${ImageOS:-unknown}); update the Xcode pins in apple-kits-swift.yml to a version the image carries."
+              missing=1
+            fi
+          done
+          if [ "${missing}" -ne 0 ]; then
+            ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+      - name: Install the pinned SwiftLint release
+        run: |
+          set -euo pipefail
+          directory="${RUNNER_TEMP}/swiftlint"
+          mkdir -p "${directory}"
+          curl --fail --silent --show-error --location --output "${directory}/swiftlint.zip" \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/portable_swiftlint.zip"
+          echo "${SWIFTLINT_SHA256}  ${directory}/swiftlint.zip" | shasum -a 256 -c -
+          unzip -q "${directory}/swiftlint.zip" -d "${directory}"
+          "${directory}/swiftlint" version
+          echo "${directory}" >> "${GITHUB_PATH}"
+      - name: Check the kits, their iOS builds and a version-tag consumer
+        env:
+          CI: "true"
+        run: python3 packages/apple/scripts/swift-quality.py
+      - name: Test the kits and build the consumer with Xcode 26.0.1 (Swift 6.2)
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+        run: python3 packages/apple/scripts/swift-quality.py --swift-6-2
