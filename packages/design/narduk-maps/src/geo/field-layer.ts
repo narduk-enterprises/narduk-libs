@@ -49,6 +49,9 @@ uniform float u_t;
 uniform vec2 u_range;
 uniform float u_opacity;
 uniform float u_bleed;
+uniform vec4 u_relief;   // gain, darkest, lightest factor, vertical exaggeration (gain 0 = off)
+uniform float u_log;     // 1 when the stored value is log10(depth)
+uniform vec3 u_tile;
 uniform int u_mode;
 uniform vec4 u_bbox;
 uniform vec4 u_fadeOn;
@@ -107,6 +110,72 @@ vec4 sampleTex(usampler2D tex, vec3 src) {
   return acc;
 }
 
+// The stored value at a texel position, bilinear over texels with data; -1e9 where none. A log10 depth field reads as
+// log10(1 + depth / 5 m): log-like in deep water (the banks shade as strongly as the walls) and close to linear in
+// the shallows, where a foot at two feet would otherwise read as a cliff.
+float storedAt(usampler2D tex, vec2 p) {
+  ivec2 size = textureSize(tex, 0);
+  vec2 f = fract(p);
+  ivec2 i0 = ivec2(floor(p));
+  float acc = 0.0, w = 0.0;
+  for (int j = 0; j < 2; j++) {
+    for (int i = 0; i < 2; i++) {
+      uvec4 px = texelFetch(tex, clamp(i0 + ivec2(i, j), ivec2(0), size - 1), 0);
+      if (px.a == 0u) continue;
+      float k = (i == 1 ? f.x : 1.0 - f.x) * (j == 1 ? f.y : 1.0 - f.y);
+      float v = terrarium(px);
+      acc += k * (u_log > 0.5 ? log(1.0 + pow(10.0, clamp(v, -10.0, 30.0)) / 5.0) / log(10.0) : v);
+      w += k;
+    }
+  }
+  return w > 0.01 ? acc / w : -1e9;
+}
+
+// One axis of the slope: a central difference one source texel each way, one-sided at the tile's edge (a clamped
+// neighbour there would read as flat and draw the tile edge as a line), in stored units per texel.
+float slopeAlong(usampler2D tex, vec2 p, vec2 dir, float c) {
+  ivec2 size = textureSize(tex, 0);
+  // Only the axis of dir decides whether a neighbour exists: the other coordinate is the fragment's own, which runs
+  // half a texel past the texture at a tile edge.
+  float h = dot(vec2(size - 1), dir);
+  vec2 a = p + dir, b = p - dir;
+  bool hasA = dot(a, dir) >= 0.0 && dot(a, dir) <= h;
+  bool hasB = dot(b, dir) >= 0.0 && dot(b, dir) <= h;
+  float va = hasA ? storedAt(tex, a) : -1e9;
+  float vb = hasB ? storedAt(tex, b) : -1e9;
+  bool okA = va > -1e8, okB = vb > -1e8;
+  if (okA && okB) return (va - vb) * 0.5;
+  if (okA) return va - c;
+  if (okB) return c - vb;
+  return 0.0;
+}
+
+// Hillshade from the field itself: light from the north-west, 45 degrees up, as an overlay factor on the colour
+// (2 x shade x colour, flat = 0.5), the blend My Boat's chart uses over its depth colours.
+float reliefFactor(usampler2D tex, vec3 src) {
+  vec2 p = src.xy + v_local * src.z - 0.5;
+  float c = storedAt(tex, p);
+  if (c < -1e8) return 0.5;
+  float sx = slopeAlong(tex, p, vec2(1.0, 0.0), c);
+  float sy = slopeAlong(tex, p, vec2(0.0, 1.0), c);
+  float gx, gy;
+  if (u_log > 0.5) {
+    gx = sx * u_relief.w * 2.0;
+    gy = sy * u_relief.w * 2.0;
+  } else {
+    float lat = atan(sinh(3.14159265 * (1.0 - 2.0 * v_merc.y)));
+    float mpt = u_tile.z * 40075016.7 * cos(lat) / src.z;   // metres a source texel spans on the ground
+    float exag = u_relief.w * clamp(sqrt(2000.0 / mpt), 1.0, 6.0);
+    gx = sx / mpt * exag;
+    gy = sy / mpt * exag;
+  }
+  // Depth grows downward: elevation is its negative. x runs east, y south.
+  vec3 normal = normalize(vec3(gx, -gy, 1.0));
+  vec3 light = normalize(vec3(-1.0, 1.0, 1.414));
+  float g = 0.5 + u_relief.x * (dot(normal, light) - 0.707);
+  return clamp(g, u_relief.y, u_relief.z);
+}
+
 vec4 fieldColor(vec4 s) {
   float x = clamp((s.x - u_range.x) / (u_range.y - u_range.x), 0.0, 1.0);
   vec4 c = texture(u_ramp, vec2((x * ${(RAMP_SIZE - 1).toFixed(1)} + 0.5) / ${RAMP_SIZE.toFixed(1)}, 0.5));
@@ -121,6 +190,11 @@ void main() {
   vec4 sb = sampleTex(u_texB, u_srcB);
   vec4 ca = u_mode == 0 ? fieldColor(sa) : sa;
   vec4 cb = u_mode == 0 ? fieldColor(sb) : sb;
+  // Shade only the frames that show: a still layer or a paused frame pays for one hillshade, not two.
+  if (u_mode == 0 && u_relief.x > 0.0) {
+    if (u_t < 1.0) ca.rgb = min(ca.rgb * 2.0 * reliefFactor(u_texA, u_srcA), vec3(ca.a));
+    if (u_t > 0.0) cb.rgb = min(cb.rgb * 2.0 * reliefFactor(u_texB, u_srcB), vec3(cb.a));
+  }
   vec4 c = mix(ca, cb, u_t);
   // Feather the product's own edges (never the edge of the world) instead of a hard cut.
   float fade = 1.0;
@@ -157,6 +231,13 @@ export interface FieldLayerOptions {
    * texel paints over land.
    */
   bleed?: boolean
+  /**
+   * Field mode: light and shade from the field's own slopes (a hillshade, light from the north-west), overlaid on its
+   * colour. For depth: `log10` when the stored value is log10(depth), which shades the banks as well as the walls.
+   * Defaults: gain 2.4, darkest 0.3 and lightest 0.76 (overlay factors, 0.5 = unchanged), exaggeration 8 (log mode:
+   * per log unit a texel; linear mode: metres per metre, scaled up to 6x more as texels shrink below 2 km).
+   */
+  relief?: { log10?: boolean; gain?: number; darkest?: number; lightest?: number; exaggeration?: number }
 }
 
 type TileState = 'loading' | 'ready' | 'empty' | 'error'
@@ -274,6 +355,8 @@ export class FieldLayer implements CustomLayerInterface {
       'u_range',
       'u_opacity',
       'u_bleed',
+      'u_relief',
+      'u_log',
       'u_mode',
       'u_bbox',
       'u_fadeOn',
@@ -661,6 +744,15 @@ export class FieldLayer implements CustomLayerInterface {
     gl.uniform1i(u.u_mode!, this.o.mode === 'field' ? 0 : 1)
     gl.uniform1f(u.u_opacity!, this.o.opacity ?? 1)
     gl.uniform1f(u.u_bleed!, this.o.bleed ? 1 : 0)
+    const relief = this.o.relief
+    gl.uniform4f(
+      u.u_relief!,
+      relief ? (relief.gain ?? 2.4) : 0,
+      relief?.darkest ?? 0.3,
+      relief?.lightest ?? 0.76,
+      relief?.exaggeration ?? 8,
+    )
+    gl.uniform1f(u.u_log!, relief?.log10 ? 1 : 0)
     const range = this.o.range ?? [0, 1]
     gl.uniform2f(u.u_range!, range[0], range[1])
     const [w, s, e, n] = this.o.bbox
