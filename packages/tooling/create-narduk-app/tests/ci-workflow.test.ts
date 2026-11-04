@@ -293,6 +293,15 @@ describe('generated CI boundaries', () => {
   // GitHub refuses a dispatch that carries an undeclared input, and must not
   // keep a cron, because it would run twice. The generator emits neither a cron
   // nor a workflow the dispatcher cannot start.
+  it('re-runs the deferred draft gate when a draft is marked ready', () => {
+    for (const visibility of ['private', 'public'] as const) {
+      const on = (YAML.parse(createCiWorkflow(visibility)) as { on: Record<string, unknown> }).on
+      expect(on.pull_request, visibility).toEqual({
+        types: ['opened', 'synchronize', 'reopened', 'ready_for_review'],
+      })
+    }
+  })
+
   it('declares the nightly dispatch input and never writes a schedule trigger', () => {
     for (const visibility of ['private', 'public'] as const) {
       const generated = buildGeneratedFiles({
