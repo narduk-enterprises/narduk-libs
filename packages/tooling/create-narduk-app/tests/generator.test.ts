@@ -434,7 +434,10 @@ describe('create-narduk-app generation contract', () => {
         '@esbuild-kit/esm-loader': '*',
       },
     })
-    expect(files.get('.github/workflows/ci.yml')).toContain('"group":"linux-ci"')
+    // workflows#241: the shared workflow routes the linux-ci tier by event,
+    // so the private caller names no runner; the browser shards keep theirs.
+    expect(files.get('.github/workflows/ci.yml')).not.toMatch(/^ {6}runner:/mu)
+    expect(files.get('.github/workflows/ci.yml')).toContain('"group":"playwright-isolated"')
     expect(dependencies['@narduk-enterprises/narduk-core']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
     )
