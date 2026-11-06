@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2
+
+### Patch Changes
+
+- 9f20d36: The Swift quality script's consumer fixture also copies
+  `packages/apple`, which the root SwiftPM manifest now names on an Apple host.
+  No runtime change.
+
 ## 0.6.1
 
 ### Patch Changes
