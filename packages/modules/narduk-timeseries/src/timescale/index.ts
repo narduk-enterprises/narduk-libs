@@ -724,4 +724,5 @@ export const TIMESCALE_MIGRATION_NAMES: readonly string[] = [
   '0006_history_ais.sql',
   '0007_history_roles_additions.sql',
   '0008_rollups_exclude_import_overlay.sql',
+  '0009_rollups_realtime.sql',
 ]
