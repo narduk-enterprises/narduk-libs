@@ -1,5 +1,18 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.24.5
+
+### Patch Changes
+
+- 42439f2: Generated `ci.yml` runs on `ready_for_review`: the shared workflow
+  defers its expensive validation on a draft, and marking the draft ready now
+  re-runs it instead of leaving the check red until a push.
+- ca04f61: Generated private `ci.yml` no longer passes `runner:` to the shared
+  workflow. Its empty default is the same linux-ci route, so nothing moves on
+  the current pin. Once the pin reaches narduk-enterprises/workflows#241, the
+  shared workflow sends scheduled, nightly, Dependabot, lane-automation and
+  draft runs to the linux-ci-background tier by itself.
+
 ## 0.24.4
 
 ### Patch Changes

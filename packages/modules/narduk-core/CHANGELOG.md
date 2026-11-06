@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-core
 
+## 2.42.2
+
+### Patch Changes
+
+- Updated dependencies [9f20d36]
+  - @narduk-enterprises/narduk-logging@0.6.2
+
 ## 2.42.1
 
 ### Patch Changes
