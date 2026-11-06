@@ -565,21 +565,31 @@ deletes the range's `telemetry_numeric_tw` rows first when that matters.
 
 ### Rollup lag, per level
 
-`timescaledb.materialized_only = true` is stated explicitly on all four views
-(it has been the default since 2.13), so a read sees materialized buckets only.
-Each level therefore lags by its `end_offset` plus up to one
-`schedule_interval`:
+0009 turns on real-time aggregation for 15m, 1h and 1d
+(`timescaledb.materialized_only = false`): a read of those views is the
+materialized buckets below the watermark plus, above it, the same aggregate
+computed at read time from the level below. Those three levels therefore read up
+to the present, and their newest bucket is partial (its `n` and `sum_value`
+grow) until it closes. 1m stays `materialized_only = true` and lags by its
+`end_offset` plus up to one `schedule_interval`. The policies set how soon a
+bucket is _materialized_, which is what the real-time tail saves reads from
+recomputing:
 
-| Level | `end_offset` | `schedule_interval` | Worst-case lag |
-| ----- | ------------ | ------------------- | -------------- |
-| 1m    | 1 minute     | 1 minute            | ~2 minutes     |
-| 15m   | 15 minutes   | 15 minutes          | ~30 minutes    |
-| 1h    | 1 hour       | 1 hour              | ~2 hours       |
-| 1d    | 1 day        | 1 hour              | ~25 hours      |
+| Level | `materialized_only` | `end_offset` | `schedule_interval` | Readable          | Materialized after close |
+| ----- | ------------------- | ------------ | ------------------- | ----------------- | ------------------------ |
+| 1m    | true                | 1 minute     | 1 minute            | ~2 minutes behind | ~2 minutes               |
+| 15m   | false               | 15 minutes   | 15 minutes          | up to the 1m lag  | ~30 minutes              |
+| 1h    | false               | 15 minutes   | 15 minutes          | up to the 1m lag  | ~30 minutes              |
+| 1d    | false               | 1 hour       | 1 hour              | up to the 1m lag  | ~2 hours                 |
 
-A consumer needing the current partial bucket reads raw. The 1d bucket is a
-**UTC** day — `time_bucket` with no timezone argument — so a product wanting
-local days buckets 1h rows in its own query.
+Before 0009 (0002 and 0008) every level was materialized-only with `end_offset`
+and schedule at its own bucket width, so a 1h bucket became readable two to
+three hours after it opened and a 1d bucket about two days after
+(mybo-at-v2#533).
+
+A consumer needing the newest minute reads raw. The 1d bucket is a **UTC** day —
+`time_bucket` with no timezone argument — so a product wanting local days
+buckets 1h rows in its own query.
 
 ### Backfill older than the refresh window
 

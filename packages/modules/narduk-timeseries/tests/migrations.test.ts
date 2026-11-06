@@ -529,3 +529,54 @@ describe('0008_rollups_exclude_import_overlay.sql', () => {
     for (const statement of sent) expect(statement).not.toContain('BEGIN')
   })
 })
+
+describe('0009_rollups_realtime.sql', () => {
+  // mybo-at-v2#533: rollup reads reach the present. Real-time aggregation on
+  // 15m/1h/1d plus tighter 1h and 1d policies; nothing dropped.
+  const sql = read('0009_rollups_realtime.sql')
+  const lines = executableOf(sql)
+  const statements = lines
+    .join('\n')
+    .split(/;\n?/u)
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0)
+
+  it('runs in one transaction: nothing it does needs to run outside one', () => {
+    expect(sql.startsWith(NO_TRANSACTION_DIRECTIVE)).toBe(false)
+    expect(parseMigrationDirectives(sql).transactional).toBe(true)
+  })
+
+  it('turns on real-time aggregation for 15m, 1h and 1d, and leaves 1m materialized-only', () => {
+    expect(lines.filter((line) => line.startsWith('ALTER MATERIALIZED VIEW'))).toEqual([
+      'ALTER MATERIALIZED VIEW telemetry_numeric_15m SET (timescaledb.materialized_only = false);',
+      'ALTER MATERIALIZED VIEW telemetry_numeric_1h SET (timescaledb.materialized_only = false);',
+      'ALTER MATERIALIZED VIEW telemetry_numeric_1d SET (timescaledb.materialized_only = false);',
+    ])
+    expect(lines.join('\n')).not.toContain('telemetry_numeric_1m')
+  })
+
+  it('replaces the 1h and 1d policies, each removed before it is re-added', () => {
+    const policyCalls = statements.filter((statement) =>
+      /_continuous_aggregate_policy/u.test(statement),
+    )
+    expect(policyCalls).toHaveLength(4)
+    expect(policyCalls[0]).toBe(
+      "SELECT remove_continuous_aggregate_policy('telemetry_numeric_1h', if_exists => TRUE)",
+    )
+    expect(policyCalls[1]).toMatch(
+      /add_continuous_aggregate_policy\('telemetry_numeric_1h',\s+start_offset => INTERVAL '7 days',\s+end_offset {3}=> INTERVAL '15 minutes',\s+schedule_interval => INTERVAL '15 minutes'/u,
+    )
+    expect(policyCalls[2]).toBe(
+      "SELECT remove_continuous_aggregate_policy('telemetry_numeric_1d', if_exists => TRUE)",
+    )
+    expect(policyCalls[3]).toMatch(
+      /add_continuous_aggregate_policy\('telemetry_numeric_1d',\s+start_offset => INTERVAL '30 days',\s+end_offset {3}=> INTERVAL '1 hour',\s+schedule_interval => INTERVAL '1 hour'/u,
+    )
+  })
+
+  it('drops, creates and grants nothing, so no bucket or grant is lost', () => {
+    const executable = lines.join('\n')
+    expect(executable).not.toMatch(/\bDROP\b|\bCREATE\b|\bGRANT\b|\bREVOKE\b/u)
+    expect(statements).toHaveLength(7)
+  })
+})
