@@ -20,8 +20,10 @@ it are.**
 
 ### 1.1 What the code shows (read 2026-11-12, not timed)
 
-`pacc-trac` `test/vqa/gallery.mjs`, the full-gallery sweep (about 56 catalog
-entries in `docs/catalog/features.mjs`, up to three viewports each):
+`pacc-trac` `test/vqa/gallery.mjs`, the full-gallery sweep (the spec reviewer
+counted 51 captured features and about 130 default shots in
+`docs/catalog/features.mjs`, four of them public and so without sign-in; W0
+re-counts):
 
 | Behaviour                                    | Where                                                                                                                                | Effect                                                                                                                                             |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -37,8 +39,9 @@ entries in `docs/catalog/features.mjs`, up to three viewports each):
 - `journeys/src/web.ts:415-417`: every `goto` waits for `load`, then
   `networkidle` (15 s, errors swallowed), then `sleep(700)` when paced.
 - `journeys/src/web.ts:566-581`: one new context per journey; a non-secret role
-  signs in inside the journey page every time. Only secret-class roles go
-  through a saved `storageState`.
+  signs in inside the journey page every time. A saved `storageState` is used
+  only for secret-class roles and only in capture mode (`web.ts:556`), to keep
+  the credential out of the recording.
 - `journeys/src/web.ts:545`: `worldHooks.prepare(scenarioId)` runs for every
   journey.
 - `journeys/src/web.ts:466-481`, `worker-binding.ts`: a Playwright worker pool
@@ -49,8 +52,11 @@ entries in `docs/catalog/features.mjs`, up to three viewports each):
   be byte-identical, with `fullPage` done by growing the viewport. This is slow
   **on purpose**, for committed baselines. It is not the bug and must not be
   "optimised".
-- Capture mode in journeys bundles three things that do not need each other:
-  video, human-speed pacing and stills.
+- Capture mode in journeys bundles things that do not need each other: video,
+  human-speed pacing, and a still after every step (`web.ts:614-616`).
+- The journeys `goto(path)` takes no readiness argument, so an app-declared
+  ready selector (D2) cannot reach journeys without a contract change; section
+  9.1 lists it.
 
 ### 1.2 How widespread (matched lines, not defects)
 
@@ -68,10 +74,12 @@ lines, not confirmed defects**; a `newContext` call is not a bug and a
 | kzfr-website-bid |                14 |             0 |               22 |            11 |              0 |
 | narduk-libs      |                13 |             5 |                4 |             5 |              4 |
 
-This table is why a reusable audit is worth building. It is not a rollout list:
-`AGENTS.md` here forbids searching other apps to find adopters, so adoption
-happens through the audit being run in a repo that asks for it, and through
-adoption issues filed from real evidence ([section 9, W7](#9-work-items)).
+This table is why a reusable audit is worth building. It was gathered once, at
+Logan's request, to size the audit; it was not a search for adopters and it is
+not a rollout list. `AGENTS.md` here forbids searching other apps to find
+adopters, so adoption happens through the audit being run in a repo that asks
+for it, and through adoption issues filed from real evidence
+([section 9, W7](#9-work-items)).
 
 ## 2. Goals and non-goals
 
@@ -111,45 +119,64 @@ one only with new evidence.
   loosens the deterministic path breaks committed PNGs for no gain; a review
   sweep gains nothing from byte-identical double captures.
 - **D2. Readiness replaces idleness.** Review capture is ready when `load` has
-  fired, `waitForVueHydrated` (already exported by testkit) has resolved for a
-  Nuxt page, `document.fonts.ready` has resolved, and the app's own declared
-  ready selector is visible. No `networkidle`, no fixed sleep. Pages that poll
-  or hold a socket (which defeat `networkidle` anyway) work unchanged.
-- **D3. Sign in once per role and world generation, not per shot.** A session
-  cache stores a Playwright `storageState` keyed by
-  `(origin, role, worldGeneration)`. Every context is built from it.
-- **D4. Parallelism is bounded and opt-in for read-only work only.** A bounded
-  pool of pages runs captures that declare themselves read-only. Mutating or
-  world-dependent flows stay serial under today's rules.
+  fired, the Vue/Nuxt hydration probe has resolved for a Nuxt page,
+  `document.fonts.ready` has resolved, and the app's own declared ready selector
+  is visible. No `networkidle`, no fixed sleep. Pages that poll or hold a socket
+  (which defeat `networkidle` anyway) work unchanged. The hydration probe today
+  is `waitForVueHydrated` in `src/e2e/fixtures.ts`, which imports
+  `@playwright/test` as a value; W1 extracts the probe into a runner-free module
+  and re-exports it from fixtures (section 4.7).
+- **D3. Sign in once per role, origin and world generation, not per shot.** A
+  session cache stores a Playwright `storageState` keyed by
+  `(origin, role, generation)`. `generation` is **required**, not optional: an
+  omitted generation would mean the cache never invalidates. An app with no
+  reseeding passes the constant `'static'` explicitly. In journeys the value is
+  the `generation` that `WorldHooks.prepare` already returns (`types.ts:485`).
+  Every context is built from the cached state.
+- **D4. Parallelism is bounded and opt-in for read-only work only.** In
+  `capture-session`, a bounded pool of pages runs captures that declare
+  themselves read-only; a mutating capture is a barrier (the pool drains, the
+  capture runs alone, the pool resumes). **Journeys gets no pool in the first
+  release**: its contract (section 5) runs journeys serially under one leased
+  world with a fresh `prepare` each, so a pool there is a contract loosening,
+  not an addition. It stays an open question (section 12) for the contract's
+  author.
 - **D5. Stills do not pay for video.** Journeys gets a stills-only capture mode
   with no recording and no pacing. Pacing and video stay for the demo mode that
   needs a human-readable pace.
 - **D6. One detector set, two surfaces.** The audit's detectors are ESLint rules
   in `eslint-config`; the testkit CLI runs those same rules programmatically.
-  The estate already enforces this class of rule through `eslint-config`'s e2e
-  pack (`e2e-timeout-ceiling`), so it is the existing, reviewed path.
+  The estate already enforces this class of rule through `eslint-config`
+  (`narduk/e2e`, including `e2e-timeout-ceiling`), so it is the existing,
+  reviewed path. Adding a pack is heavier than it looks; see section 6.
 - **D7. Where each artefact lives** (decided by the layout of the estate, not by
   preference):
   - the helper library, the CLI, and the playbook (`docs/` inside the package,
     linked from the README): **narduk-testkit**;
   - the detector rules: **eslint-config**, a new opt-in `capture` pack;
-  - the stills mode, session cache and read-only pool wiring: **journeys**;
+  - the stills mode, sign-in cache and `goto` readiness: **journeys** (no pool
+    in the first release, D4);
   - the agent-facing audit skill: **`agent-infrastructure/skills/`**, as a
     section of `visual-qa` plus a thin `capture-audit` entry. narduk-libs has no
     `skills/` directory and a `SKILL.md` placed here would not be discovered
     from other repos. The skill points at the testkit playbook and the CLI; it
     does not duplicate them.
-- **D8. Charter.** The audit runs in one repo, when invoked, and reports. It
-  never opens PRs in other repos, never syncs, never holds a standing
-  relationship with an app (`AGENTS.md`, Scope). An estate-wide pass is the
-  skill's job, run by a person or lane who asked for it.
+- **D8. Charter.** The audit tool runs in one repo, when invoked, and reports.
+  It never opens PRs in other repos, never syncs, never holds a standing
+  relationship with an app (`AGENTS.md`, Scope). The PRs this plan does call for
+  are task PRs in repos the task names: W6 in pacc-trac (the reference adopter,
+  at Logan's request) and W8 in agent-infrastructure (where skills live). An
+  estate-wide pass is the skill's job, run by a person or lane who asked for it.
 
 ## 4. narduk-testkit
 
-New export `@narduk-enterprises/narduk-testkit/playwright/capture-session`.
-Playwright is already a peer dependency; this module imports only
-`playwright-core` types so it also works from plain `.mjs` scripts (the shape
-`pacc-trac`'s `test/vqa/*.mjs` use), not just `@playwright/test`.
+New export `@narduk-enterprises/narduk-testkit/playwright/capture-session`. The
+package's Playwright peer is `@playwright/test`, which brings `playwright-core`.
+This module uses type-only imports from `playwright-core` and no runtime import
+of `@playwright/test`, so it also works from plain `.mjs` scripts (the shape
+`pacc-trac`'s `test/vqa/*.mjs` use). It must not import `src/e2e/fixtures.ts` or
+`deterministic-capture.ts` for runtime values: both import `@playwright/test`
+(`fixtures.ts:1`, and `expect` in `deterministic-capture.ts`).
 
 ### 4.1 API (sketch; names are the contract, signatures may be refined in review)
 
@@ -158,7 +185,8 @@ Playwright is already a peer dependency; this module imports only
 // invented. `profile` selects readiness and screenshot defaults (D1).
 createCaptureRun(opts: {
   profile: 'review' | 'deterministic'
-  base: string
+  base: string                  // default origin; a spec may name another (see `origin`)
+  engine?: 'chromium' | 'webkit' | 'firefox'   // default chromium; one run, one engine
   launch?: LaunchOptions
   concurrency?: number          // default: see 4.3
   timing?: boolean | string     // true -> stdout summary; string -> JSON path
@@ -166,15 +194,18 @@ createCaptureRun(opts: {
 
 interface CaptureRun {
   // D3. Signs in via the caller's plan at most once per key; reuses the
-  // storageState after. `generation` changes when the world was re-prepared.
-  session(key: { role: string; generation?: string }, signIn: SignIn): Promise<StorageState | undefined>
+  // storageState after. `generation` is required: it changes whenever the world
+  // is re-prepared (pass 'static' for an app that never reseeds). A capture that
+  // lands on the sign-in page mid-sweep (expired session) re-signs in once and
+  // retries once, and records that it did; a second bounce is a failure.
+  session(key: { origin?: string; role: string; generation: string }, signIn: SignIn): Promise<StorageState | undefined>
 
   // One capture. Builds (or reuses, see 4.4) a context from the cached
   // storageState, navigates, waits for readiness (D2), shoots, closes the page.
   capture(spec: CaptureSpec): Promise<CaptureResult>
 
-  // D4. Runs specs through a bounded pool. A spec without `readOnly: true`
-  // forces serial execution at that point in the list.
+  // D4. Runs specs through a bounded pool. A spec without `readOnly: true` is a
+  // barrier: the pool drains, that spec runs alone, the pool resumes.
   captureAll(specs: CaptureSpec[]): Promise<CaptureResult[]>
 
   close(): Promise<void>   // closes contexts, then the browser; writes timing
@@ -185,8 +216,11 @@ interface CaptureSpec {
   path: string
   device: { name: string; viewport: { width: number; height: number }; dpr?: number; isMobile?: boolean; hasTouch?: boolean }
   colorScheme?: 'light' | 'dark'
+  schemeStoredByApp?: boolean               // true when the app keeps the scheme in a cookie/storage (4.4)
+  origin?: string                           // overrides `base` (two-origin apps, e.g. yard and desk)
   role?: string
-  readOnly?: boolean                        // D4
+  readOnly?: boolean                        // D4; declared per spec, never inferred
+  freshContext?: boolean                    // opt out of context sharing (4.4)
   ready?: string | ((page: Page) => Promise<void>)   // app-declared selector or hook
   setup?: (page: Page) => Promise<void>
   fullPage?: boolean | 'cap'                // see 4.5
@@ -205,8 +239,9 @@ read it.
 In order, each with a short bound and a named failure (never a silent pass):
 
 1. `page.goto(url, { waitUntil: 'load' })`.
-2. `waitForVueHydrated(page)` when the page is a Nuxt app (the existing helper;
-   `waitForHydration` is deprecated and stays unused).
+2. The Vue/Nuxt hydration probe (`__vue_app__.$nuxt.isHydrating === false`, the
+   expression `waitForVueHydrated` uses) when the page is a Nuxt app.
+   `waitForHydration` is deprecated and stays unused.
 3. `document.fonts.ready`.
 4. The spec's `ready` selector or hook, if given.
 
@@ -230,16 +265,27 @@ setting is context-level. Implementer verifies against the installed Playwright
 version (not assumed here):
 
 - Viewport size can change per page (`page.setViewportSize`); `colorScheme` can
-  be emulated per page (`page.emulateMedia`). Neither should force a new
-  context.
+  be emulated per page (`page.emulateMedia`). (Checked against Playwright
+  1.61.1, the lockfile version, by the spec reviewer.)
 - `deviceScaleFactor`, `isMobile` and `hasTouch` are fixed when a context is
-  created, so a "phone" device needs its own context. `createCaptureRun` keeps
-  one context per distinct
-  `(role, generation, deviceScaleFactor, isMobile, hasTouch)` tuple and opens a
-  page per capture inside it.
-- Pages in one context share cookies and storage. That is fine for read-only
-  captures and is why D4 is limited to them. A capture that mutates state gets a
-  fresh context.
+  created, so a "phone" device needs its own context.
+- **An app that stores its colour scheme itself is the exception.** pacc-trac
+  keeps the scheme in a `pacc-trac` cookie, and its own scripts note that the
+  browser's `colorScheme` alone never reaches light (`qa-sweep.mjs:309-310`,
+  `k2-viewports.mjs:137`). Concurrent pages in one context would race on that
+  cookie, so for such an app the scheme is part of the context key
+  (`schemeStoredByApp: true`).
+- The context key is therefore
+  `(origin, role, generation, deviceScaleFactor, isMobile, hasTouch, appScheme?)`,
+  with a page opened per capture inside it.
+- **Context sharing can change what a screen shows.** Pages in one context share
+  cookies, localStorage and the HTTP cache, so a first-visit or onboarding
+  screen, a "seen" flag, or a cache-dependent state can differ from a
+  fresh-context shot. That is acceptable for ordinary read-only screens and
+  wrong for first-visit captures: such a spec sets `freshContext: true`. A
+  capture that mutates state is a barrier (D4) and gets a fresh context.
+- Engines are not mixed inside one run (`qa-sweep.mjs` uses WebKit for phones):
+  a caller that needs two engines makes two runs.
 
 ### 4.5 Screenshots
 
@@ -264,9 +310,13 @@ not a hidden allowlist.
 
 ### 4.7 Compatibility
 
-Additive only. `deterministic-capture`, `waitForVueHydrated` and every existing
-export are untouched. New code does not import `@playwright/test`, so it is
-loadable from a plain script.
+Additive only. `deterministic-capture` and every existing export keep their
+behaviour. To share the hydration probe without a runner import, W1 moves its
+expression into a runner-free module (`playwright/hydration`) and makes
+`waitForVueHydrated` in `fixtures.ts` call it; behaviour and the public name do
+not change. `journeys` has no dependency on testkit, so W5 inlines the one
+expression with a comment and a test asserting it equals testkit's, rather than
+adding a cross-package dependency in this release.
 
 ## 5. narduk-testkit: the audit CLI
 
@@ -278,9 +328,9 @@ next to the existing `ui analyze` and `e2e` subcommands in
   `playwright-core`, `@playwright/test` or `puppeteer` and calls `.screenshot(`,
   `newContext(` or `.launch(`. Discovery is by content, not by path, because the
   estate's scripts live in `test/vqa/`, `scripts/`, `design/` and `tests/e2e/`,
-  and the existing e2e pack's globs do not cover all of them. The implementer
-  confirms this against the pack's `E2E_SPEC_FILES` before choosing how to pass
-  files in.
+  and the existing e2e rules' globs do not cover all of them. The CLI passes the
+  discovered list to ESLint through the Node API's file/`overrideConfig`
+  options, so the pack needs no per-pack option.
 - **Engine:** runs the `capture` ESLint rules (section 6) through the ESLint
   Node API on the discovered files. No second parser, no second rule set.
 - **Output:** per finding: rule id, file:line, severity, one-line
@@ -298,25 +348,33 @@ next to the existing `ui analyze` and `e2e` subcommands in
 
 ## 6. eslint-config: the `capture` pack
 
-A new opt-in capability pack, not part of `e2e` (whose rules apply to spec and
-helper files only and which deliberately leaves config files alone). It takes a
-`files` option so a repo points it at `test/vqa/**`, `scripts/**/capture*` and
-so on; the CLI supplies the discovered list. One rule per row. Every rule ships
+A new opt-in capability pack, not part of `narduk/e2e` (whose
+`e2e-timeout-ceiling` rule applies to spec and helper files and deliberately
+leaves `playwright.config.*` alone, though the pack as a whole also covers
+config files). The package's packs are static arrays
+(`eslint-app-config.mjs:495-508`) with no per-pack options, so the pack ships
+fixed default globs (`**/test/vqa/**`, `**/scripts/**`, `**/design/**`,
+`**/*capture*`) and the CLI overrides the file list through the ESLint Node API.
+**Adding a pack is a larger change than adding rules**:
+`package-surface.test.ts` (line 119) and `packs.test.ts` (line 90) hard-assert
+exactly 14 packs, `DESIGN.md:26` says "the 14 capability pack names survive",
+and the pack needs a `package.json` export, `src/index.ts` registration and the
+no-orphan-rule test. W3 owns all of them. One rule per row. Every rule ships
 with a README section: detector, why it is slow, fix, when it is a false
 positive, and a before/after from section 7.
 
-| Id         | Detects                                                                                                                                                                              | Why it costs time                                                                                                   | Fix                                                                             | Not a defect when                                                              | Severity |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------- |
-| **CAP001** | `launch(` / `launchPersistentContext(` inside a loop or per-item function                                                                                                            | A browser process per item                                                                                          | Launch once per run; `createCaptureRun`                                         | A test that needs process isolation or a different engine/channel per case     | error    |
-| **CAP002** | Context creation plus a sign-in step (a `fetch` POST to a login path, a `goto` to `/sign-in`, a call to a helper named like `attachAuth`/`login`/`signIn`) inside the same loop body | Sign-in is paid per shot instead of per role                                                                        | Sign in once, save `storageState`, build contexts from it (D3)                  | The capture is about the sign-in flow itself                                   | error    |
-| **CAP003** | `waitUntil: 'networkidle'` or `waitForLoadState('networkidle')` as the readiness signal in a capture script                                                                          | Waits for a quiet network; a poll, socket or beacon makes it wait out its full timeout, and a fast page still waits | Review readiness (D2): `load`, hydration, fonts, a declared selector            | A deterministic-profile capture, where the testkit helper uses it deliberately | warn     |
-| **CAP004** | `waitForTimeout(n)` / `new Promise(r => setTimeout(r, n))` after a `goto` or setup in a capture loop                                                                                 | A fixed pause is paid on every page whether needed or not, and still races on a slow one                            | Wait for the condition the pause stands in for                                  | Paced demo/video capture, where a dwell is the product                         | warn     |
-| **CAP005** | A loop that awaits navigation and a screenshot per iteration with no bounded pool in scope                                                                                           | One page at a time                                                                                                  | `captureAll` / a bounded pool for read-only specs (D4)                          | Mutating flows, or anything depending on a leased world                        | warn     |
-| **CAP006** | `newContext` per viewport or colour scheme where the options differ only by viewport size or `colorScheme`                                                                           | Contexts rebuilt for settings Playwright can change per page                                                        | One context per distinct `(dpr, isMobile, hasTouch)` tuple (section 4.4)        | The settings that do differ are context-level                                  | info     |
-| **CAP007** | `fullPage: true` combined with `deviceScaleFactor: 2` (or higher) as the default for every shot                                                                                      | Large raster and PNG encode per shot                                                                                | `dpr: 1` for sweeps; `fullPage` where the full page is the evidence; cap height | The shot is for retina evidence                                                | info     |
-| **CAP008** | Capture without `animations: 'disabled'` or `reducedMotion`                                                                                                                          | Slow to settle and flaky to repeat                                                                                  | Set both on the review profile                                                  | The animation is the subject                                                   | info     |
-| **CAP009** | No route-level block for known analytics/consent/chat beacons on a public-site sweep                                                                                                 | Extra requests, and a `networkidle` wait that never comes                                                           | `blockThirdParty` (never block fonts or first-party assets)                     | The beacon behaviour is under test                                             | info     |
-| **CAP010** | A hand-rolled capture script where `@narduk-enterprises/journeys` or `capture-session` covers the case (the `visual-qa` skill already says not to write these)                       | Every repo re-solves, and re-gets wrong, sign-in, readiness and pooling                                             | Use the shared tool; delete the script                                          | The script does something neither tool can                                     | info     |
+| Id         | Detects                                                                                                                                                                              | Why it costs time                                                                                                   | Fix                                                                             | Not a defect when                                                                                          | Severity |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------- |
+| **CAP001** | `launch(` / `launchPersistentContext(` inside a loop or per-item function                                                                                                            | A browser process per item                                                                                          | Launch once per run; `createCaptureRun`                                         | A test that needs process isolation or a different engine/channel per case                                 | error    |
+| **CAP002** | Context creation plus a sign-in step (a `fetch` POST to a login path, a `goto` to `/sign-in`, a call to a helper named like `attachAuth`/`login`/`signIn`) inside the same loop body | Sign-in is paid per shot instead of per role                                                                        | Sign in once, save `storageState`, build contexts from it (D3)                  | The capture is about the sign-in flow itself                                                               | error    |
+| **CAP003** | `waitUntil: 'networkidle'` or `waitForLoadState('networkidle')` as the readiness signal in a capture script                                                                          | Waits for a quiet network; a poll, socket or beacon makes it wait out its full timeout, and a fast page still waits | Review readiness (D2): `load`, hydration, fonts, a declared selector            | A deterministic-profile capture, where the testkit helper uses it deliberately                             | warn     |
+| **CAP004** | `waitForTimeout(n)` / `new Promise(r => setTimeout(r, n))` after a `goto` or setup in a capture loop                                                                                 | A fixed pause is paid on every page whether needed or not, and still races on a slow one                            | Wait for the condition the pause stands in for                                  | Paced demo/video capture, where a dwell is the product                                                     | warn     |
+| **CAP005** | A loop that awaits navigation and a screenshot per iteration with no bounded pool in scope                                                                                           | One page at a time                                                                                                  | `captureAll` / a bounded pool for read-only specs (D4)                          | Mutating flows, or anything depending on a leased world                                                    | warn     |
+| **CAP006** | `newContext` per viewport or colour scheme where the options differ only by viewport size or `colorScheme`                                                                           | Contexts rebuilt for settings Playwright can change per page                                                        | One context per distinct context key (section 4.4)                              | The settings that do differ are context-level, or the app stores its colour scheme itself (pacc-trac does) | info     |
+| **CAP007** | `fullPage: true` combined with `deviceScaleFactor: 2` (or higher) as the default for every shot                                                                                      | Large raster and PNG encode per shot                                                                                | `dpr: 1` for sweeps; `fullPage` where the full page is the evidence; cap height | The shot is for retina evidence                                                                            | info     |
+| **CAP008** | Capture without `animations: 'disabled'` or `reducedMotion`                                                                                                                          | Slow to settle and flaky to repeat                                                                                  | Set both on the review profile                                                  | The animation is the subject                                                                               | info     |
+| **CAP009** | No route-level block for known analytics/consent/chat beacons on a public-site sweep                                                                                                 | Extra requests, and a `networkidle` wait that never comes                                                           | `blockThirdParty` (never block fonts or first-party assets)                     | The beacon behaviour is under test                                                                         | info     |
+| **CAP010** | A hand-rolled capture script where `@narduk-enterprises/journeys` or `capture-session` covers the case (the `visual-qa` skill already says not to write these)                       | Every repo re-solves, and re-gets wrong, sign-in, readiness and pooling                                             | Use the shared tool; delete the script                                          | The script does something neither tool can                                                                 | info     |
 
 Rules are heuristics over syntax. The first release must ship each with a
 fixture set of true positives and known false positives (the repo's rule tests
@@ -360,7 +418,7 @@ const specs = features.flatMap((f) =>
     path: fillPath(f.path, refs),
     device: vp,
     role: f.role,
-    readOnly: !f.screenshot.setup,
+    readOnly: f.screenshot.readOnly === true, // declared per entry in W6, never inferred
     ready: f.screenshot.ready,
     setup: f.screenshot.setup,
     out: pngPath(f, vp),
@@ -370,10 +428,12 @@ await run.captureAll(specs) // sign-in once per role; bounded pool; load+hydrati
 await run.close()
 ```
 
-Catalog entries that mutate state (anything with a `setup` that submits, today
-`runSetup` in `test/vqa/setups.mjs`) stay serial by `readOnly: false`. The
-catalog gains an optional `ready` selector per feature; entries without one use
-the fallback and report `readyDeclared: false`.
+Entries default to `readOnly: false`, so an unmigrated catalog is serial and
+correct. W6 marks an entry `readOnly: true` only after checking that neither its
+`setup` (`runSetup` in `test/vqa/setups.mjs`) nor the page's own load mutates
+state; a GET is not assumed to be harmless. The catalog also gains an optional
+`ready` selector per feature; entries without one use the fallback and report
+`readyDeclared: false`.
 
 ## 8. Measurement protocol (the done-when)
 
@@ -411,17 +471,17 @@ alongside. All PRs use `Refs`, never `Closes`, until the issue's done-when is
 met. Package versions move through the repo's changeset flow
 (`docs/package-releases.md`), minor bumps for additive exports.
 
-| #      | Item                | Repo and owned files                                                                                                                                                      | Done-when                                                                                                                                                                                                                                                                                                                                                                                                                                  | Needs                                                         |
-| ------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
-| **W0** | Baseline            | pacc-trac (read-only, throwaway timing wrapper), result recorded in this doc's tracking table                                                                             | Three timed runs of `gallery.mjs` with the per-phase split, machine and target named                                                                                                                                                                                                                                                                                                                                                       | none; do first                                                |
-| **W1** | `capture-session`   | narduk-testkit: `src/playwright/capture-session.ts`, `package.json` export, `tests/`, README + changeset                                                                  | Section 4 API implemented; unit tests with a fake `Browser`; one real-Chromium test proving sign-in happens once for N captures and that a read-only pool runs concurrently while a mutating spec runs alone; `package-exports.test.ts` green                                                                                                                                                                                              | W0 numbers inform 4.3 only; can start in parallel             |
-| **W2** | Capture playbook    | narduk-testkit: `docs/capture-playbook.md`, README link                                                                                                                   | Playbook below lifted into the package docs, every CAP rule linked to its section, worked example from section 7                                                                                                                                                                                                                                                                                                                           | none                                                          |
-| **W3** | `capture` pack      | eslint-config: `src/rules/capture/*`, pack registration, `tests/rules`                                                                                                    | CAP001-CAP010 each with true-positive and false-positive fixtures; opt-in; no change to any existing pack's results                                                                                                                                                                                                                                                                                                                        | rule ids and messages frozen from section 6; parallel with W1 |
-| **W4** | Audit CLI           | narduk-testkit: `src/cli/capture-audit.ts`, `bin/narduk-testkit.mjs`, tests                                                                                               | Discovery by content, ESLint-API run of W3 rules, stable `--json`, `--timing` report, mandatory-reason ignores                                                                                                                                                                                                                                                                                                                             | W3 rules exist (or a stub with the same ids)                  |
-| **W5** | Journeys: fast path | journeys: `src/web.ts`, `src/worker-binding.ts`, `src/index.ts`, README, tests                                                                                            | **(a)** stills-only capture mode (no video, no pacing); **(b)** sign-in cache keyed by `(role, worldGeneration)` and dropped on every `worldHooks.prepare` that changes the world; **(c)** `goto` readiness per D2 instead of `networkidle` + `sleep` outside paced mode; **(d)** `readOnly` journeys may share a pool under one leased world while mutating journeys stay serial; the existing refusal for mutating journeys is unchanged | W1 readiness helpers; contract changes below                  |
-| **W6** | pacc-trac adoption  | pacc-trac: `test/vqa/gallery.mjs`, `shoot.mjs`, `k2-viewports.mjs`, `qa-sweep.mjs`, `lib.mjs`                                                                             | Section 7 "after" shape on `gallery.mjs` first, then the others one PR each; re-timed per section 8; parity check green                                                                                                                                                                                                                                                                                                                    | W1 released                                                   |
-| **W7** | Adoption issues     | other repos: **issues only**, labelled, evidence attached                                                                                                                 | For each repo whose owner or a task asks for it: audit run output attached to an issue naming file, rule, fix and done-when. No sweep, no PRs from libs                                                                                                                                                                                                                                                                                    | W4                                                            |
-| **W8** | Skill and contract  | agent-infrastructure: `skills/visual-qa/SKILL.md` (new capture-audit section), thin `skills/capture-audit/SKILL.md`, `skills/visual-qa/references/journey-runner-spec.md` | The skill invokes the testkit CLI, reads `--json`, applies the playbook fixes, and reports with the section 8 protocol. The contract edits listed below are made in the same change                                                                                                                                                                                                                                                        | W4 and W5 shapes settled                                      |
+| #      | Item                | Repo and owned files                                                                                                                                                                                                                                                                                                                                                         | Done-when                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Needs                                                                |
+| ------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **W0** | Baseline            | pacc-trac (read-only, throwaway timing wrapper), result recorded in this doc's tracking table                                                                                                                                                                                                                                                                                | Three timed runs of `gallery.mjs` with the per-phase split, machine and target named                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | none; do first                                                       |
+| **W1** | `capture-session`   | narduk-testkit: `src/playwright/capture-session.ts`, new runner-free `src/playwright/hydration.ts` (extracted from `src/e2e/fixtures.ts`, which then calls it), `package.json` export and `files` (add `docs/`), `tests/`, README + changeset (with the `create-narduk-app` patch line, which pins testkit at `manifest.ts:76`)                                              | Section 4 API implemented; unit tests with a fake `Browser`; one real-Chromium test proving sign-in happens once for N captures, that a read-only pool runs concurrently while a mutating spec is a barrier, that an expired session re-signs in once, and that `freshContext` and `schemeStoredByApp` give separate contexts; `package-exports.test.ts` green; the module loads from a plain `.mjs` with no `@playwright/test` import                                                                                                                                                                                                                                                                                                                                              | W0 numbers inform 4.3 only; can start in parallel                    |
+| **W2** | Capture playbook    | narduk-testkit: `docs/capture-playbook.md`, README link, `package.json` `files` (the published package ships only `bin/`, `dist/` and the README today, so `docs/` must be added or the playbook is unreachable)                                                                                                                                                             | Playbook below lifted into the package docs, every CAP rule linked to its section, worked example from section 7; `pnpm pack --dry-run` shows the playbook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | none                                                                 |
+| **W3** | `capture` pack      | eslint-config: `src/rules/capture/*`, pack registration in `eslint-app-config.mjs` and `src/index.ts`, `package.json` export, `tests/rules`, `tests/composition/package-surface.test.ts` and `packs.test.ts` (both assert 14 packs), `DESIGN.md`, the no-orphan-rule test, changeset (with the `create-narduk-app` patch line, which pins eslint-config at `manifest.ts:46`) | CAP001-CAP010 each with true-positive and false-positive fixtures; opt-in; the pack count assertions and `DESIGN.md` updated deliberately; no change to any existing pack's results                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | rule ids and messages frozen from section 6; parallel with W1        |
+| **W4** | Audit CLI           | narduk-testkit: `src/cli/capture-audit.ts`, `bin/narduk-testkit.mjs`, tests                                                                                                                                                                                                                                                                                                  | Discovery by content, ESLint-API run of W3 rules, stable `--json`, `--timing` report, mandatory-reason ignores                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | W3 rules exist (or a stub with the same ids)                         |
+| **W5** | Journeys: fast path | journeys: `src/web.ts`, `src/worker-binding.ts`, `src/index.ts`, README, tests                                                                                                                                                                                                                                                                                               | **(a)** stills-only capture mode: no video, no pacing, steps' per-step stills kept; **(b)** sign-in cache keyed by `(origin, role, generation)` where `generation` is what `WorldHooks.prepare` returns (`types.ts:485`); because the contract stamps a new generation on every `prepare` and `web.ts:545` runs `prepare` per journey, the cache hits only inside a declared sequence or a world whose generation is stable, so **W5 must report the measured hit rate and drop (b) if it is near zero**; **(c)** `goto` gains an optional `ready` argument and, outside paced mode, replaces `networkidle` + `sleep` with load + the inlined hydration probe + fonts + `ready`; **(d)** no worker pool in this release (section 12, question 3); the existing refusal is unchanged | W1 hydration module (inlined, not imported); contract changes in 9.1 |
+| **W6** | pacc-trac adoption  | pacc-trac: `test/vqa/gallery.mjs`, `shoot.mjs`, `k2-viewports.mjs`, `qa-sweep.mjs`, `lib.mjs`, `docs/catalog/features.mjs` (optional `ready` and `readOnly` per entry)                                                                                                                                                                                                       | Section 7 "after" shape on `gallery.mjs` first, then the others one PR each (the two-origin scripts use `origin`; `qa-sweep.mjs`'s WebKit phone pass is a second run); entries marked `readOnly` only after checking; re-timed per section 8; parity check green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | W1 released                                                          |
+| **W7** | Adoption issues     | other repos: **issues only**, labelled, evidence attached                                                                                                                                                                                                                                                                                                                    | For each repo whose owner or a task asks for it: audit run output attached to an issue naming file, rule, fix and done-when. No sweep, no PRs from libs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | W4                                                                   |
+| **W8** | Skill and contract  | agent-infrastructure: `skills/visual-qa/SKILL.md` (new capture-audit section), thin `skills/capture-audit/SKILL.md`, `skills/visual-qa/references/journey-runner-spec.md`                                                                                                                                                                                                    | The skill invokes the testkit CLI, reads `--json`, applies the playbook fixes, and reports with the section 8 protocol. The contract edits listed below are made in the same change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | W4 and W5 shapes settled                                             |
 
 **Parallelism.** W0, W1, W2, W3 start together. W4 follows W3's rule ids. W5
 follows W1's readiness and session API. W6 follows the W1 release. W8 follows
@@ -437,14 +497,18 @@ it, and W8 must edit it in the same change:
   vocabulary (`beat`, `read`, `point`) remains valid and is a no-op in stills
   mode as it is in test mode, and that the modes still differ only in pacing and
   artefacts, never in what passes.
-- **Section 5 (world sessions) and section 6.2 (web adapter).** Add the
-  `readOnly` pool and the sign-in cache. Record the cache-invalidation rule: a
-  session is valid only for the world generation it was created under, and every
-  `prepare` that reseeds or resets bumps the generation, so a cached session
-  cannot point at rows that no longer exist.
-- **Section 6.2** states capture mode is a single worker. Reword to "capture
-  mode with video is single-worker; stills mode follows the read-only pool
-  rule".
+- **Section 2.3 / 6.2 (step and web context).** `goto(path)` gains an optional
+  `ready` argument, and the web adapter's non-paced readiness becomes load +
+  hydration + fonts + `ready` instead of `networkidle` + a sleep. This is a
+  contract change (the current `WebJourneyContext.goto` takes only a path).
+- **Section 5 (world sessions) and section 6.2 (web adapter).** Add the sign-in
+  cache and record the invalidation rule: a session is valid only for the world
+  generation `prepare` returned when it was created, so a cached session cannot
+  point at rows that no longer exist. State plainly that the cache does not
+  loosen section 5: every journey still gets its fresh `prepare`.
+- **Not changed:** section 5's serial-journeys rule and section 6.2's refusal of
+  a worker pool on a shared world. A read-only journey pool would loosen them
+  and is deliberately **out** of this release (section 12, question 3).
 - **Section 13 (open questions).** Add the open items from section 12 below.
 
 ## 10. The capture playbook (content for W2)
@@ -539,16 +603,21 @@ protocol, and links the testkit docs.
 1. **Concurrency default.** Chosen from W0 measurements on the machines that
    actually run sweeps (a laptop, the iMac, a Linux CI guest). Until then the
    spec fixes no number.
-2. **Per-page versus per-context settings.** Section 4.4's list of what can and
-   cannot change per page must be verified against the Playwright version in the
-   lockfile; a wrong entry costs correctness, not just speed.
-3. **`readOnly` declaration home for journeys.** On the journey, on the step, or
-   derived from `appliesIf`/step shape? A step-level flag is safer (a journey is
-   read-only only if every step is) and is the recommendation, but needs the
-   contract's author to agree.
-4. **Cache granularity for world generation.** Whether `prepare` can expose a
-   generation token cheaply or the runner must infer one (hash of the prepare
-   response) is a journeys design question, settled in W5.
+2. **Per-page versus per-context settings.** Settled for Playwright 1.61.1
+   (viewport and `colorScheme` per page; `deviceScaleFactor`, `isMobile`,
+   `hasTouch` per context), with the app-stored-scheme exception in section 4.4.
+   Re-check on a Playwright upgrade.
+3. **A read-only pool in journeys.** Journeys runs serially under one leased
+   world with a fresh `prepare` per journey, and `registerJourneys` has no pool
+   primitive (a Playwright worker runs tests serially and
+   `assertIsolatedTargets` refuses a pool on a shared world). Parallel stills
+   are served by `capture-session`, driven from a catalog. Only if that proves
+   insufficient should the contract's author consider a step-level `readOnly`
+   flag (a journey is read-only only if every step is); it would loosen section
+   5 and needs their agreement.
+4. **Sign-in cache hit rate in journeys.** Answered in principle (the key uses
+   `WorldHooks.prepare`'s `generation`); whether it ever hits depends on how
+   often `prepare` keeps the generation. W5 measures it.
 5. **Engine revisit.** If W6's re-timing shows rasterisation or encode, not
    auth/idle/serial, dominating, revisit engine and `channel`/headless-shell
    choices then, with measurements. Not before.
