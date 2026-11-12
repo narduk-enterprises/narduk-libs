@@ -570,8 +570,10 @@ protocol, and links the testkit docs.
 | W7 adoption issues    | demand-driven |     |                 |
 | W8 skill and contract | not started   |     |                 |
 
-Tracker issue (filed with this plan): labels `enhancement`, `area:testkit`,
-`area:journeys`; milestone unset; PRs `Refs` it.
+Tracker issue:
+[narduk-libs#2184](https://github.com/narduk-enterprises/narduk-libs/issues/2184),
+labels `tracker`, `P2-medium`, `area:testkit`; journeys work is named in its
+body. Milestone unset; PRs `Refs` it.
 
 ## Sources
 
