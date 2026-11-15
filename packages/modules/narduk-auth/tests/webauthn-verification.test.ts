@@ -71,6 +71,15 @@ describe('readPresentedChallenge', () => {
     expect(readPresentedChallenge(encodeClientData({ type: 'webauthn.get' }))).toBeNull()
     expect(readPresentedChallenge(encodeClientData({ challenge: '' }))).toBeNull()
     expect(readPresentedChallenge(encodeClientData({ challenge: 42 }))).toBeNull()
+    // Only base64url, the form issued challenges take: a native Apple nonce row
+    // (`native-apple\u0000<hex>`) is never reachable as a passkey challenge.
+    expect(
+      readPresentedChallenge(
+        encodeClientData({ challenge: `native-apple\u0000${'a'.repeat(64)}` }),
+      ),
+    ).toBeNull()
+    expect(readPresentedChallenge(encodeClientData({ challenge: 'has space' }))).toBeNull()
+    expect(readPresentedChallenge(encodeClientData({ challenge: 'x'.repeat(1025) }))).toBeNull()
     expect(readPresentedChallenge(encodeClientData(['array']))).toBeNull()
     expect(readPresentedChallenge(encodeClientData(null))).toBeNull()
     expect(readPresentedChallenge(isoBase64URL.fromBuffer(new Uint8Array([0xff, 0x00])))).toBeNull()

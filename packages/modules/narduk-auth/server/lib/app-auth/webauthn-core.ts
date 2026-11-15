@@ -382,6 +382,28 @@ export async function finishPasskeyAuthentication(
   event: H3Event,
   response: AuthenticationResponseJSON,
 ): Promise<{ user: AppSessionUser }> {
+  const user = await verifyPasskeyAssertion(event, response)
+  const sessionUser = await establishLocalSessionUser(event, user, {
+    authProvider: 'passkey',
+    authProviders: user.appleId ? ['passkey', 'apple', 'email'] : ['passkey', 'email'],
+    needsPasswordSetup: false,
+  })
+  useLogger(event).child('AppAuth').info('Passkey sign-in succeeded', { userId: user.id })
+
+  return { user: sessionUser }
+}
+
+/**
+ * The whole passkey sign-in check without the session: claims the challenge,
+ * verifies the assertion against the stored credential and advances its
+ * counter, then returns the account it belongs to. `finishPasskeyAuthentication`
+ * turns the result into a cookie session; the native passkey route turns it
+ * into native tokens. Every refusal is the same generic 401.
+ */
+export async function verifyPasskeyAssertion(
+  event: H3Event,
+  response: AuthenticationResponseJSON,
+): Promise<LocalUser> {
   const config = requireWebauthnConfig(event)
   const { isoBase64URL, verifyAuthenticationResponse } = await useWebauthnServer(event)
   const log = useLogger(event).child('AppAuth')
@@ -492,12 +514,5 @@ export async function finishPasskeyAuthentication(
     throw genericFailure
   }
 
-  const sessionUser = await establishLocalSessionUser(event, user, {
-    authProvider: 'passkey',
-    authProviders: user.appleId ? ['passkey', 'apple', 'email'] : ['passkey', 'email'],
-    needsPasswordSetup: false,
-  })
-  log.info('Passkey sign-in succeeded', { userId: user.id })
-
-  return { user: sessionUser }
+  return user
 }

@@ -69,13 +69,17 @@ function decodeBase64UrlToUtf8(value: string): string {
  * exist, be unconsumed and unexpired, and `@simplewebauthn/server` then
  * independently re-verifies that the same challenge is bound into the signed
  * client-data hash.
+ *
+ * Only base64url is accepted, the only form this server issues: other rows in
+ * the challenge table (native Apple nonces, stored under a `\u0000` prefix) must
+ * never be reachable through a crafted client-data challenge.
  */
 export function readPresentedChallenge(clientDataJSON: string): string | null {
   try {
     const parsed: unknown = JSON.parse(decodeBase64UrlToUtf8(clientDataJSON))
     if (typeof parsed !== 'object' || parsed === null) return null
     const challenge = (parsed as { challenge?: unknown }).challenge
-    return typeof challenge === 'string' && challenge.length > 0 ? challenge : null
+    return typeof challenge === 'string' && /^[\w-]{1,1024}$/u.test(challenge) ? challenge : null
   } catch {
     return null
   }

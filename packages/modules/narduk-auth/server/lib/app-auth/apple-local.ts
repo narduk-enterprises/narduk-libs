@@ -282,6 +282,25 @@ export async function signInWithAppleIdentity(
   claims: AppleIdentityClaims,
   options: { displayName?: string | null } = {},
 ): Promise<AppSessionUser> {
+  const { user, emailConfirmedAt } = await resolveAppleIdentityUser(event, claims, options)
+  return establishLocalSessionUser(event, user, {
+    authProvider: 'apple',
+    authProviders: user.passwordHash ? ['apple', 'email'] : ['apple'],
+    emailConfirmedAt,
+    needsPasswordSetup: !user.passwordHash,
+  })
+}
+
+/**
+ * The account a verified Apple identity signs in as, found, linked or created
+ * exactly as `signInWithAppleIdentity` does, without starting a session. The
+ * native Apple route turns it into native tokens.
+ */
+export async function resolveAppleIdentityUser(
+  event: H3Event,
+  claims: AppleIdentityClaims,
+  options: { displayName?: string | null } = {},
+): Promise<{ emailConfirmedAt: string | null; user: LocalUser }> {
   let user = await findUser(event, 'appleId', claims.appleId)
   if (!user) {
     if (!claims.email || !claims.emailVerified) {
@@ -308,10 +327,5 @@ export async function signInWithAppleIdentity(
     await recordLocalEmailVerification(event, user.id, user.email, emailConfirmedAt)
   }
 
-  return establishLocalSessionUser(event, user, {
-    authProvider: 'apple',
-    authProviders: user.passwordHash ? ['apple', 'email'] : ['apple'],
-    emailConfirmedAt,
-    needsPasswordSetup: !user.passwordHash,
-  })
+  return { emailConfirmedAt: emailConfirmedAt ?? null, user }
 }

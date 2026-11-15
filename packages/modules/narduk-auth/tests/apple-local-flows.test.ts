@@ -168,6 +168,23 @@ describe('local-backend Apple entry points (#164)', () => {
     expect(state.signedIn).toEqual([])
   })
 
+  it('verifyNativeAppleIdentity returns the verified claims and signs nobody in', async () => {
+    const { verifyNativeAppleIdentity } = await import('../server/lib/app-auth/auth-flows')
+    await expect(
+      verifyNativeAppleIdentity(event, {
+        identityToken: await nativeToken(NATIVE_RAW),
+        nonce: NATIVE_RAW,
+      }),
+    ).resolves.toMatchObject({ appleId: 'apple-sub-9', email: 'pat@example.com' })
+    await expect(
+      verifyNativeAppleIdentity(event, {
+        identityToken: await nativeToken(NATIVE_RAW),
+        nonce: 'replayed-elsewhere',
+      }),
+    ).rejects.toMatchObject({ data: { reason: 'nonce_mismatch' } })
+    expect(state.signedIn).toEqual([])
+  })
+
   it('signInWithNativeApple answers 501 when no native client id is configured', async () => {
     state.apple = { ...CONFIGURED, nativeClientIds: [], nativeEnabled: false }
     const { signInWithNativeApple } = await import('../server/lib/app-auth/auth-flows')

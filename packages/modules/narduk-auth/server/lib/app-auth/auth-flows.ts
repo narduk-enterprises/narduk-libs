@@ -21,7 +21,7 @@ import {
 import { useNativeAuth } from '../../utils/native-auth'
 import { getLocalEmailVerification } from '../../utils/verified-email'
 
-import { verifyAppleIdentityToken } from './apple-identity'
+import { type AppleIdentityClaims, verifyAppleIdentityToken } from './apple-identity'
 import { assertLocalAppleWebEnabled, signInWithAppleIdentity } from './apple-local'
 import { assertLocalGoogleWebEnabled } from './google-local'
 import {
@@ -511,6 +511,24 @@ async function signInWithNativeAppleLocal(
   body: NativeAppleSignInInput,
 ): Promise<AuthMutationResult> {
   const config = getAuthConfig(event)
+  const claims = await verifyNativeAppleIdentity(event, body)
+  return {
+    user: await signInWithAppleIdentity(event, claims),
+    nextStep: 'signed_in',
+    redirectTo: config.redirectPath,
+  }
+}
+
+/**
+ * Verifies a native Sign in with Apple identity token on the local backend:
+ * Apple's signature, `iss`, `exp`, an `aud` in `AUTH_APPLE_NATIVE_CLIENT_IDS`,
+ * and the SHA-256 of the raw `nonce`, which is required. Answers 501 when no
+ * native client id is configured. Starts no session.
+ */
+export async function verifyNativeAppleIdentity(
+  event: H3Event,
+  body: NativeAppleSignInInput,
+): Promise<AppleIdentityClaims> {
   const apple = resolveAppleSignInForEvent(event, 'local')
   if (!apple.nativeEnabled) {
     throw createError({
@@ -526,15 +544,10 @@ async function signInWithNativeAppleLocal(
       statusMessage: 'Apple identity token and nonce are required.',
     })
   }
-  const claims = await verifyAppleIdentityToken(token, {
+  return verifyAppleIdentityToken(token, {
     audiences: apple.nativeClientIds,
     rawNonce: nonce,
   })
-  return {
-    user: await signInWithAppleIdentity(event, claims),
-    nextStep: 'signed_in',
-    redirectTo: config.redirectPath,
-  }
 }
 
 export async function exchangeSupabaseCode(

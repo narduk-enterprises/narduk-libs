@@ -57,6 +57,42 @@ requires browser sign-in again. `POST /api/auth/native/revoke` takes the same
 body and revokes that session. Password reset/change revokes all native sessions
 when the feature is enabled; deleting an account cascades to its credentials.
 
+### Direct native sign-in: passkey and Sign in with Apple
+
+A native app can also get the same tokens without the browser, from a credential
+it proves in the request. Both routes are public, under the `authLogin` rate
+limit, need `X-Requested-With`, answer exactly like
+`POST /api/auth/native/token`, and set no cookie. They refuse an unconfigured
+`clientId` with 400 before looking at the credential, answer 404 when no native
+clients are configured and 503 off the local backend.
+
+- **Passkey.** `POST /api/auth/passkeys/authentication/options` (no body)
+  returns the WebAuthn request options; the challenge is held server-side,
+  single-use, with no cookie. The app signs it with the platform passkey API and
+  posts `POST /api/auth/native/passkey` with `{ clientId, response }`, where
+  `response` is the `AuthenticationResponseJSON` (`id`, `rawId`,
+  `type: 'public-key'`,
+  `response.{ authenticatorData, clientDataJSON, signature, userHandle }`,
+  base64url). It is verified as the browser sign-in is: the configured RP ID and
+  origins (an iOS app associated through `webcredentials:<rp id>` signs origin
+  `https://<rp id>`), user verification, the signature counter. Any failure is
+  one generic 401.
+- **Apple.** `POST /api/auth/native/apple/nonce` (no body) returns
+  `{ nonce, expiresIn }`: a single-use server nonce (64 hex characters, 300
+  seconds). The app sets its SHA-256 hex as the Apple request's nonce, then
+  posts `POST /api/auth/native/apple` with
+  `{ clientId, identityToken, nonce, displayName? }`, `nonce` raw. The nonce is
+  claimed before the token is checked, so a token is traded at most once. The
+  token's `aud` must be one of `AUTH_APPLE_NATIVE_CLIENT_IDS`; every token
+  refusal is one generic 401. The account is found, linked or created by the
+  Apple account rules below; `displayName` (Apple's first-authorization name) is
+  used only when creating it. An Apple-only account with no password gets
+  tokens. Nonces are stored in `auth_webauthn_challenges`, so this needs
+  `drizzle/0003_webauthn_credentials.sql`.
+
+The sessions are ordinary native sessions: refresh, revoke, password-change and
+account-deletion revocation all apply.
+
 Protected product APIs explicitly call `getNativeAuthSession(event)` from
 `server/utils/native-auth`, load the current account, and apply their own
 membership/resource permissions. Native bearer credentials do not implicitly
@@ -66,7 +102,8 @@ session revocation. Never replace those checks with UI visibility.
 
 The public `createNativeAuth` service in `server/lib/app-auth/native-core`
 supports a Drizzle SQLite/D1 database for controlled server consumers. The
-caller must authenticate the `userId` supplied to `issueCode`. Code exchange and
+caller must authenticate the `userId` supplied to `issueCode` or `issueSession`
+(direct tokens for an identity proven in the same request). Code exchange and
 refresh each use one conditional SQL update, preventing replay and partial
 claims. Only credential digests are persisted.
 
@@ -647,7 +684,9 @@ that credential and its rotation.
 
 **Native.** `signInWithNativeApple(event, { identityToken, nonce })` on the
 local backend requires `nonce`, the raw value whose SHA-256 hex the app passed
-to Apple, and a token whose `aud` is one of `AUTH_APPLE_NATIVE_CLIENT_IDS`.
+to Apple, and a token whose `aud` is one of `AUTH_APPLE_NATIVE_CLIENT_IDS`. It
+starts a cookie session; `POST /api/auth/native/apple` verifies the same way and
+issues native tokens instead (see Native app sign-in).
 
 **Accounts.** A user is found by `users.apple_id`. A first Apple sign-in with an
 Apple-verified address links to an existing account with that address only when
