@@ -182,6 +182,54 @@ describe('native auth public service on D1', () => {
     ).rejects.toThrow()
   })
 
+  it('issues a direct session that resolves, rotates and stores no raw credential', async () => {
+    const token = await auth.issueSession('owner', 'mac', 'passkey')
+    expect(token).toMatchObject({ tokenType: 'Bearer', expiresIn: 300 })
+    expect(token.refreshExpiresAt).toBe(now + 30 * 24 * 60 * 60)
+    expect(await auth.resolve(token.accessToken)).toMatchObject({
+      userId: 'owner',
+      clientId: 'mac',
+      sessionId: token.sessionId,
+    })
+    const row = await binding
+      .prepare('SELECT * FROM auth_native_sessions WHERE id = ?')
+      .bind(token.sessionId)
+      .first()
+    expect(row).toMatchObject({ redirect_uri: 'native:passkey', code_hash: null })
+    expect(JSON.stringify(row)).not.toContain(token.accessToken)
+    expect(JSON.stringify(row)).not.toContain(token.refreshToken)
+    const refreshed = await auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken })
+    expect(refreshed.sessionId).toBe(token.sessionId)
+    expect(refreshed.refreshExpiresAt).toBe(token.refreshExpiresAt)
+    expect(await auth.resolve(token.accessToken)).toBeNull()
+  })
+
+  it('refuses a direct session for an unconfigured client', async () => {
+    await expect(auth.issueSession('owner', 'other', 'apple')).rejects.toThrow()
+  })
+
+  it('gives a direct session no code an exchange could redeem', async () => {
+    const token = await auth.issueSession('owner', 'mac', 'apple')
+    await expect(
+      auth.exchange({
+        clientId: 'mac',
+        redirectUri: 'native:apple',
+        code: nativeAuthSecret(),
+        codeVerifier: nativeAuthSecret(),
+      }),
+    ).rejects.toThrow()
+    expect(await auth.resolve(token.accessToken)).not.toBeNull()
+  })
+
+  it('revokes direct sessions with the user', async () => {
+    const token = await auth.issueSession('owner', 'mac', 'apple')
+    await auth.revokeUser('owner')
+    expect(await auth.resolve(token.accessToken)).toBeNull()
+    await expect(
+      auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken }),
+    ).rejects.toThrow()
+  })
+
   it('cascades account deletion to native credentials', async () => {
     const token = await auth.exchange(await request())
     await binding.prepare("DELETE FROM users WHERE id = 'owner'").run()

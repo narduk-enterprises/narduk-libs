@@ -138,8 +138,9 @@ vi.mock('@simplewebauthn/server', () => ({
   verifyRegistrationResponse: verifyMocks.verifyRegistrationResponse,
 }))
 
-const { finishPasskeyAuthentication, finishPasskeyRegistration } =
+const { finishPasskeyAuthentication, finishPasskeyRegistration, verifyPasskeyAssertion } =
   await import('../server/lib/app-auth/webauthn-core')
+const { establishLocalSessionUser } = await import('../server/lib/app-auth/session')
 
 const LOCAL_USER: LocalUser = {
   appleId: null,
@@ -435,6 +436,93 @@ describe('passkey ceremony database paths on D1 (narduk-libs#165)', () => {
       public_key: PUBLIC_KEY,
       user_id: LOCAL_USER.id,
     })
+  })
+
+  it('verifyPasskeyAssertion returns the account without starting a session, once per challenge', async () => {
+    // The native passkey route issues native tokens from this result, so it
+    // must do the whole check (challenge, verifier, counter) and set no cookie.
+    await seedCredential()
+    await issueWebauthnChallenge(event(), {
+      challenge: 'native-challenge',
+      purpose: 'authentication',
+      ttlSeconds: 300,
+      userId: null,
+    })
+    verifyMocks.verifyAuthenticationResponse.mockResolvedValue({
+      authenticationInfo: {
+        credentialBackedUp: true,
+        credentialDeviceType: 'multiDevice',
+        newCounter: 9,
+      },
+      verified: true,
+    })
+    vi.mocked(establishLocalSessionUser).mockClear()
+
+    const user = await verifyPasskeyAssertion(event(), authenticationResponse('native-challenge'))
+    expect(user).toMatchObject({ id: LOCAL_USER.id, email: LOCAL_USER.email })
+    expect(establishLocalSessionUser).not.toHaveBeenCalled()
+    expect(await credentialCounter()).toBe(9)
+
+    await expect(
+      verifyPasskeyAssertion(event(), authenticationResponse('native-challenge')),
+    ).rejects.toMatchObject({ statusCode: 401, statusMessage: 'Passkey sign-in failed.' })
+  })
+
+  it('native Apple nonces are single-use and separate from passkey challenges', async () => {
+    const { consumeNativeAppleNonce, issueNativeAppleNonce } =
+      await import('../server/lib/app-auth/native-apple-nonce')
+    const nonce = await issueNativeAppleNonce(event())
+    expect(nonce).toMatch(/^[0-9a-f]{64}$/u)
+    // Presented as a passkey challenge, the raw nonce matches nothing.
+    await seedCredential()
+    verifyMocks.verifyAuthenticationResponse.mockResolvedValue({
+      authenticationInfo: {
+        credentialBackedUp: true,
+        credentialDeviceType: 'multiDevice',
+        newCounter: 6,
+      },
+      verified: true,
+    })
+    await expect(
+      verifyPasskeyAssertion(event(), authenticationResponse(nonce)),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    expect(await consumeNativeAppleNonce(event(), nonce)).toBe(true)
+    expect(await consumeNativeAppleNonce(event(), nonce)).toBe(false)
+    expect(await consumeNativeAppleNonce(event(), 'f'.repeat(64))).toBe(false)
+    // And a passkey challenge is not an Apple nonce.
+    await issueWebauthnChallenge(event(), {
+      challenge: 'c'.repeat(64),
+      purpose: 'authentication',
+      ttlSeconds: 300,
+      userId: null,
+    })
+    expect(await consumeNativeAppleNonce(event(), 'c'.repeat(64))).toBe(false)
+  })
+
+  it('verifyPasskeyAssertion burns the challenge when the verifier refuses', async () => {
+    await seedCredential()
+    await issueWebauthnChallenge(event(), {
+      challenge: 'refused-challenge',
+      purpose: 'authentication',
+      ttlSeconds: 300,
+      userId: null,
+    })
+    verifyMocks.verifyAuthenticationResponse.mockResolvedValue({ verified: false })
+    await expect(
+      verifyPasskeyAssertion(event(), authenticationResponse('refused-challenge')),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    verifyMocks.verifyAuthenticationResponse.mockResolvedValue({
+      authenticationInfo: {
+        credentialBackedUp: true,
+        credentialDeviceType: 'multiDevice',
+        newCounter: 6,
+      },
+      verified: true,
+    })
+    await expect(
+      verifyPasskeyAssertion(event(), authenticationResponse('refused-challenge')),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    expect(await credentialCounter()).toBe(5)
   })
 
   it('lets only one of two concurrent verifies consume the same challenge', async () => {

@@ -18,6 +18,9 @@ const ACCESS_SECONDS = 300
 const SESSION_SECONDS = 30 * 24 * 60 * 60
 const CODE_SECONDS = 60
 
+/** How a directly issued native session proved its identity. */
+export type NativeDirectGrant = 'apple' | 'passkey'
+
 export function nativeAuthSecret(): string {
   return globalThis
     .btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
@@ -98,6 +101,47 @@ export function createNativeAuth(
     redirect.searchParams.set('code', code)
     redirect.searchParams.set('state', request.state)
     return redirect.toString()
+  }
+
+  /**
+   * A session for an identity the caller has just proven in this request (a
+   * verified passkey assertion or Apple identity token), issued straight to
+   * tokens with no code step. `redirect_uri` records the grant (`native:passkey`,
+   * `native:apple`) and the code columns hold values no exchange can match.
+   */
+  async function issueSession(
+    userId: string,
+    clientId: string,
+    grant: NativeDirectGrant,
+  ): Promise<NativeTokenResponse> {
+    if (!permitted(clientId)) return invalidGrant()
+    const accessToken = nativeAuthSecret()
+    const refreshToken = nativeAuthSecret()
+    const now = clock()
+    const id = crypto.randomUUID()
+    const expiresAt = now + SESSION_SECONDS
+    await db.insert(authNativeSessions).values({
+      id,
+      userId,
+      clientId,
+      redirectUri: `native:${grant}`,
+      codeChallenge: '',
+      codeHash: null,
+      codeExpiresAt: now,
+      accessHash: await nativeAuthDigest(accessToken),
+      accessExpiresAt: now + ACCESS_SECONDS,
+      refreshHash: await nativeAuthDigest(refreshToken),
+      expiresAt,
+      createdAt: now,
+    })
+    return {
+      tokenType: 'Bearer',
+      accessToken,
+      refreshToken,
+      expiresIn: ACCESS_SECONDS,
+      refreshExpiresAt: expiresAt,
+      sessionId: id,
+    }
   }
 
   async function rotate(where: Parameters<typeof and>[number]): Promise<NativeTokenResponse> {
@@ -196,5 +240,5 @@ export function createNativeAuth(
       .where(eq(authNativeSessions.userId, userId))
   }
 
-  return { issueCode, exchange, refresh, resolve, revoke, revokeUser }
+  return { issueCode, issueSession, exchange, refresh, resolve, revoke, revokeUser }
 }

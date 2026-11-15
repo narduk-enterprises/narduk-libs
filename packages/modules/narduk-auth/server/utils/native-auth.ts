@@ -44,6 +44,18 @@ export function useNativeAuth(event: H3Event) {
   return createNativeAuth(useAuthBridgeDatabase(event), nativeAuthClients(event))
 }
 
+/**
+ * The native service for a direct sign-in (passkey or Apple), refusing an
+ * unconfigured client before the caller's credential is checked, so a bad
+ * `clientId` never consumes a challenge or creates an account.
+ */
+export function useNativeAuthForClient(event: H3Event, clientId: string) {
+  if (!nativeAuthClients(event).some((client) => client.id === clientId)) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid native sign-in request.' })
+  }
+  return useNativeAuth(event)
+}
+
 /** Native credentials do not become browser cookies or bypass app authorization. */
 export async function getNativeAuthSession(event: H3Event) {
   const header = getHeader(event, 'authorization')

@@ -117,6 +117,40 @@ describe('passkey route authentication classes', () => {
   })
 })
 
+describe('native direct sign-in routes', () => {
+  // Public by necessity (they are sign-in), so their guards are the allowlisted
+  // client checked before the credential, and the authLogin rate limit.
+  for (const file of ['native/passkey.post.ts', 'native/apple.post.ts']) {
+    it(`${file} is public, rate-limited, and checks the client before the credential`, () => {
+      const source = readRoute(file)
+      expect(source).toContain('export default definePublicMutation(')
+      expect(source).toContain('RATE_LIMIT_POLICIES.authLogin')
+      const client = source.indexOf('useNativeAuthForClient(event, input.clientId)')
+      const verify = source.search(/verifyPasskeyAssertion\(|verifyNativeAppleIdentity\(/u)
+      expect(client).toBeGreaterThan(-1)
+      expect(verify).toBeGreaterThan(client)
+      // Native tokens, never the cookie session.
+      expect(source).toContain('.issueSession(user.id, input.clientId,')
+      expect(source).not.toContain('establishLocalSessionUser')
+      expect(source).not.toContain('setCurrentSessionUser')
+    })
+  }
+
+  it('native/apple.post.ts claims its server-issued nonce before verifying the token', () => {
+    const source = readRoute('native/apple.post.ts')
+    const claim = source.indexOf('consumeNativeAppleNonce(event, input.nonce)')
+    expect(claim).toBeGreaterThan(source.indexOf('useNativeAuthForClient('))
+    expect(claim).toBeLessThan(source.indexOf('verifyNativeAppleIdentity('))
+  })
+
+  it('native/apple/nonce.post.ts is public and rate-limited', () => {
+    const source = readRoute('native/apple/nonce.post.ts')
+    expect(source).toContain('export default definePublicMutation(')
+    expect(source).toContain('RATE_LIMIT_POLICIES.authLogin')
+    expect(source).not.toContain('parseBody')
+  })
+})
+
 describe('passkey ceremony invariants in webauthn-core', () => {
   const source = stripComments(
     readFileSync(join(packageRoot, 'server/lib/app-auth/webauthn-core.ts'), 'utf8'),

@@ -394,4 +394,37 @@ describe('Sign in with Apple on the local backend (#164)', () => {
     expect(appleFormDisplayName('not json')).toBeNull()
     expect(appleFormDisplayName(undefined)).toBeNull()
   })
+
+  it('resolveAppleIdentityUser finds or creates the account by the same rules, with no session', async () => {
+    // The native Apple route issues native tokens from this; it must not set a cookie session.
+    const { resolveAppleIdentityUser } = await load()
+    const claims = {
+      appleId: 'apple-sub-native',
+      email: 'native@example.com' as string | null,
+      emailVerified: true,
+      isPrivateEmail: false,
+    }
+    const created = await resolveAppleIdentityUser(event, claims, { displayName: 'Pat Lee' })
+    expect(created.user).toMatchObject({
+      email: claims.email,
+      name: 'Pat Lee',
+      appleId: claims.appleId,
+      passwordHash: null,
+    })
+    expect(created.emailConfirmedAt).toEqual(expect.any(String))
+    const again = await resolveAppleIdentityUser(event, { ...claims, email: null })
+    expect(again.user.id).toBe(created.user.id)
+    expect(userRows()).toHaveLength(1)
+    expect(state.sessions).toEqual([])
+    expect(state.cookieWrites).toEqual([])
+
+    state.publicSignup = false
+    await expect(
+      resolveAppleIdentityUser(event, {
+        ...claims,
+        appleId: 'apple-sub-2',
+        email: 'new@example.com',
+      }),
+    ).rejects.toMatchObject({ statusCode: 403 })
+  })
 })
