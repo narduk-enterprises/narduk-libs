@@ -365,13 +365,11 @@ publishes (narduk-libs#589).
   every merge to `main` that carries a Changeset. Nothing batches it on a
   cadence: it sits open, collecting every pending Changeset, until someone
   merges it.
-- **Who merges it.** If a campaign orchestrator is running in this repository,
-  it owns release merges; ask it rather than merging. Otherwise the lane blocked
-  on the fix may merge it through the same gate as any PR (`verify-pr-gate.py`
-  GREEN on its current head, after its held CI run for that head has been
-  approved as
+- **Who merges it.** Whoever is blocked on the fix may merge it like any PR: its
+  required checks green on its current head, after its held CI run for that head
+  has been approved as
   [Approving `chore: release packages` PR runs](#approving-chore-release-packages-pr-runs)
-  describes and has finished). The PR publishes every pending package, not only
+  describes and has finished. The PR publishes every pending package, not only
   yours, so read its package list before merging, and treat the
   [Release publication proof](#release-publication-proof) as the end of the job,
   not the merge.
@@ -498,9 +496,8 @@ Prevention:
 
 The Release workflow pushes the release PR with the job-scoped `GITHUB_TOKEN`.
 GitHub creates that PR's `pull_request` CI run but holds it as
-`action_required`, so `verify-pr-gate.py` reports no result on the head
-(`required=0/2`) until someone approves the run (a median 574 s wait on
-2026-10-02, narduk-libs#1354).
+`action_required`, so the head has no required-check result until someone
+approves the run (a median 574 s wait on 2026-10-02, narduk-libs#1354).
 
 **The workflow now approves it** (narduk-libs#1354, Logan, 2026-10-02, askme:
 "Use the estate App token (Recommended)"). After the Release job pushes a
@@ -551,7 +548,7 @@ release PR update. Its `ci / Required` and `verify` check runs succeeded on the
 head commit, but the PR's required checks never counted them: on #805 heads
 `277147c9` and `5a59132b` stayed `NO-VALID-RESULT` until the held run was
 approved. The job was removed. Do not dispatch CI by hand for a release PR, and
-do not wait on `gate-wait` for a head whose run is still held.
+do not wait on checks for a head whose run is still held.
 
 Hand procedure, for when the automation did not run or declined: approve only
 the held run for the release PR's current head:

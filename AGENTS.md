@@ -1,222 +1,90 @@
 # Narduk Libs Agent Guide
 
-This repo owns the reusable published packages and focused one-shot tooling used
-by Narduk Cloudflare/Nuxt apps. It is not a fleet template and must never create
-a continuing sync, reconcile, drift, or control-plane relationship with apps.
+This repo owns the shared packages every Narduk app builds on: Nuxt 4 on
+Cloudflare Workers with D1, plus the Swift kits. Packages publish independently
+as `@narduk-enterprises/*`. Apps should be thin: what two apps need lives here.
 
-## Scope
+## Layout
 
-- Shared Nuxt modules, runtime helpers, test helpers, focused app-local tooling,
-  and the deterministic one-shot app generator live in four families under
-  `packages/`: `modules/` (Nuxt runtime modules and layers), `tooling/` (build,
-  test and generator tooling), `design/` (the coded NE design system) and
-  `contracts/` (shared contracts). The layout is company-hq `D-WEBFOUND-2` Q2
-  (a); `pnpm-workspace.yaml` is the single source of truth for where a package
-  lives, so scripts resolve package directories from it rather than assuming
-  `packages/<name>`.
-- The app generator may create a new repository layout once. It must not manage
-  that repository afterward and must not call Command, Cloudflare, GitHub, or
-  Doppler directly.
-- Fleet sync, starter reconciliation, drift enforcement, registry mutation, and
-  central deployment orchestration stay out of this repo.
-- Keep package changes source-compatible for existing fleet apps unless the user
-  explicitly approves a breaking release.
+- `packages/modules/` Nuxt runtime modules and libraries; `packages/tooling/`
+  build, lint, test and generator tooling; `packages/design/` the component
+  suite, charts and maps; `packages/contracts/` shared types.
+  `pnpm-workspace.yaml` is the source of truth for where a package lives.
+- `packages/apple/` and the `swift/` trees in narduk-auth and narduk-logging are
+  SwiftPM products of the root `Package.swift`, released on repository `vX.Y.Z`
+  tags, not on npm.
+- `scripts/` is this repo's own CI and release machinery. `docs/ci.md` and
+  `docs/package-releases.md` describe it. `docs/plans/`, `docs/reports/` and
+  `PLAN.md` are history.
 
-## Workflow
+## Rules
 
-- Preserve unrelated local changes.
-- Make narrow package changes and validate the touched packages before publish.
-- A shared component addition or rename updates its owning registry/export,
-  eslint-config's `src/rules/utils/shared-components.ts`, narduk-app-tools'
-  `src/foundation/shared-components.ts`, and libs-explorer's inventory plus
-  complete usage example. Supply the shell README, design card, mount and SSR
-  proofs required by `surface:check`. Declare file-reading consumers with
-  `nardukWorkspaceInputs` so scoped CI runs their drift checks.
-- Do not commit token-bearing files such as `.npmrc.auth`.
-- Publish package versions from this repo only after build/pack validation.
-
-## Library-first fixes
-
-- When a fleet app exposes a bug in shared auth, runtime, Cloudflare, Nuxt, SEO,
-  analytics, upload, D1, KV, R2, or deployment behavior, default to fixing it in
-  the owning package here.
-- App-local papering over is a temporary exception, not the normal path. It
-  needs a clear written justification, a narrow blast radius, and a follow-up
-  plan to remove it after the library fix ships.
-- Do not let one app quietly fork shared behavior unless the app has a genuine
-  product-specific requirement that does not belong in the reusable package.
-
-## Use, Extend And Promote
-
-The handbook's Reusable Libraries And Packages > Shared Libraries First applies
-to every capability, including pagination, contracts, server helpers and
-tooling. Use suitable existing exports. Extend the owning package when it falls
-short; build clearly reusable responsibilities here from the first consumer,
-keeping app domain policy in the app. Publish compatible changes with docs and
-tests, then consume the release. The README's capability pointers make discovery
-bounded.
-
-If normal work reveals another app that benefits, check for an existing issue
-and file a labelled adoption issue there, naming evidence, package/export and
-done-when. Do not search other apps just to find adopters or start a rollout.
-
-## Issue labels
-
-Label every issue at creation time with one type, one priority and one area,
-using only labels that already exist (estate standard:
-`narduk-enterprises/agent-infrastructure` `docs/ISSUE-LABEL-CONVENTIONS.md`).
-Check the live set with `gh label list --repo narduk-enterprises/narduk-libs`.
-
-- Type: `bug`, `enhancement`, `documentation`, `question`, `tracker` (umbrella
-  issues).
-- Priority: `P0-critical`, `P1-high`, `P2-medium`, `P3-low`.
-- Area: `area:auth`, `area:core`, `area:devices`, `area:eslint-config`,
-  `area:foundation`, `area:journeys`, `area:logging`, `area:mapkit`,
-  `area:postgres`, `area:release`, `area:seo`, `area:shell`, `area:testkit`.
-  `area:mapkit`, `area:testkit`, `area:logging` and `area:seo` were added on
-  2026-09-18 at Logan's direction.
-
-## Backlog clear-out freeze
-
-Milestone `backlog-clearout` holds the 190 issues that were open at 2026-09-20
-22:56Z, frozen as the campaign's scope
-([plan](docs/plans/backlog-clearout-plan.md)). Filing stays unrestricted, and
-this changes nothing about how you label a new issue.
-
-A new issue does **not** go in that milestone by itself — a filing agent leaves
-the milestone unset. Search before filing: three separate issues (#544, #561,
-#631) turned out to be one toolchain defect.
-
-What happens to something you find mid-item (Logan, 2026-09-20: _"as new issues
-are found along the way they should be folded into the work if they are easy or
-a new issue filed if they are larger, and we should recalibrate the waves to
-include the new issues as we work the backlog"_):
-
-- **Easy, and in the area you are already changing** — fix it in the same PR and
-  say so in the body. Do not file an issue for something you just fixed.
-- **Larger, or outside your item's scope** — file it, labeled, milestone unset,
-  and keep going. A P0, a security defect or a release blocker also gets a line
-  to the campaign orchestrator immediately.
-- **The orchestrator recalibrates at every wave boundary**: it reviews the
-  issues filed since the freeze, admits the ones that belong into the milestone,
-  and rewrites the lane queues. Nothing gets admitted silently — admission is
-  said on the issue.
-
-Two numbers are tracked separately, so "cleared" stays a definable state: the
-baseline 190 drained, and the count admitted since the freeze.
-
-<!-- enforcement: none yet -->
+- Keep changes source-compatible for the apps already on a package. A breaking
+  release needs Logan's yes.
+- Fix shared behavior here, in the owning package, not in the app that found it.
+  Build a reusable responsibility here from its first consumer; keep product
+  policy in the app. An app-local workaround is temporary and says when it goes.
+- This repo never syncs, reconciles or deploys an app. The generator
+  (`create-narduk-app`) writes files; it calls no outside service.
+- Publishing happens in CI only. Never publish by hand, and never commit a file
+  that holds a token (`.npmrc.auth`).
+- A shared component added or renamed also updates: its owning registry or
+  export, eslint-config's `src/rules/utils/shared-components.ts`,
+  narduk-app-tools' `src/foundation/shared-components.ts`, and libs-explorer's
+  inventory with a complete usage example. `surface:check` names what is missing
+  (README section, mount and SSR tests, design card). Declare file-reading
+  consumers with `nardukWorkspaceInputs` so scoped CI runs their drift checks.
+- Leave unrelated local changes alone.
 
 ## Validation
 
-- `pnpm run preflight` — the cheap half of the pull-request path in one command:
-  everything CI checks that needs no browser. It plans the diff against
-  `origin/main` (fetching that ref first — whatever `--base` names, so long as
-  it names a remote — because a stale base is what makes `release-plan:check`
-  report packages you never touched), prints the affected packages and which
-  consumer proof applies, runs the `contracts` checks in that job's own order
-  through `pnpm audit --audit-level high`, then runs the affected packages'
-  gates through the same `runPackageGates` CI uses, and finishes by building the
-  packed scope and proving it artifacts-only — the same build-then-pack pairing,
-  with the same scope on both, that the `packed-consumer-smoke` job runs on its
-  artifacts-only path. It does **not** run the CI jobs that need a browser or
-  another toolchain: the generated-app half of `packed-consumer-smoke`
-  (`release:consumer-smoke --install-browser`, which the command names for you
-  when the planner selects it), the per-package browser `test:e2e` jobs, and
-  `logging-languages`. A green preflight is not a green CI; it is the part of CI
-  you can have in one command. It never writes: the package gates run with
-  `CI=true` (from when `narduk-lint` rewrote `lint-budget.json`, #623; it no
-  longer writes anything), and the tracked tree is compared before and after
-  every phase, so any other writer fails the run and is named. Flags:
-  `--base <ref>`, `--no-fetch`, `--no-consumer`, `--release-pr` (skip
-  `release-plan:check` as CI does on the release PR, only once HEAD is proven to
-  be the fetched `origin/changeset-release/main` tip; see
-  `docs/package-releases.md`). A diff that touches a global trigger such as the
-  root `package.json` or the lockfile selects every package, and the command
-  says so before spending the time.
-- **A full preflight is long.** Every package's gates run serially, and a global
-  trigger (root `package.json`, lockfile) has taken 50 minutes on a loaded lane
-  guest (agent-infrastructure#3802, #3864). An agent runs it in the background
-  with a timeout of at least 60 minutes (Claude Code: Bash `run_in_background`
-  with `timeout: 3600000` or more); a 10-minute default kills it part-way. To
-  gate only what you changed, add `--packages <name,name> --no-consumer` (bare
-  or `@narduk-enterprises/` names): contracts still run in full, the package
-  gates run for the named packages only, and the run ends `OK (partial)` because
-  CI gates the rest.
-- **When to run the full preflight before pushing** (Logan, 2026-09-25, for this
-  repo only): this repo is public, its CI runs on GitHub-hosted runners, and the
-  ruleset makes CI a merge gate, so a local preflight re-runs checks CI will run
-  anyway. Before every push, run `pnpm run release-plan:check` when the diff
-  adds a changeset (seconds; it names a generator-pinned package's missing
-  `create-narduk-app` changeset), and the affected packages'
-  `pnpm --filter <package> run quality`, plus
-  `pnpm --filter <package> run build` for a package that commits its `dist/`
-  (`narduk-mapkit`, `narduk-realtime`): `quality` does not build, and CI fails a
-  stale committed `dist/` on its dist-clean check. Run the full
-  `pnpm run preflight` before pushing only when the diff touches release or CI
-  topology (`.github/`, `scripts/` used by CI, `.changeset/config.json`), the
-  root `package.json`, or the lockfile. Otherwise CI is the full proof: say
-  "full preflight deferred to CI" in the PR body with the package results and
-  timings. The merge gate is unchanged — `verify-pr-gate.py` must print
-  `verdict=GREEN`. Revisit this if the delivery tiers (E9) stop CI from gating
-  merges here, because the local check would then be the only proof.
-- `pnpm install` — a fresh worktree needs nothing else before tests. Its
-  `postinstall` builds `eslint-config` and `narduk-testkit`, whose `dist/` the
-  `narduk-core`, `narduk-shell` and `narduk-mapkit` test setups import
-  (agent-infrastructure#3021, #3418). Every dependency resolves from the public
-  registry or the workspace, so no `gh-packages-run.sh` wrapper is needed; that
-  script lives in agent-infrastructure, not here. After editing testkit source,
-  rebuild it with `pnpm --filter @narduk-enterprises/narduk-testkit run build`.
-- Direct `release-plan:check` refreshes its named remote comparison branch once
-  (30-second bound) before diffing; a failed refresh is unknown and stops the
-  gate. Explicit local or historical comparison refs retain their existing
-  semantics.
-- Preflight passes its planned immutable base to the release check, preserving
-  `--no-fetch` and keeping later fetches from changing the planned comparison.
-- `pnpm run quality`
-- `pnpm run surface:check` (inside `quality:artifacts`): every component
-  `narduk-shell` registers, and every `./format` export, has a README section,
-  tests and a design card shipped beside it. Failures print the exact fix; see
-  `packages/design/narduk-shell/README.md` § "Component surface check".
-- For a touched package, run `pnpm --filter <package> run quality` (format
-  check, lint, typecheck and unit tests;
-  `scripts/package-quality-scripts.test.mjs` keeps every package's `quality`
-  meaning that, #666) and `pnpm pack --dry-run` before publication. For a
-  seconds-long format check of just your diff:
+- `pnpm install` is all a fresh worktree needs: every dependency resolves from
+  the public registry or the workspace, with no token. Its `postinstall` builds
+  `eslint-config` and `narduk-testkit`. `create-narduk-app` imports
+  `narduk-app-tools` from its `dist/`: build that first
+  (`pnpm --filter @narduk-enterprises/narduk-app-tools run build`).
+- For a touched package: `pnpm --filter <package> run quality` (format, lint,
+  typecheck, unit tests). `quality` does not build; a package that commits its
+  `dist/` (`narduk-mapkit`, `narduk-realtime`) also needs
+  `pnpm --filter <package> run build`, or CI fails its dist-clean check.
+- Seconds-long format check of a diff:
   `npx prettier --check $(git diff --name-only HEAD)`.
+- A diff that adds a Changeset: `pnpm run release-plan:check`.
+- CI is the full gate: the repo is public, CI runs on GitHub-hosted runners and
+  the ruleset requires it. `pnpm run preflight` runs the non-browser half of CI
+  locally; it is long (up to 50 minutes when the root `package.json` or the
+  lockfile changes), so run it in the background, and only when the diff touches
+  `.github/`, `scripts/` used by CI, `.changeset/config.json`, the root
+  `package.json` or the lockfile. `--packages <name,name> --no-consumer` narrows
+  it.
 - New package releases must be installable from their packed artifact by a
   consumer fixture outside the workspace.
-- A Changeset that moves the version of any package the generator pins
+
+## Changesets and releases
+
+- Every change to a published package's artifact needs a Changeset. A
+  devDependency-only change, a test-only path and a Swift-only change do not
+  (`docs/package-releases.md`, "When a Changeset is required").
+- A Changeset that moves the version of a package the generator pins
   (`PACKAGE_VERSIONS` in `packages/tooling/create-narduk-app/src/manifest.ts`),
-  directly or through an internal-dependency bump, must also list
-  `'@narduk-enterprises/create-narduk-app': patch`.
-  `pnpm run release-plan:check` enforces it in `contracts`, and on a pull
-  request that failure cancels every package job, so the whole run reads red
-  (#198). It compares against `origin/main` by default and prints the base it
-  used; a local `--base` is named as local, because a stale local `main` reports
-  unrelated packages (#619).
-- Release mechanics, the `chore: release packages` PR's run approvals and the
-  post-merge publication proof are in `docs/package-releases.md`.
+  directly or through an internal-dependency bump, also lists
+  `'@narduk-enterprises/create-narduk-app': patch`. `release-plan:check`
+  enforces it.
+- A merge to `main` that carries a Changeset opens or updates the
+  `chore: release packages` pull request. Merging that pull request publishes to
+  GitHub Packages; `npm.nard.uk`, the mirror apps install from, follows (the
+  release dispatches the sync; the sync's own schedule is the fallback). It
+  publishes every pending package, so read its list first. The **Release
+  publication proof** run is the end of the job, not the merge.
+- A new public package must be on the mirror's allowlist before it can install:
+  `docs/package-releases.md`, "New public packages".
+- Never pin an app to a version that is not on `npm.nard.uk` yet, and never copy
+  a fix into the app while waiting.
 
-<!-- narduk-quality-bar:cli:start (managed by agent-infrastructure skills/project-lifecycle/scripts/agents_quality_bar.py; edits are overwritten) -->
+## Pull requests
 
-<!-- prettier-ignore-start -->
-
-## Quality bar (CLI and tooling)
-
-Ten checkable rules from the coding-standards handbook. The repo's own decisions above win; this is the floor.
-
-1. Python is managed with uv: `uv.lock` committed, CI runs `uv sync --frozen`. [14-python](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/14-python.md) · enforced: none yet
-2. `ruff check` and `ruff format --check` are clean. [14-python](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/14-python.md) · enforced: none yet
-3. `pyright` is clean on changed code; no new blanket `# type: ignore`. [14-python](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/14-python.md) · enforced: none yet
-4. Tests cover the interface (argument parsing, exit codes, `--json` shape); a repo on `unittest` stays on it, new repos use pytest. [05-local-services-and-tooling](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/05-local-services-and-tooling.md) · enforced: none yet
-5. Shell is thin glue and `shellcheck` clean; once it grows flags, parsing or recovery, rewrite it in Python. [15-shell](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/15-shell.md) · enforced: none yet
-6. Exit codes are contract: 0 success, non-zero failure, a distinct code for "inconclusive". [05-local-services-and-tooling](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/05-local-services-and-tooling.md) · enforced: none yet
-7. Data goes to stdout, diagnostics to stderr; an agent-consumed tool has a stable, documented `--json`. [05-local-services-and-tooling](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/05-local-services-and-tooling.md) · enforced: none yet
-8. Secrets come from the environment or a secret runner, never argv, never echoed or logged. [01-universal-engineering](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/01-universal-engineering.md) · enforced: none yet
-9. A run interrupted halfway is safe to repeat without hand cleanup. [05-local-services-and-tooling](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/05-local-services-and-tooling.md) · enforced: none yet
-10. Dependencies and tool versions are exact pins with the lockfile committed; nothing floats. [10-reusable-libraries-and-packages](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/10-reusable-libraries-and-packages.md) · enforced: none yet
-
-<!-- prettier-ignore-end -->
-
-<!-- narduk-quality-bar:cli:end -->
+- Small pull requests, one concern each. Squash merge; `gh pr merge --auto` once
+  CI is running.
+- Label an issue with one type (`bug`, `enhancement`, `documentation`,
+  `question`, `tracker`), one priority (`P0-critical` to `P3-low`) and one
+  `area:*` label that already exists (`gh label list`).
