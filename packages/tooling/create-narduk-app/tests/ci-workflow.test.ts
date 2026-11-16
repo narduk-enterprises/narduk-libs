@@ -45,7 +45,9 @@ describe('generated CI boundaries', () => {
     expect(browser.labels).toContain('proxmox-playwright-x64')
     expect(workflow).toContain(`nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`)
     // workflows#199: the shared jobs request id-token: write, so the caller must grant it.
-    expect(NUXT_CLOUDFLARE_WORKFLOW_SHA).toBe('73e050ae42ece50497ff3140e21767505cca0076')
+    // Read, not spelled out: the weekly pin refresh advances it, and a literal
+    // here failed that run's own quality gate (2026-11-16).
+    expect(NUXT_CLOUDFLARE_WORKFLOW_SHA).toMatch(/^[0-9a-f]{40}$/u)
     expect(workflow).toContain(`@${NUXT_CLOUDFLARE_WORKFLOW_SHA} # v2 + id-token (workflows#199)`)
     expect(workflow).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
     expect(workflow).not.toMatch(/^ {4}secrets:/mu)
