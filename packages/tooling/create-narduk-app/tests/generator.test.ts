@@ -468,7 +468,7 @@ describe('create-narduk-app generation contract', () => {
     expect(knipConfig.ignoreDependencies).toContain('nuxt-og-image')
     // The ship script runs through nvault, which knip would flag as unlisted.
     expect(knipConfig.ignoreBinaries).toEqual(['nvault'])
-    expect(dependencies.nuxt).toBe('4.5.2')
+    expect(dependencies.nuxt).toBe(PACKAGE_VERSIONS.nuxt)
     expect(Object.values(dependencies).every((version) => /^\d+\.\d+\.\d+$/u.test(version))).toBe(
       true,
     )
