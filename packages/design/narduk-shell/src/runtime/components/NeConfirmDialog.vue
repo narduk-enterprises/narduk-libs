@@ -20,6 +20,8 @@ import UButton from '@nuxt/ui/components/Button.vue'
 import UModal, { type ModalProps } from '@nuxt/ui/components/Modal.vue'
 import { computed, nextTick, ref } from 'vue'
 
+import NeFormActions from './NeFormActions.vue'
+
 import type { NeConfirmDialogProps } from './ne-confirm-dialog-types'
 
 const props = withDefaults(defineProps<NeConfirmDialogProps>(), {
@@ -144,22 +146,24 @@ function onUpdateOpen(value: boolean) {
     </template>
 
     <template #footer>
-      <div ref="footerElement" class="flex w-full justify-end gap-2">
-        <UButton
-          data-ne-confirm-cancel
-          color="neutral"
-          variant="ghost"
-          :label="props.cancelLabel"
-          :disabled="props.pending"
-          @click="cancel"
-        />
-        <UButton
-          data-ne-confirm-confirm
-          :color="props.tone === 'danger' ? 'error' : 'primary'"
-          :label="props.confirmLabel"
-          :loading="props.pending"
-          @click="confirm"
-        />
+      <div ref="footerElement" class="w-full">
+        <NeFormActions>
+          <UButton
+            data-ne-confirm-cancel
+            color="neutral"
+            variant="ghost"
+            :label="props.cancelLabel"
+            :disabled="props.pending"
+            @click="cancel"
+          />
+          <UButton
+            data-ne-confirm-confirm
+            :color="props.tone === 'danger' ? 'error' : 'primary'"
+            :label="props.confirmLabel"
+            :loading="props.pending"
+            @click="confirm"
+          />
+        </NeFormActions>
       </div>
     </template>
   </UModal>
