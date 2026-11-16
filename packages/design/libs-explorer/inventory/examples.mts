@@ -166,6 +166,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'The phone bottom call to action: safe-area padding, and a spacer so it never covers the last row.',
   ),
   shell(
+    'NeFormActions',
+    'Form actions',
+    'The one action row of a form or dialog: right-aligned, primary last, a destructive action far left; stacked with the primary on top on a phone.',
+  ),
+  shell(
     'NeBottomTabBar',
     'Bottom tab bar',
     'The phone tab bar: one lit tab (exact, longest prefix, fallback), honest aria-current, safe-area padding and a spacer.',

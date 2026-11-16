@@ -40,6 +40,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeFeatureGrid',
       'NeFilterBar',
       'NeForm',
+      'NeFormActions',
       'NeFormSection',
       'NeHero',
       'NeSettle',

@@ -122,4 +122,8 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeBottomTabBar', filePath: './runtime/components/NeBottomTabBar.vue' },
   { name: 'NeSegmented', filePath: './runtime/components/NeSegmented.vue' },
   { name: 'NeTabs', filePath: './runtime/components/NeTabs.vue' },
+  // The one action row of a form or dialog (docs/DESIGN.md, "Form actions"):
+  // right-aligned, primary last, stacked with the primary on top on a phone.
+  // NeForm's save bar and NeConfirmDialog's footer are this row.
+  { name: 'NeFormActions', filePath: './runtime/components/NeFormActions.vue' },
 ]

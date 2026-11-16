@@ -2646,6 +2646,10 @@ between this component and its button.
 | `default` | The form's fields — typically one or more `NeFormSection`s.     |
 | `actions` | Extra buttons in the save bar, rendered before the save button. |
 
+The save bar is a [`NeFormActions`](#neformactions) row: the `actions` slot's
+buttons, then Save rightmost, with the "Unsaved changes" note at the far left.
+Below 40rem it stacks, Save on top.
+
 #### Events
 
 None. `onSubmit` is a real function prop (matching `UForm`'s own contract), not
@@ -2673,6 +2677,61 @@ const state = reactive({ name: '' })
 
 A failing field is focused automatically — no `ref` or manual `scrollIntoView`
 call needed at the call site.
+
+### NeFormActions
+
+The one action row of a form or dialog. The rule it draws is in
+[`docs/DESIGN.md`](docs/DESIGN.md), "Form actions": one row at the bottom,
+right-aligned to the form's edge, the primary rightmost, Cancel and other
+secondaries to its left, a destructive action alone at the far left. Below `sm`
+(40rem) the row is full width and stacked, primary on top.
+
+Write the buttons in reading order, Cancel first and the primary last. The row
+reverses itself on a phone, so the last button in the source is the one on top.
+`NeForm`'s save bar and `NeConfirmDialog`'s footer are this row.
+
+#### Example
+
+```vue
+<form @submit.prevent="save">
+  <UFormField label="Name">
+    <UInput v-model="name" />
+  </UFormField>
+  <NeFormActions>
+    <template #lead>
+      <UButton type="button" color="error" variant="outline" @click="remove">Delete</UButton>
+    </template>
+    <UButton type="button" color="neutral" variant="ghost" @click="cancel">Cancel</UButton>
+    <UButton type="submit">Save</UButton>
+  </NeFormActions>
+</form>
+```
+
+Enter is the form's: the primary is `type="submit"` inside the `<form>`. When
+the row sits in a dialog's footer, outside the form element, give the form an
+`id` and the primary `form="that-id"`. Esc closing a dialog is `UModal`'s.
+
+#### Props
+
+None. A `class` on the component lands on the row, so a caller adds its own
+border, padding or `sticky`. The row sets layout only (flex, gap, alignment) and
+no colour; it does not choose a button's look.
+
+#### Slots
+
+| Slot      | When it renders                                                                    |
+| --------- | ---------------------------------------------------------------------------------- |
+| `default` | The buttons: Cancel and other secondaries first, the primary last.                 |
+| `lead`    | A destructive action, or a note about the row. Far left; last on a phone.          |
+
+#### Events
+
+None.
+
+#### What it is not for
+
+A one-field row (a search or a code with its button beside it), a toolbar above
+a table, or the phone's fixed bottom call to action (`NeStickyActionBar`).
 
 ### NeFormSection
 

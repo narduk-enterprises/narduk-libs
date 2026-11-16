@@ -52,10 +52,16 @@
  * here on purpose): this package does not depend on a schema library, so a
  * consumer's zod/valibot schema, or a plain validate function, both pass
  * straight through the way `UForm` itself accepts them.
+ *
+ * The save bar is a `NeFormActions` row (`docs/DESIGN.md`, "Form actions"):
+ * the `actions` slot's buttons, then Save rightmost, the dirty note at the far
+ * left; stacked with Save on top on a phone.
  */
 import UButton from '@nuxt/ui/components/Button.vue'
 import UForm from '@nuxt/ui/components/Form.vue'
 import { computed, useTemplateRef } from 'vue'
+
+import NeFormActions from './NeFormActions.vue'
 
 /** The slice of `UForm`'s exposed API this component reads. Loosely typed on
  * purpose: `UForm`'s real type is generic over the schema, and this file
@@ -205,16 +211,16 @@ function onFormError(event: NeFormErrorEvent) {
     >
       <slot />
 
-      <div
-        class="ne-form__save-bar flex flex-wrap items-center justify-end gap-3 border-t border-default pt-4"
+      <NeFormActions
+        class="ne-form__save-bar border-t border-default pt-4"
         :class="stickySave ? 'sticky bottom-0 z-10 bg-default/95 py-4 backdrop-blur' : ''"
       >
-        <p v-if="dirty" role="status" class="ne-form__dirty-note mr-auto text-sm text-muted">
-          Unsaved changes
-        </p>
+        <template v-if="dirty" #lead>
+          <p role="status" class="ne-form__dirty-note text-sm text-muted">Unsaved changes</p>
+        </template>
         <slot name="actions" />
         <UButton type="submit" loading-auto :disabled="disabled" :label="saveLabel" />
-      </div>
+      </NeFormActions>
     </UForm>
   </div>
 </template>
