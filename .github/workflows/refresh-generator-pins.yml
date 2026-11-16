@@ -79,6 +79,11 @@ jobs:
             exit 0
           fi
           node --test scripts/refresh-generator-pins.test.mjs
+          # The generator imports app-tools from its built dist/; the root
+          # postinstall builds only eslint-config and testkit (as in
+          # release.yml, #1936). Without this the typecheck in `quality` fails
+          # on the first run that has a pin to refresh (2026-11-15).
+          pnpm --filter @narduk-enterprises/narduk-app-tools run build
           pnpm --filter @narduk-enterprises/create-narduk-app run quality
           pnpm --filter @narduk-enterprises/create-narduk-app run build
           node scripts/generator-pin-smoke.mjs

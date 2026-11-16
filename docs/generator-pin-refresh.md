@@ -42,6 +42,7 @@ Use a full, fetched checkout of workflows main and Node 24. From narduk-libs:
 node scripts/refresh-generator-pins.mjs --workflows-checkout /path/to/workflows
 pnpm exec prettier --write packages/tooling/create-narduk-app/src/{manifest,workflow-pin,workflow-history}.ts
 node --test scripts/refresh-generator-pins.test.mjs
+pnpm --filter @narduk-enterprises/narduk-app-tools run build
 pnpm --filter @narduk-enterprises/create-narduk-app run quality
 pnpm --filter @narduk-enterprises/create-narduk-app run build
 node scripts/generator-pin-smoke.mjs

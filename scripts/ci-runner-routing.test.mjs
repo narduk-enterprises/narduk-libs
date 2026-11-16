@@ -50,6 +50,18 @@ test('release builds the generator dependency after install and before registry 
   assert.ok(publish > auth, 'publication retains its existing authenticated path')
 })
 
+test('the generator pin refresh builds app-tools before the generator quality gate', () => {
+  // create-narduk-app imports narduk-app-tools from its dist/, which the root
+  // postinstall does not build. The scheduled run of 2026-11-15 failed its
+  // typecheck on exactly that.
+  const refresh = source('refresh-generator-pins.yml')
+  const install = refresh.indexOf('pnpm install --frozen-lockfile')
+  const build = refresh.indexOf('pnpm --filter @narduk-enterprises/narduk-app-tools run build')
+  const quality = refresh.indexOf('pnpm --filter @narduk-enterprises/create-narduk-app run quality')
+  assert.ok(install >= 0 && build > install, 'app-tools builds after dependencies are installed')
+  assert.ok(quality > build, 'the generator quality gate runs after app-tools is built')
+})
+
 test('only the verified main release receives a job-scoped package write token', () => {
   // verify-ci, release, recheck-main (#1119), plan-release-pr-approval,
   // notify-mirror and approve-release-pr-ci (#1354).
