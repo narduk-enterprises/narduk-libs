@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.7.0
+
+### Minor Changes
+
+- a9c6fa3: narduk-logging: a new `./client-errors` entry point, the client half
+  of `./server-health`. A browser reports unhandled errors through
+  `createClientErrorReporter` (four fields: message, path, release, request id;
+  no stack, no contents, five a page load); the app's route validates them
+  strictly with `parseClientErrorReport` and keeps one deduplicated, scrubbed
+  row per error in its own D1 (`BROWSER_ERRORS_DDL`, `clientErrorEntry`,
+  `recordClientError`, `listClientErrors`). A native app posts the same shape.
+  Moved from pacc-trac, which runs it in production. No other entry point
+  changes.
+- e5ed62f: narduk-logging: a new `./usage` entry point for first-party usage
+  counts. An app counts screen opens and named events in the browser
+  (`createUsageReporter`, `createUsageSender`, `installUsageFlush`) and stores
+  sums by day, role and platform in its own D1 (`USAGE_COUNTS_DDL`,
+  `parseUsageBatch`, `recordUsage`, `listUsage`, `usageTotals`, `pruneUsage`).
+  Nothing about a person is kept: no user or session id, no IP address, no query
+  string, no free text; the server sets the day and the role. No other entry
+  point changes.
+- dcdf09d: narduk-logging: a new `./usage-summary` entry point, the one read
+  every app answers so a dashboard can watch many apps the same way.
+  `GET /api/usage/summary` behind the app's own read-only bearer token
+  (`authorizeUsageSummary`, constant time, closed while unset), a range of up to
+  90 days (`parseUsageSummaryRange`), and `buildUsageSummary`: screens and
+  events by day, role and platform from `usage_counts`, sign-ins by day and role
+  from the app's own audit (`signInsByDay`), and errors by release from
+  `browser_errors` and `server_errors`. Counts only; a table the app lacks reads
+  as empty. No other entry point changes.
+
 ## 0.6.2
 
 ### Patch Changes
