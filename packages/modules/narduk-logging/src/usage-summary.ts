@@ -83,8 +83,30 @@ function daysBetween(since: string, until: string): number {
   )
 }
 
-const isDay = (value: unknown): value is string =>
-  typeof value === 'string' && DAY.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00Z`))
+/** A real calendar day: `Date` rolls `2026-02-31` over to March, so the day must survive the round trip. */
+const isDay = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !DAY.test(value)) return false
+  const at = Date.parse(`${value}T12:00:00Z`)
+  return !Number.isNaN(at) && new Date(at).toISOString().slice(0, 10) === value
+}
+
+/**
+ * The first instant of `day` on the clock of `timeZone`, to the minute: the earliest moment whose
+ * `usageDay` is `day`. Every zone's midnight lies within 15 hours of UTC's, so a search over that
+ * window finds it, daylight saving included.
+ */
+export function usageDayStart(day: string, timeZone = 'UTC'): Date {
+  if (!isDay(day)) throw new TypeError('usage day must be YYYY-MM-DD')
+  const utc = Date.parse(`${day}T00:00:00Z`)
+  let lo = utc - 15 * 3_600_000
+  let hi = utc + 15 * 3_600_000
+  while (hi - lo > 60_000) {
+    const mid = lo + Math.floor((hi - lo) / 120_000) * 60_000
+    if (usageDay(new Date(mid), timeZone) >= day) hi = mid
+    else lo = mid
+  }
+  return new Date(hi)
+}
 
 /**
  * The range a request asks for: `since` and `until` as `YYYY-MM-DD` (query strings), `until`
@@ -171,8 +193,10 @@ export async function buildUsageSummary(
         .bind(kind, since, until, cap + 1)
         .all<UsageSummaryCount>(),
     )
-  // An error row is in the range when it was last seen on or after the first day.
-  const sinceAt = `${dayMinus(since, 1)}T00:00:00.000Z`
+  // An error row is in the range when it was last seen within it, on the app's clock.
+  const timeZone = options.timeZone ?? 'UTC'
+  const sinceAt = usageDayStart(since, timeZone).toISOString()
+  const beforeAt = usageDayStart(dayMinus(until, -1), timeZone).toISOString()
   const [screens, events, clientErrors, serverErrors, signIns] = await Promise.all([
     counts('screen'),
     counts('event'),
@@ -180,18 +204,19 @@ export async function buildUsageSummary(
       db
         .prepare(
           `SELECT release, COUNT(*) AS errors, SUM(occurrences) AS occurrences, MAX(last_seen_at) AS last_seen_at
-           FROM browser_errors WHERE last_seen_at >= ? GROUP BY release ORDER BY 4 DESC LIMIT ?`,
+           FROM browser_errors WHERE last_seen_at >= ? AND last_seen_at < ?
+           GROUP BY release ORDER BY 4 DESC LIMIT ?`,
         )
-        .bind(sinceAt, cap)
+        .bind(sinceAt, beforeAt, cap)
         .all<{ release: string; errors: number; occurrences: number; last_seen_at: string }>(),
     ),
     rowsOf(() =>
       db
         .prepare(
           `SELECT COUNT(*) AS errors, SUM(occurrences) AS occurrences, MAX(last_seen_at) AS last_seen_at
-           FROM server_errors WHERE last_seen_at >= ?`,
+           FROM server_errors WHERE last_seen_at >= ? AND last_seen_at < ?`,
         )
-        .bind(sinceAt)
+        .bind(sinceAt, beforeAt)
         .all<{ errors: number; occurrences: number | null; last_seen_at: string | null }>(),
     ),
     options.signIns ? options.signIns({ since, until }) : Promise.resolve([]),
@@ -227,7 +252,7 @@ export async function buildUsageSummary(
     generatedAt: now.toISOString(),
     since,
     until,
-    timeZone: options.timeZone ?? 'UTC',
+    timeZone,
     screens: count(screens),
     events: count(events),
     signIns: signIns

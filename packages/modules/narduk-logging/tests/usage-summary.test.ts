@@ -5,6 +5,7 @@ import {
   buildUsageSummary,
   parseUsageSummaryRange,
   signInsByDay,
+  usageDayStart,
   USAGE_SUMMARY_PATH,
   USAGE_SUMMARY_ROW_CAP,
   USAGE_SUMMARY_SCHEMA_VERSION,
@@ -54,6 +55,29 @@ describe('parseUsageSummaryRange', () => {
     ).toBeNull()
     expect(parseUsageSummaryRange({ since: 'last week' }, '2026-11-17')).toBeNull()
     expect(parseUsageSummaryRange({ since: '2026-02-31' }, '2026-11-17')).toBeNull()
+    // Inside the 90 days, so only the calendar check refuses it (Date would read it as October 1).
+    expect(parseUsageSummaryRange({ since: '2026-09-31' }, '2026-11-17')).toBeNull()
+    expect(parseUsageSummaryRange({ until: '2026-11-31' }, '2026-12-17')).toBeNull()
+  })
+})
+
+describe('usageDayStart', () => {
+  it('is midnight on the app clock, daylight saving included', () => {
+    expect(usageDayStart('2026-11-17').toISOString()).toBe('2026-11-17T00:00:00.000Z')
+    expect(usageDayStart('2026-11-17', 'America/Los_Angeles').toISOString()).toBe(
+      '2026-11-17T08:00:00.000Z',
+    )
+    expect(usageDayStart('2026-07-01', 'America/Los_Angeles').toISOString()).toBe(
+      '2026-07-01T07:00:00.000Z',
+    )
+    // The days the clocks change: midnight is still on the old offset.
+    expect(usageDayStart('2026-03-08', 'America/Los_Angeles').toISOString()).toBe(
+      '2026-03-08T08:00:00.000Z',
+    )
+    expect(usageDayStart('2026-11-01', 'America/Los_Angeles').toISOString()).toBe(
+      '2026-11-01T07:00:00.000Z',
+    )
+    expect(usageDayStart('2026-11-17', 'Asia/Tokyo').toISOString()).toBe('2026-11-16T15:00:00.000Z')
   })
 })
 
@@ -95,9 +119,13 @@ describe('buildUsageSummary', () => {
       ('h1', 'web', '/orders', 'Dana broke it', 'web 1.2', 'r1', 4, '2026-11-01T00:00:00Z', '2026-11-17T10:00:00Z'),
       ('h2', 'web', '/x', 'other', 'web 1.2', NULL, 1, '2026-11-02T00:00:00Z', '2026-11-16T10:00:00Z'),
       ('h3', 'ios', '/ios/crash', 'Crash', 'ios 1.0.0 (42)', NULL, 2, '2026-11-02T00:00:00Z', '2026-11-15T10:00:00Z'),
-      ('h4', 'web', '/old', 'old', 'web 1.0', NULL, 9, '2026-09-02T00:00:00Z', '2026-09-03T10:00:00Z')`)
+      ('h4', 'web', '/old', 'old', 'web 1.0', NULL, 9, '2026-09-02T00:00:00Z', '2026-09-03T10:00:00Z'),
+      ('h5', 'web', '/early', 'early', 'web 1.1', NULL, 3, '2026-11-01T00:00:00Z', '2026-11-11T07:59:00.000Z'),
+      ('h6', 'web', '/late', 'late', 'web 1.3', NULL, 3, '2026-11-18T08:00:00.000Z', '2026-11-18T08:00:00.000Z')`)
+    // Before the 11th and after the 17th on the yard's clock: neither counts.
     raw.exec(`INSERT INTO server_errors VALUES
-      ('s1', 'api', 500, 'GET', '/api/x', 'boom', NULL, 6, '2026-11-01T00:00:00Z', '2026-11-17T09:00:00Z')`)
+      ('s1', 'api', 500, 'GET', '/api/x', 'boom', NULL, 6, '2026-11-01T00:00:00Z', '2026-11-17T09:00:00Z'),
+      ('s2', 'api', 500, 'GET', '/api/y', 'later', NULL, 4, '2026-11-18T09:00:00Z', '2026-11-18T09:00:00Z')`)
     const summary = await buildUsageSummary(db, {
       app: 'pacc-trac',
       since: '2026-11-11',

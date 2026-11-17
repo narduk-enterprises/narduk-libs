@@ -204,9 +204,10 @@ message or error route.
   passed in (`signInsByDay(rows, timeZone)` reduces one row per sign-in);
   `errors` as `{ source, release, errors, occurrences, lastSeenAt }`: client
   errors by release from `browser_errors` and one server line from
-  `server_errors`, for rows last seen in the range. A table the app does not
-  have reads as empty. Each list stops at 20 000 rows, newest days first, and
-  `truncated` says so.
+  `server_errors`, for rows last seen in the range on the app's clock
+  (`usageDayStart(day, timeZone)` gives each day's first instant). A table the
+  app does not have reads as empty. Each list stops at 20 000 rows, newest days
+  first, and `truncated` says so.
 
 ### Server-Timing and slow-route logging
 
