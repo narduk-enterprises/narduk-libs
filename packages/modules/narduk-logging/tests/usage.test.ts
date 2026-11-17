@@ -282,6 +282,9 @@ describe('createUsageSender', () => {
     expect(() => createUsageSender({ endpoint: '//example.com/u' })).toThrow(TypeError)
     expect(() => createUsageSender({ endpoint: '/\\example.com/u' })).toThrow(TypeError)
     expect(() => createUsageSender({ endpoint: 'api/usage' })).toThrow(TypeError)
+    expect(() => createUsageSender({ endpoint: '/\t\\example.com/u' })).toThrow(TypeError)
+    expect(() => createUsageSender({ endpoint: '/\n/example.com/u' })).toThrow(TypeError)
+    expect(() => createUsageSender({ endpoint: '/api/usage' })).not.toThrow()
   })
 })
 

@@ -303,8 +303,16 @@ export function createUsageSender(options: {
   fetch?: typeof fetch
   headers?: Record<string, string>
 }): (batch: UsageBatch) => void {
-  // `//host` and `/\host` both resolve to another origin in a browser.
-  if (!/^\/(?![/\\])/.test(options.endpoint)) {
+  // `//host` and `/\host` resolve to another origin in a browser, and the URL parser drops tabs and
+  // newlines first: so no backslash, whitespace or control character anywhere, and the path must
+  // resolve to the page's own origin.
+  const probe = 'https://same-origin.invalid'
+  const unsafe = [...options.endpoint].some((c) => c <= ' ' || c === '\u007f' || c === '\\')
+  if (
+    unsafe ||
+    !/^\/(?!\/)/.test(options.endpoint) ||
+    new URL(options.endpoint, probe).origin !== probe
+  ) {
     throw new TypeError('Usage endpoint must be a same-origin absolute path')
   }
   return (batch) => {
