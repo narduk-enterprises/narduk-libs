@@ -103,11 +103,20 @@ export interface ParsedUsageBatch {
  * Validates a batch a client sent. Null when it is not a batch at all (wrong shape, wrong schema
  * version, too many items); otherwise the valid items, merged by kind and name, with counts
  * clamped, and how many were dropped. Screen names are normalized again here: the server never
- * trusts the client to have collapsed an id. `allowEvent` narrows event names to the app's list.
+ * trusts the client to have collapsed an id.
+ *
+ * Events are accepted only through `allowEvent`, the app's own list of event names: a name is
+ * client text, and only a fixed vocabulary keeps a person's name or an id out of the table.
+ * Without `allowEvent` every event is dropped. `allowScreen` narrows screens the same way (for
+ * example to the app's route patterns); without it any path-shaped name is kept, after ids are
+ * collapsed.
  */
 export function parseUsageBatch(
   body: unknown,
-  options: { allowEvent?: (name: string) => boolean } = {},
+  options: {
+    allowEvent?: (name: string) => boolean
+    allowScreen?: (name: string) => boolean
+  } = {},
 ): ParsedUsageBatch | null {
   if (!body || typeof body !== 'object') return null
   const { schemaVersion, items } = body as { schemaVersion?: unknown; items?: unknown }
@@ -117,12 +126,14 @@ export function parseUsageBatch(
   let dropped = 0
   for (const raw of items as unknown[]) {
     const item = raw as { kind?: unknown; name?: unknown; count?: unknown } | null
-    const count = Number(item?.count)
+    const count = typeof item?.count === 'number' ? item.count : Number.NaN
     const name = typeof item?.name === 'string' ? item.name : ''
     let kept: string | null = null
-    if (item?.kind === 'screen') kept = usageScreenName(name)
-    else if (item?.kind === 'event' && USAGE_EVENT_NAME.test(name))
-      kept = options.allowEvent && !options.allowEvent(name) ? null : name
+    if (item?.kind === 'screen') {
+      kept = usageScreenName(name)
+      if (kept && options.allowScreen && !options.allowScreen(kept)) kept = null
+    } else if (item?.kind === 'event' && USAGE_EVENT_NAME.test(name))
+      kept = options.allowEvent?.(name) ? name : null
     if (!kept || kept.length > USAGE_LIMITS.nameMax || !Number.isInteger(count) || count < 1) {
       dropped++
       continue
@@ -292,7 +303,8 @@ export function createUsageSender(options: {
   fetch?: typeof fetch
   headers?: Record<string, string>
 }): (batch: UsageBatch) => void {
-  if (!options.endpoint.startsWith('/') || options.endpoint.startsWith('//')) {
+  // `//host` and `/\host` both resolve to another origin in a browser.
+  if (!/^\/(?![/\\])/.test(options.endpoint)) {
     throw new TypeError('Usage endpoint must be a same-origin absolute path')
   }
   return (batch) => {

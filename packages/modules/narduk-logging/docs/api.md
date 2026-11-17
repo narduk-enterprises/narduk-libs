@@ -137,13 +137,17 @@ new expand-only migration.
   read the role); `installUsageFlush(reporter, window)` flushes when the page
   hides.
 - On the server, the app's route authenticates and rate-limits, then calls
-  `parseUsageBatch(body, { allowEvent })`. It refuses a body that is not a batch
-  (at most 50 items), normalizes screen names again, merges duplicates, clamps
-  each count to 100 and reports how many items it dropped. The route picks the
-  day (`usageDay(now, timeZone)`) and the role from its own session, never from
-  the client, and calls `recordUsage(db, { day, role, platform, items })`: one
-  upsert per item in one batch. A role or platform must be a lower-case label,
-  so a name cannot be stored there.
+  `parseUsageBatch(body, { allowEvent, allowScreen })`. It refuses a body that
+  is not a batch (at most 50 items), normalizes screen names again, merges
+  duplicates, clamps each count to 100 and reports how many items it dropped. An
+  event is kept only if `allowEvent` names it: a name is client text, and a
+  fixed vocabulary is what keeps a person's name out. With no `allowEvent`,
+  every event is dropped. `allowScreen` narrows screens the same way. The route
+  picks the day (`usageDay(now, timeZone)`) and the role from its own session,
+  never from the client, and calls
+  `recordUsage(db, { day, role, platform, items })`: one upsert per item in one
+  batch. A role or platform must be a lower-case label, so a name cannot be
+  stored there.
 - `listUsage(db, { since, until?, kind? })`, `usageTotals(rows, by)` and
   `pruneUsage(db, before)` are for the app's own usage page and retention job.
 

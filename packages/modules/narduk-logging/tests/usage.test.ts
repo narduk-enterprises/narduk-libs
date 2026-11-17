@@ -77,27 +77,59 @@ describe('parseUsageBatch', () => {
   })
 
   it('merges, normalizes, clamps and drops bad items', () => {
-    const parsed = parseUsageBatch({
-      schemaVersion: 1,
-      items: [
-        { kind: 'screen', name: '/orders/:id()', count: 2 },
-        { kind: 'screen', name: '/orders/ord-1a2b3c4d5e', count: 3 },
-        { kind: 'event', name: 'order_saved', count: 500 },
-        { kind: 'event', name: 'Has Spaces', count: 1 },
-        { kind: 'event', name: 'x', count: 0 },
-        { kind: 'event', name: 'y', count: 1.5 },
-        { kind: 'page', name: '/', count: 1 },
-        { kind: 'screen', name: 'no-slash', count: 1 },
-        'junk',
-      ],
-    })
+    const parsed = parseUsageBatch(
+      {
+        schemaVersion: 1,
+        items: [
+          { kind: 'screen', name: '/orders/:id()', count: 2 },
+          { kind: 'screen', name: '/orders/ord-1a2b3c4d5e', count: 3 },
+          { kind: 'event', name: 'order_saved', count: 500 },
+          { kind: 'event', name: 'Has Spaces', count: 1 },
+          { kind: 'event', name: 'x', count: 0 },
+          { kind: 'event', name: 'y', count: 1.5 },
+          { kind: 'page', name: '/', count: 1 },
+          { kind: 'screen', name: 'no-slash', count: 1 },
+          { kind: 'screen', name: '/x', count: '3' },
+          { kind: 'screen', name: '/x', count: { valueOf: () => 1 } },
+          'junk',
+        ],
+      },
+      { allowEvent: () => true },
+    )
     expect(parsed).toEqual({
       items: [
         { kind: 'screen', name: '/orders/:id', count: 5 },
         { kind: 'event', name: 'order_saved', count: USAGE_LIMITS.countPerItem },
       ],
-      dropped: 6,
+      dropped: 8,
     })
+  })
+
+  it('drops every event when the app gives no list of event names', () => {
+    expect(
+      parseUsageBatch({
+        schemaVersion: 1,
+        items: [
+          { kind: 'event', name: 'jo_smith', count: 1 },
+          { kind: 'screen', name: '/orders', count: 1 },
+        ],
+      }),
+    ).toEqual({ items: [{ kind: 'screen', name: '/orders', count: 1 }], dropped: 1 })
+  })
+
+  it('narrows screens to the app list when asked', () => {
+    expect(
+      parseUsageBatch(
+        {
+          schemaVersion: 1,
+          items: [
+            { kind: 'screen', name: '/orders/:id()', count: 1 },
+            { kind: 'screen', name: '/people/jo-smith', count: 1 },
+          ],
+        },
+        { allowScreen: (name) => name === '/orders/:id' },
+      ),
+    ).toEqual({ items: [{ kind: 'screen', name: '/orders/:id', count: 1 }], dropped: 1 })
   })
 
   it('narrows events to the app list when asked', () => {
@@ -248,6 +280,8 @@ describe('createUsageSender', () => {
   it('refuses an endpoint on another origin', () => {
     expect(() => createUsageSender({ endpoint: 'https://example.com/u' })).toThrow(TypeError)
     expect(() => createUsageSender({ endpoint: '//example.com/u' })).toThrow(TypeError)
+    expect(() => createUsageSender({ endpoint: '/\\example.com/u' })).toThrow(TypeError)
+    expect(() => createUsageSender({ endpoint: 'api/usage' })).toThrow(TypeError)
   })
 })
 
