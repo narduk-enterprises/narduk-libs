@@ -176,6 +176,32 @@ reports to the app's own same-origin route, kept in the app's D1. Copy
   summed, the newest 200 kept. `listClientErrors(db)` is for the app's health
   page.
 
+### Usage summary (`./usage-summary`)
+
+The one read every app answers so a dashboard that watches many apps can pull
+them all the same way. Counts only: no user, account, session, IP address, error
+message or error route.
+
+- Route: `GET /api/usage/summary` (`USAGE_SUMMARY_PATH`), with
+  `Authorization: Bearer <token>`. The token is the app's own read-only secret;
+  `authorizeUsageSummary(header, token)` compares SHA-256 digests in constant
+  time and refuses everyone while the token is unset or shorter than 32
+  characters. Answer 401 on false, `cache-control: no-store` on success.
+- Query: `since` and `until` (`YYYY-MM-DD`, both included, on the app's clock).
+  `parseUsageSummaryRange(query, today)` defaults to the 30 days ending today
+  and returns null (answer 400) for a malformed day, a range past today or one
+  wider than 90 days.
+- Answer: `buildUsageSummary(db, { app, since, until, timeZone, signIns })`.
+  `schemaVersion` 1, `app`, `generatedAt`, `since`, `until`, `timeZone`;
+  `screens` and `events` as `{ day, name, role, platform, count }` from
+  `usage_counts`; `signIns` as `{ day, role, count }` from the app's own audit,
+  passed in (`signInsByDay(rows, timeZone)` reduces one row per sign-in);
+  `errors` as `{ source, release, errors, occurrences, lastSeenAt }`: client
+  errors by release from `browser_errors` and one server line from
+  `server_errors`, for rows last seen in the range. A table the app does not
+  have reads as empty. Each list stops at 20 000 rows, newest days first, and
+  `truncated` says so.
+
 ### Server-Timing and slow-route logging
 
 Every request gets a `Server-Timing` response header with at least
