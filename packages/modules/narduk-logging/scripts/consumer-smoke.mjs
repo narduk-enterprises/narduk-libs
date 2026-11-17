@@ -42,6 +42,8 @@ import { usageScreenName } from '@narduk-enterprises/narduk-logging/usage'
 if (usageScreenName('/orders/:id()') !== '/orders/:id') throw Error('usage entry changed')
 import { parseClientErrorReport } from '@narduk-enterprises/narduk-logging/client-errors'
 if (parseClientErrorReport({ stack: 'x' }) !== null) throw Error('client-errors entry changed')
+import { USAGE_SUMMARY_PATH } from '@narduk-enterprises/narduk-logging/usage-summary'
+if (USAGE_SUMMARY_PATH !== '/api/usage/summary') throw Error('usage-summary entry changed')
 const sink = createMemorySink()
 for (const create of [createLogger, createBrowserLogger, createWorkerLogger, createNodeLogger]) {
   const log = create({service: 'packed-npm', environment: 'test', sinks: [sink]})

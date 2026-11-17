@@ -68,6 +68,10 @@
       "types": "./dist/client-errors.d.ts",
       "import": "./dist/client-errors.js"
     },
+    "./usage-summary": {
+      "types": "./dist/usage-summary.d.ts",
+      "import": "./dist/usage-summary.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"

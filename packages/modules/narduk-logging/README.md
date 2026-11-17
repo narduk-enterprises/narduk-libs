@@ -48,6 +48,7 @@ measures wall time waiting on something external.
 | Nitro + Cloudflare D1     | `./server-health`                             | Durable 5xx rows (stack-hash dedupe) and cron heartbeat with a staleness rule |
 | Cloudflare D1 + browsers  | `./usage`                                     | First-party screen and event counts by day, role and platform; no person      |
 | Cloudflare D1 + clients   | `./client-errors`                             | Durable browser and native-app error rows; four fields, no stack or contents  |
+| Cloudflare D1 + dashboard | `./usage-summary`                             | One read-only, token-gated summary of use and errors per app; counts only     |
 | Cloudflare Workers        | `./worker`                                    | Console JSON; HTTP, schedules, queues, Durable Objects                        |
 | Node 22+ services and CLI | `./node`                                      | stderr JSON, readable development output, optional official OTLP exporter     |
 | Modern browsers           | `./browser`                                   | Console; explicitly installed same-origin diagnostics delivery                |
