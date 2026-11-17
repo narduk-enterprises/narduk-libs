@@ -1,5 +1,37 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.24.7
+
+### Patch Changes
+
+- a9c6fa3: narduk-logging: a new `./client-errors` entry point, the client half
+  of `./server-health`. A browser reports unhandled errors through
+  `createClientErrorReporter` (four fields: message, path, release, request id;
+  no stack, no contents, five a page load); the app's route validates them
+  strictly with `parseClientErrorReport` and keeps one deduplicated, scrubbed
+  row per error in its own D1 (`BROWSER_ERRORS_DDL`, `clientErrorEntry`,
+  `recordClientError`, `listClientErrors`). A native app posts the same shape.
+  Moved from pacc-trac, which runs it in production. No other entry point
+  changes.
+- e5ed62f: narduk-logging: a new `./usage` entry point for first-party usage
+  counts. An app counts screen opens and named events in the browser
+  (`createUsageReporter`, `createUsageSender`, `installUsageFlush`) and stores
+  sums by day, role and platform in its own D1 (`USAGE_COUNTS_DDL`,
+  `parseUsageBatch`, `recordUsage`, `listUsage`, `usageTotals`, `pruneUsage`).
+  Nothing about a person is kept: no user or session id, no IP address, no query
+  string, no free text; the server sets the day and the role. No other entry
+  point changes.
+- ed8bef2: narduk-shell: `NeFormActions`, the one action row of a form or
+  dialog: right-aligned, the primary last, Cancel to its left, a destructive
+  action alone at the far left in `#lead`; below 40rem it stacks full width with
+  the primary on top. `NeForm`'s save bar and `NeConfirmDialog`'s footer are now
+  this row, so both stack on a phone (the save bar's gap goes from 0.75rem to
+  0.5rem). The rule is written down in the package's new `docs/DESIGN.md`.
+  eslint-config and narduk-app-tools know the new component name, and
+  libs-explorer shows it.
+- Updated dependencies [ed8bef2]
+  - @narduk-enterprises/narduk-app-tools@0.49.12
+
 ## 0.24.6
 
 ### Patch Changes
