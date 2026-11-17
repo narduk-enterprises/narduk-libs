@@ -277,7 +277,7 @@ jobs:
       #
       # The allowlist is `pnpm.auditConfig.ignoreGhsas` in the root package.json,
       # which `pnpm audit` and `scripts/preflight.mjs` both read, so the two
-      # cannot disagree. It holds exactly two entries, and each entry needs its GHSA
+      # cannot disagree. It holds exactly three entries, and each entry needs its GHSA
       # id, the reason it cannot be fixed and a review date, recorded here (JSON
       # has no comments). A speculative entry is a hole waiting for a real
       # advisory to fall into it. If another unfixable high appears, add it the
@@ -302,6 +302,15 @@ jobs:
       #   Added 2026-10-03 on Logan's decision (narduk-libs#1372). Expires
       #   2026-11-02: drop this entry as soon as a patched braces or a micromatch
       #   or fast-glob release without it ships, and re-decide on that date if not.
+      #
+      #   GHSA-fc5q-39xc-vjpf (picomatch <= 4.0.7, ReDoS through single-branch
+      #   repeated extglobs). Unfixable: no patched version exists (npm `latest`
+      #   is 4.0.7, the advisory's first-patched version is null). Reached only
+      #   through dev and build tooling: `@changesets/cli > micromatch`, `vitest`,
+      #   `@nuxt/ui > unplugin-auto-import`; it started failing every PR on
+      #   2026-11-17. Added 2026-11-17 on Narduk's decision (Logan may veto).
+      #   Expires 2026-12-17: drop this entry as soon as a patched picomatch ships,
+      #   and re-decide on that date if not.
       #
       #   Each entry matches its one id, so any other high or critical still fails
       #   the step; the level stays `high`.

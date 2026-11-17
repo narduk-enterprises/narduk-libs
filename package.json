@@ -134,7 +134,8 @@
     "auditConfig": {
       "ignoreGhsas": [
         "GHSA-86w9-cpqp-85rv",
-        "GHSA-vfj7-8cjw-p6xm"
+        "GHSA-vfj7-8cjw-p6xm",
+        "GHSA-fc5q-39xc-vjpf"
       ]
     },
     "patchedDependencies": {
