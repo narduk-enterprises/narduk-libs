@@ -60,6 +60,10 @@
       "types": "./dist/server-health.d.ts",
       "import": "./dist/server-health.js"
     },
+    "./usage": {
+      "types": "./dist/usage.d.ts",
+      "import": "./dist/usage.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"

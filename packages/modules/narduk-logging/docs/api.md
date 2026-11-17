@@ -118,6 +118,41 @@ This is a small durable record for operators, not crash reporting or an audit
 trail: rows are deduplicated, counts are best effort, and nothing is sent
 anywhere.
 
+### First-party usage counts (`./usage`)
+
+For an app that wants to know which screens and features are used, by role and
+day, without a third party and without keeping anything about a person. One
+table holds sums: `day`, `kind` (`screen` or `event`), `name`, `role`,
+`platform` and `count`. There is no user id, session id, IP address, query
+string or free text. The app owns its migration: copy `USAGE_COUNTS_DDL` into a
+new expand-only migration.
+
+- In the browser, `createUsageReporter({ send })` counts `screen(path)` and
+  `event(name)` in memory and sends a batch on `flush()` or when 50 distinct
+  items wait. A screen is a route pattern: Nuxt's `:id()` becomes `:id`, the
+  query is dropped and opaque segments collapse to `:id`; a repeat of the screen
+  just counted is ignored. An event name must match `USAGE_EVENT_NAME` (lower
+  case, no spaces), so it can only be a label. `createUsageSender({ endpoint })`
+  is a same-origin `fetch` with `keepalive` (cookies included, so the server can
+  read the role); `installUsageFlush(reporter, window)` flushes when the page
+  hides.
+- On the server, the app's route authenticates and rate-limits, then calls
+  `parseUsageBatch(body, { allowEvent, allowScreen })`. It refuses a body that
+  is not a batch (at most 50 items), normalizes screen names again, merges
+  duplicates, clamps each count to 100 and reports how many items it dropped. An
+  event is kept only if `allowEvent` names it: a name is client text, and a
+  fixed vocabulary is what keeps a person's name out. With no `allowEvent`,
+  every event is dropped. `allowScreen` narrows screens the same way. The route
+  picks the day (`usageDay(now, timeZone)`) and the role from its own session,
+  never from the client, and calls
+  `recordUsage(db, { day, role, platform, items })`: one upsert per item in one
+  batch. A role or platform must be a lower-case label, so a name cannot be
+  stored there.
+- `listUsage(db, { since, until?, kind? })`, `usageTotals(rows, by)` and
+  `pruneUsage(db, before)` are for the app's own usage page and retention job.
+
+Counts are best effort: a batch lost with a closed tab is not retried.
+
 ### Server-Timing and slow-route logging
 
 Every request gets a `Server-Timing` response header with at least
