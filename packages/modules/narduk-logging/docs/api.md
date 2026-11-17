@@ -153,6 +153,29 @@ new expand-only migration.
 
 Counts are best effort: a batch lost with a closed tab is not retried.
 
+### Client errors (`./client-errors`)
+
+The client half of `./server-health`: unhandled errors a browser or a native app
+reports to the app's own same-origin route, kept in the app's D1. Copy
+`BROWSER_ERRORS_DDL` into an expand-only migration.
+
+- A report is four fields: `message` (200 characters), `path` (120), `release`
+  (40) and `requestId` (null or `[\w.:-]{1,128}`); a body is at most 2 048
+  bytes. No stack, no query string, no form contents, no cookie.
+- In the browser, `createClientErrorReporter({ send, release, path })` turns a
+  thrown value into a report: an `Error`'s message, a string, or the fixed
+  phrase `Non-error value thrown` for anything else (its contents are never
+  read). It drops `AbortError`, repeats of one message on one path and anything
+  past five reports per page load. A native app posts the same four fields.
+- On the server, the app's route checks the origin and a rate limit, then
+  `parseClientErrorReport(body)`: strict, so an extra field refuses the whole
+  report. `clientErrorEntry(report, service, at)` collapses the path to a route
+  and scrubs the message (as `./server-health` does); pass its `errorHash`
+  through `createErrorThrottle`, then
+  `recordClientError(db, { ...entry, count })`: one row per hash, occurrences
+  summed, the newest 200 kept. `listClientErrors(db)` is for the app's health
+  page.
+
 ### Server-Timing and slow-route logging
 
 Every request gets a `Server-Timing` response header with at least
