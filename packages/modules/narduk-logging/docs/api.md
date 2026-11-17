@@ -189,10 +189,10 @@ message or error route.
   characters. Answer 401 on false, `cache-control: no-store` on success.
 - Setting the token: a Worker secret, one per app and environment, named
   `USAGE_SUMMARY_TOKEN` by convention. Pipe it in from the vault
-  (`... | wrangler secret put USAGE_SUMMARY_TOKEN --env <env>`), so it never sits
-  in a terminal, a log, `wrangler.jsonc` `vars` or the repository; never print
-  it. Until it is set the route stays closed (401) for everyone, which is the
-  right state to ship the route in.
+  (`... | wrangler secret put USAGE_SUMMARY_TOKEN --env <env>`), so it never
+  sits in a terminal, a log, `wrangler.jsonc` `vars` or the repository; never
+  print it. Until it is set the route stays closed (401) for everyone, which is
+  the right state to ship the route in.
 - Query: `since` and `until` (`YYYY-MM-DD`, both included, on the app's clock).
   `parseUsageSummaryRange(query, today)` defaults to the 30 days ending today
   and returns null (answer 400) for a malformed day, a range past today or one
