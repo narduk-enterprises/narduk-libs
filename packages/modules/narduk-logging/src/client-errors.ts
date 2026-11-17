@@ -188,7 +188,7 @@ function requestIdOf(reason: ReasonLike): string | null {
 
 /**
  * The message and request id of a thrown value, or null for an `AbortError`. Anything that is not
- * an Error or a string reports as a fixed phrase, never its contents.
+ * an Error or a string reports as a fixed phrase and no request id, never its contents.
  */
 export function describeClientError(
   reason: unknown,
@@ -201,7 +201,11 @@ export function describeClientError(
       : typeof reason === 'string'
         ? reason
         : 'Non-error value thrown'
-  return { message: text.trim().slice(0, L.messageMax) || 'Error', requestId: requestIdOf(like) }
+  // Only an Error's request id (a fetch error carries one): a plain object's fields are never read.
+  return {
+    message: text.trim().slice(0, L.messageMax) || 'Error',
+    requestId: reason instanceof Error ? requestIdOf(like) : null,
+  }
 }
 
 /**

@@ -148,9 +148,11 @@ describe('createClientErrorReporter', () => {
 
   it('never reports the contents of a thrown object, and stays under the body cap', () => {
     const { sent, send } = setup('/' + 'é'.repeat(300))
-    send({ password: 'hunter2' })
+    send({ password: 'hunter2', data: { requestId: 'secret-token-in-a-plain-object' } })
     send(new Error('語'.repeat(500)))
     expect(sent[0]!.message).toBe('Non-error value thrown')
+    expect(sent[0]!.requestId).toBeNull()
+    expect(JSON.stringify(sent)).not.toContain('secret-token')
     expect(JSON.stringify(sent)).not.toContain('hunter2')
     for (const r of sent)
       expect(new TextEncoder().encode(JSON.stringify(r)).length).toBeLessThanOrEqual(
