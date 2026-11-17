@@ -58,6 +58,12 @@ measures wall time waiting on something external.
 | Shell tools               | Python distribution's `narduk-log`            | One JSON record on stderr                                                     |
 | Go 1.22+                  | `go/`, `log/slog`                             | One schema JSON record per line; never installs a process default             |
 
+`./usage-summary` ships closed: every request is a 401 until the app has its own
+read-only token. Set it as a Worker secret, one per app and environment, piped
+from the vault so it is never printed:
+`... | wrangler secret put USAGE_SUMMARY_TOKEN --env <env>`. Never put it in
+`wrangler.jsonc` `vars` or the repository ([API](docs/api.md)).
+
 The JavaScript root has no Nuxt, H3, Node, or browser-global requirement.
 Optional framework/exporter dependencies stay behind their entry points. Swift's
 stream and core code also build on Linux; OSLog is available only on Apple
