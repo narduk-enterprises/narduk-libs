@@ -1,8 +1,5 @@
-# narduk-libs — entry pointer
+# narduk-libs
 
-This repo's operating guidance is in [`AGENTS.md`](./AGENTS.md) in this
-directory. Claude does not load `AGENTS.md` automatically the way it loads
-`CLAUDE.md`, so read it first, in full, before doing anything else — the same is
-true for a local Mac session and a cloud container.
+All guidance for this repository is in AGENTS.md, imported below. Add guidance there, not here.
 
-Gates are in AGENTS.md § Validation.
+@AGENTS.md
