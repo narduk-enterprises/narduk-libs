@@ -6,13 +6,9 @@
 # this script or the allowed hosts change. It must exit 0 within about
 # 5 minutes, so every step is best-effort and the script never aborts.
 #
-# Layers:
-#   1. The estate baseline, when it can be fetched: agent-infrastructure's
-#      scripts/claude-cloud-env-setup.sh (the estate manual at
-#      ~/.local/share/agent-infrastructure and ~/.claude/CLAUDE.md). That repo
-#      is private and the session's git proxy refuses the clone (403, #952), so
-#      nothing below depends on it: Node, pnpm and gh are installed here.
-#   1b. Node at the repo's .nvmrc pin into /opt/node24, pnpm at package.json's
+# Layers (the frozen agent-infrastructure baseline is no longer cloned or run,
+# 2026-11-20; nothing here ever depended on it):
+#   1. Node at the repo's .nvmrc pin into /opt/node24, pnpm at package.json's
 #      packageManager pin through corepack, and the GitHub CLI.
 #   2. uv at the version logging-languages.yml pins, for the narduk-logging
 #      Python quality gate.
@@ -22,8 +18,7 @@
 #      CLI (`pnpm exec playwright install --with-deps chromium`, as ci.yml does),
 #      for the per-package test:e2e jobs.
 #
-# Steps 3 and 4 are capped at 120 s each so the whole script fits the budget
-# after the estate baseline. A step that times out is skipped, not fatal.
+# Steps 3 and 4 are capped at 120 s each so the whole script fits the budget. A step that times out is skipped, not fatal.
 #
 # Not installed: the Swift toolchain for narduk-logging's Swift half. It is
 # about 1 GB and does not fit the setup budget. Run
@@ -40,32 +35,18 @@ set -uo pipefail
 UV_PIN="0.12.7"   # .github/workflows/logging-languages.yml setup-uv version
 NODE_PIN="24.21.0" # .nvmrc
 PNPM_PIN="10.33.4" # package.json packageManager
-AI_ROOT="${HOME}/.local/share/agent-infrastructure"
-AI_URL="https://github.com/narduk-enterprises/agent-infrastructure.git"
 REPO_DIR="/home/user/narduk-libs"
 
 log(){ printf '[narduk-libs-setup] %s\n' "$*"; }
 
-# Same cloud-VM check as the estate script: Linux plus a cloud marker.
+# A cloud VM only: Linux plus a cloud marker.
 [ "$(uname -s)" = "Linux" ] || { log "not Linux; refusing"; exit 0; }
 if [ "${AGENT_CLOUD:-0}" != "1" ] && [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   log "no cloud marker (AGENT_CLOUD, CLAUDE_CODE_REMOTE); refusing"
   exit 0
 fi
 
-# --- 1. estate baseline ----------------------------------------------------------
-if [ ! -d "${AI_ROOT}/.git" ]; then
-  mkdir -p "$(dirname "$AI_ROOT")"
-  git clone --quiet --depth 1 "$AI_URL" "$AI_ROOT" 2>/dev/null \
-    || log "WARN: could not clone agent-infrastructure"
-fi
-if [ -f "${AI_ROOT}/scripts/claude-cloud-env-setup.sh" ]; then
-  bash "${AI_ROOT}/scripts/claude-cloud-env-setup.sh" || log "WARN: estate baseline exited nonzero"
-else
-  log "estate baseline unavailable; installing Node, pnpm and gh directly"
-fi
-
-# --- 1b. Node, pnpm, gh (standalone) ---------------------------------------------
+# --- 1. Node, pnpm, gh ------------------------------------------------------------
 if [ "$(/opt/node24/bin/node --version 2>/dev/null)" != "v${NODE_PIN}" ]; then
   node_tar="node-v${NODE_PIN}-linux-x64.tar.xz"
   if timeout 120 curl -fsSL "https://nodejs.org/dist/v${NODE_PIN}/${node_tar}" -o "/tmp/${node_tar}" \
@@ -152,8 +133,7 @@ AGENTS.md first. \`pnpm run preflight\` is the cheap PR gate. uv is installed.
 Playwright Chromium usually is; if an e2e run cannot find it, run
 \`pnpm exec playwright install --with-deps chromium\`. Swift is not installed: run
 \`python3 scripts/install-swift-linux.py\` if you need the narduk-logging Swift gate.
-A cloud session cannot merge: gh is unauthenticated and verify-pr-gate.py is
-unreachable. Stop at an open PR with \`READY TO MERGE @ <sha>\` on the body's
+A cloud session cannot merge: gh is unauthenticated. Stop at an open PR with \`READY TO MERGE @ <sha>\` on the body's
 first line (docs/operations/claude-cloud-environment.md).
 EOF
 
