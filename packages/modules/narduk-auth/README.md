@@ -65,9 +65,10 @@ holder that reused it and the one holding the newest token must sign in again
 (narduk-libs#2179). This is what makes a stolen refresh token short-lived: the
 thief and the app cannot both keep refreshing, however many times the thief
 rotates first. Two concurrent refreshes with the same token count as reuse too,
-which is why the client must serialize them (`NardukAuthKit` does). An app on
-native sign-in must apply 0007 before deploying this version, or every refresh
-answers 500.
+which is why the client must serialize them (`NardukAuthKit` does). The spent
+token is recorded before the rotation, so if the rotation itself fails the retry
+counts as reuse and the session ends: it fails closed. An app on native sign-in
+must apply 0007 before deploying this version, or every refresh answers 500.
 
 ### Direct native sign-in: passkey and Sign in with Apple
 

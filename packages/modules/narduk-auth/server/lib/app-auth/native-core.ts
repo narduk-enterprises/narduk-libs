@@ -294,6 +294,7 @@ export function createNativeAuth(
         and(
           eq(authNativeSessions.userId, userId),
           eq(authNativeSessions.redirectUri, `native:${grant}`),
+          isNull(authNativeSessions.revokedAt),
         ),
       )
   }

@@ -126,7 +126,7 @@ describe('auth Postgres migrations match the Drizzle pg schema on a real Postgre
     expect(server.version.startsWith('17.')).toBe(true)
     await applyMigrationDirectory(database.sql, coreMigrations)
     const applied = await applyMigrationDirectory(database.sql, AUTH_MIGRATIONS_DIR)
-    expect(applied).toHaveLength(6)
+    expect(applied).toHaveLength(7)
     const coreTables = [
       'api_keys',
       'kv_cache',
@@ -260,7 +260,7 @@ describe('auth Postgres migrations in a named schema', () => {
       schema: SCHEMA,
       table: 'auth_migrations',
     })
-    expect(applied).toHaveLength(6)
+    expect(applied).toHaveLength(7)
     expect(
       await diffSchemaAgainstDatabase(database.sql, schemaTables, {
         collations: { 'auth_oauth_kv.key': 'C' },
@@ -277,8 +277,13 @@ describe('auth Postgres migrations in a named schema', () => {
       JOIN pg_namespace sn ON sn.oid = s.relnamespace AND sn.nspname = '${SCHEMA}'
       JOIN pg_class t ON t.oid = c.confrelid
       JOIN pg_namespace n ON n.oid = t.relnamespace
-      WHERE c.contype = 'f'`)
-    expect(targets).toEqual([{ schema: SCHEMA, name: 'users' }])
+      WHERE c.contype = 'f'
+      ORDER BY t.relname`)
+    // auth_native_refreshes points at auth_native_sessions, in the same schema.
+    expect(targets).toEqual([
+      { schema: SCHEMA, name: 'auth_native_sessions' },
+      { schema: SCHEMA, name: 'users' },
+    ])
   })
 
   it('leaves the app’s tables exactly as created', async () => {
