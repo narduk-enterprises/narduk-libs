@@ -28,6 +28,19 @@ export const authNativeSessions = nardukPgTable(
   (table) => [index('auth_native_sessions_user').on(table.userId)],
 )
 
+/** PostgreSQL mirror of `authNativeRefreshes`. */
+export const authNativeRefreshes = nardukPgTable(
+  'auth_native_refreshes',
+  {
+    refreshHash: text('refresh_hash').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => authNativeSessions.id, { onDelete: 'cascade' }),
+    rotatedAt: epochSeconds('rotated_at').notNull(),
+  },
+  (table) => [index('auth_native_refreshes_session').on(table.sessionId)],
+)
+
 export const authVerifiedEmails = nardukPgTable('auth_verified_emails', {
   userId: text('user_id')
     .primaryKey()

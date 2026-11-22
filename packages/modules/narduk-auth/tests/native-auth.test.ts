@@ -28,10 +28,9 @@ describe('native auth public service on D1', () => {
   beforeAll(async () => {
     binding = await runtime.getD1Database('DB')
     await binding.prepare('CREATE TABLE users (id TEXT PRIMARY KEY)').run()
-    const migration = readFileSync(
-      new URL('../drizzle/0004_native_auth.sql', import.meta.url),
-      'utf8',
-    )
+    const migration = ['0004_native_auth.sql', '0007_native_refresh_reuse.sql']
+      .map((name) => readFileSync(new URL(`../drizzle/${name}`, import.meta.url), 'utf8'))
+      .join(';')
     await binding.batch(
       migration
         .split(';')
@@ -116,21 +115,112 @@ describe('native auth public service on D1', () => {
     await expect(auth.exchange(input)).rejects.toThrow()
   })
 
-  it('rotates refresh credentials atomically and invalidates the previous access token', async () => {
+  async function revokedAt(sessionId: string) {
+    const row = await binding
+      .prepare('SELECT revoked_at FROM auth_native_sessions WHERE id = ?')
+      .bind(sessionId)
+      .first<{ revoked_at: number | null }>()
+    return row?.revoked_at
+  }
+
+  it('rotates refresh credentials and invalidates the previous access token', async () => {
+    const token = await auth.exchange(await request())
+    const refreshed = await auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken })
+    expect(refreshed.sessionId).toBe(token.sessionId)
+    expect(await auth.resolve(token.accessToken)).toBeNull()
+    expect(await auth.resolve(refreshed.accessToken)).toMatchObject({
+      sessionId: token.sessionId,
+    })
+    const spent = await binding
+      .prepare('SELECT * FROM auth_native_refreshes WHERE session_id = ?')
+      .bind(token.sessionId)
+      .all()
+    expect(spent.results).toEqual([
+      {
+        refresh_hash: await nativeAuthDigest(token.refreshToken),
+        session_id: token.sessionId,
+        rotated_at: now,
+      },
+    ])
+    expect(JSON.stringify(spent.results)).not.toContain(token.refreshToken)
+  })
+
+  it('ends the session when a rotated refresh token is presented again', async () => {
+    const token = await auth.exchange(await request())
+    const refreshed = await auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken })
+    await expect(
+      auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken }),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    expect(await revokedAt(token.sessionId)).toBe(now)
+    expect(await auth.resolve(refreshed.accessToken)).toBeNull()
+    await expect(
+      auth.refresh({ clientId: 'mac', refreshToken: refreshed.refreshToken }),
+    ).rejects.toMatchObject({ statusCode: 401 })
+  })
+
+  it("ends a thief's session when the app later presents its stale token", async () => {
+    // The thief rotates first and twice, so the app's token is two rotations old.
+    const token = await auth.issueSession('owner', 'mac', 'passkey')
+    const stolen = await auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken })
+    const thief = await auth.refresh({ clientId: 'mac', refreshToken: stolen.refreshToken })
+    expect(await auth.resolve(thief.accessToken)).not.toBeNull()
+    await expect(
+      auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken }),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    expect(await auth.resolve(thief.accessToken)).toBeNull()
+    await expect(
+      auth.refresh({ clientId: 'mac', refreshToken: thief.refreshToken }),
+    ).rejects.toMatchObject({ statusCode: 401 })
+  })
+
+  it('leaves other sessions of the user alone when one session is reused', async () => {
+    const other = await auth.exchange(await request())
+    const token = await auth.exchange(await request())
+    await auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken })
+    await expect(
+      auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken }),
+    ).rejects.toThrow()
+    expect(await auth.resolve(other.accessToken)).toMatchObject({ sessionId: other.sessionId })
+  })
+
+  it('ends the session when one refresh token is presented twice at once', async () => {
     const token = await auth.exchange(await request())
     const results = await Promise.allSettled([
       auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken }),
       auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken }),
     ])
-    const winners = results.filter((result) => result.status === 'fulfilled')
-    expect(winners).toHaveLength(1)
-    expect(await auth.resolve(token.accessToken)).toBeNull()
-    expect(await auth.resolve(winners[0]!.value.accessToken)).toMatchObject({
-      sessionId: token.sessionId,
-    })
+    expect(results.filter((result) => result.status === 'rejected').length).toBeGreaterThan(0)
+    expect(await revokedAt(token.sessionId)).toBe(now)
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        expect(await auth.resolve(result.value.accessToken)).toBeNull()
+      }
+    }
+  })
+
+  it('does not treat an unknown refresh token as reuse', async () => {
+    const token = await auth.exchange(await request())
     await expect(
-      auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken }),
+      auth.refresh({ clientId: 'mac', refreshToken: nativeAuthSecret() }),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    expect(await revokedAt(token.sessionId)).toBeNull()
+    expect(await auth.resolve(token.accessToken)).not.toBeNull()
+  })
+
+  it('revokes only the passkey-minted sessions of one user', async () => {
+    await binding.prepare("INSERT INTO users VALUES ('other')").run()
+    const passkey = await auth.issueSession('owner', 'mac', 'passkey')
+    const apple = await auth.issueSession('owner', 'mac', 'apple')
+    const pkce = await auth.exchange(await request())
+    const otherUser = await auth.issueSession('other', 'mac', 'passkey')
+    await auth.revokeUserGrant('owner', 'passkey')
+    expect(await auth.resolve(passkey.accessToken)).toBeNull()
+    await expect(
+      auth.refresh({ clientId: 'mac', refreshToken: passkey.refreshToken }),
     ).rejects.toThrow()
+    expect(await auth.resolve(apple.accessToken)).not.toBeNull()
+    expect(await auth.resolve(pkce.accessToken)).not.toBeNull()
+    expect(await auth.resolve(otherUser.accessToken)).not.toBeNull()
   })
 
   it('expires codes and access independently and never extends the absolute session lifetime', async () => {
@@ -232,7 +322,13 @@ describe('native auth public service on D1', () => {
 
   it('cascades account deletion to native credentials', async () => {
     const token = await auth.exchange(await request())
+    await auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken })
     await binding.prepare("DELETE FROM users WHERE id = 'owner'").run()
+    const spent = await binding
+      .prepare('SELECT COUNT(*) AS n FROM auth_native_refreshes WHERE session_id = ?')
+      .bind(token.sessionId)
+      .first()
+    expect(spent).toEqual({ n: 0 })
     expect(await auth.resolve(token.accessToken)).toBeNull()
     await expect(
       auth.refresh({ clientId: 'mac', refreshToken: token.refreshToken }),

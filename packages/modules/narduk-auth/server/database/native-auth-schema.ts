@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 import { users } from '#layer/server/database/schema'
 
@@ -20,6 +20,22 @@ export const authNativeSessions = sqliteTable('auth_native_sessions', {
   revokedAt: integer('revoked_at'),
   createdAt: integer('created_at').notNull(),
 })
+
+/**
+ * Every refresh token a native session has rotated away. Presenting one again
+ * is reuse (a copy is loose), and ends that session (narduk-libs#2179).
+ */
+export const authNativeRefreshes = sqliteTable(
+  'auth_native_refreshes',
+  {
+    refreshHash: text('refresh_hash').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => authNativeSessions.id, { onDelete: 'cascade' }),
+    rotatedAt: integer('rotated_at').notNull(),
+  },
+  (table) => [index('auth_native_refreshes_session').on(table.sessionId)],
+)
 
 /** Proof is tied to the actual address, so changing an account email invalidates it. */
 export const authVerifiedEmails = sqliteTable('auth_verified_emails', {
