@@ -472,15 +472,12 @@ Scaffolds match the reference app shape Buoys is being brought to
   `manifests:validate` scripts, plus the `@narduk-enterprises/narduk-app-tools`
   devDependency that backs them. `apps/web/scripts/validate-manifests.mjs` runs
   pre-deploy and fails the build when `apps/web/wrangler.jsonc` bindings
-  disagree with `Config/cloudflare-app.json`. A new app has no such file: the
-  Operator Portal's app row owns its declaration (D-PORTAL-APP-CONFIG-1), the
-  generator writes neither `Config/cloudflare-app.json` nor
-  `Config/project-lifecycle.json`, and the script says so and exits 0 rather
-  than comparing against nothing. `narduk-app manifests validate` and
-  `foundation:check` resolve the declaration from the portal
-  (`OPERATOR_PORTAL_APP_CONFIG_TOKEN`,
-  `NARDUK_APP_CONFIG_SOURCE=auto|file|portal`). An app scaffolded earlier, which
-  still carries the file, keeps the full in-build comparison.
+  disagree with `Config/cloudflare-app.json`. The generator writes that file
+  again (the app's declaration lives in the repository, not on an Operator
+  Portal row: the portal as config source is retired, 2026-11-24), so the
+  comparison does real work from the first commit. An app whose file is missing
+  gets a notice and exit 0; `foundation:check` reports the missing declaration.
+  Apps run `narduk-app` with `NARDUK_APP_CONFIG_SOURCE=file`.
 - `CONTRACT.md` and `docs/workers-builds.md` are generated alongside
   `README.md`/`AGENTS.md`, documenting the app's own health contract and its
   Cloudflare Workers Builds connection settings.
@@ -591,13 +588,11 @@ Earlier versions were not. The generator left `Config/cloudflare-app.json` to
 onboarding, so item 1.2 was a decided FAIL (`apps/web/wrangler.jsonc` exists but
 the declaration does not), 1.4/3.1/3.2 were `UNKNOWN` for want of
 `access.exposureClass`, and 1.1 failed as soon as a build had run
-(narduk-libs#350, #617). The declaration now lives on the app's Operator Portal
-row (D-PORTAL-APP-CONFIG-1), so the generator writes neither
-`Config/cloudflare-app.json` nor `Config/project-lifecycle.json`: registering
-the app records them, and `narduk-app` resolves them with
-`OPERATOR_PORTAL_APP_CONFIG_TOKEN` (see the narduk-app-tools README, "Where the
-app declaration comes from"). Until the app is registered the checker fails
-loudly instead of guessing.
+(narduk-libs#350, #617). The generator writes `Config/cloudflare-app.json` with
+the part a checkout can know; onboarding adds `product.repository`, the
+Cloudflare account id, `domains` and the `deployment` block to that file. (From
+#1832 to 2026-11-24 the declaration lived on an Operator Portal app row instead;
+that is retired, and the file is the source again.)
 `packages/tooling/narduk-app-tools/tests/foundation/generated-app-conformance.test.ts`
 runs the real checker over real generator output, with the registered
 declaration served through an injected fetch, and is what keeps the claim true:
