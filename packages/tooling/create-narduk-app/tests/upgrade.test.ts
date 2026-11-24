@@ -540,13 +540,7 @@ describe('upgrade Workers Cache key (narduk-libs#672)', () => {
 
     const report = await upgradeNardukApp({ targetDir, write: true })
     expect(statusOf(report, 'apps/web/wrangler.jsonc')).toBe('absent')
-    // A scaffold no longer carries Config/cloudflare-app.json (the portal app
-    // row owns it), so with the wrangler config gone there is no D1 binding
-    // left to infer and unrelated, fact-dependent files may drift. What this
-    // test pins is that nothing is drifted or created for the wrangler config.
-    expect(
-      report.changes.filter((change) => change.status === 'drift').map((c) => c.path),
-    ).not.toContain('apps/web/wrangler.jsonc')
+    expect(report.driftCount).toBe(0)
     await expect(read(targetDir, 'apps/web/wrangler.jsonc')).rejects.toMatchObject({
       code: 'ENOENT',
     })
