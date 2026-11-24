@@ -15,7 +15,7 @@
  *   ceiling, an origin pin, request-id propagation, and a response schema.
  * - `createNardukDataClient` — the product read built on top of it: manifest,
  *   artifact, checksum, consumer validation hooks, a short isolate-local memo,
- *   single-flight coalescing, an opt-in stale-if-error window with a failure
+ *   request-scoped single-flight, an opt-in stale-if-error window with a failure
  *   cooldown, and freshness metadata.
  *
  * Truth is preserved rather than flattened. A value served from the fallback
@@ -46,6 +46,8 @@ const DEFAULT_TTL_MS = 60_000
 const DEFAULT_MAX_ENTRIES = 8
 const DEFAULT_MAX_CACHE_BYTES = 32 * 1024 * 1024
 const DEFAULT_FAILURE_COOLDOWN_MS = 10_000
+/** How long one background refresh holds off the next for the same entry. */
+const REFRESH_CLAIM_MS = 60_000
 const REQUEST_ID_HEADER = 'x-request-id'
 
 /**
@@ -146,6 +148,19 @@ export interface NardukDataRequestContext {
   onPhase?: (phase: 'manifest' | 'artifact' | 'product', source?: NardukDataSource) => void
   /** Correlation id propagated upstream as `x-request-id`. */
   requestId?: string
+  /**
+   * The request this read serves: an H3Event, a Request, any object that lives
+   * as long as it. Concurrent reads with the same `scope` share one upstream
+   * load; reads with different scopes, or none, never do.
+   *
+   * Cloudflare Workers settles a promise only in the request that created it.
+   * A read that joined another request's load was rejected ("This promise was
+   * created by a request that has since ended") once that request ended, and
+   * the load itself never settled, so its in-flight entry stayed and every
+   * later read in the isolate joined the dead load and failed at once
+   * (lakestat-us#484: about one request in ten answered 503).
+   */
+  scope?: object
   /** Cancels this caller's read. Never cancels the shared upstream read. */
   signal?: AbortSignal
   /** Keep a background refresh/store fill alive in the request runtime. */
@@ -900,8 +915,9 @@ async function withCallerSignal<T>(
  * Create a narduk-data reader.
  *
  * One client per isolate is the intended shape: an app holds it at module scope
- * in its own server util so concurrent handlers share the memo and the
- * single-flight map. The cache lives on the instance and is bounded by both
+ * in its own server util so concurrent handlers share the memo. An upstream
+ * load is shared only by reads with the same `context.scope` (one request),
+ * never across requests: see `NardukDataRequestContext.scope`. The cache lives on the instance and is bounded by both
  * `maxEntries` and `maxCacheBytes`, so even a module-scoped client cannot grow
  * without limit; `clear()` drops it, which is what a test suite wants between
  * cases.
@@ -1144,7 +1160,13 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
   const maxCacheBytes = Math.max(0, options.maxCacheBytes ?? DEFAULT_MAX_CACHE_BYTES)
   const failureCooldownMs = Math.max(0, options.failureCooldownMs ?? DEFAULT_FAILURE_COOLDOWN_MS)
   const cache = new Map<string, CacheEntry>()
-  const inFlight = new Map<string, Promise<CacheEntry>>()
+  // In-flight loads, per request scope. Never shared across requests: on
+  // Workers a promise settles only in the request that created it.
+  const inFlight = new WeakMap<object, Map<string, Promise<CacheEntry>>>()
+  // Background refreshes, by cache key: when each was claimed. No other read
+  // awaits one; the claim only keeps a burst of soft-stale reads to a single
+  // refresh, and lapses after REFRESH_CLAIM_MS should its request vanish.
+  const refreshing = new Map<string, number>()
   // Identity of the objects that decide whether a cached value is valid for a
   // caller. Weak, so a schema that goes out of scope does not pin an id.
   const identities = new WeakMap<object, number>()
@@ -1387,6 +1409,52 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     }
   }
 
+  /** Start one background refresh of `key`, unless one was claimed lately. */
+  function refreshInBackground(
+    key: string,
+    startedAt: number,
+    run: () => Promise<CacheEntry>,
+    waitUntil: NardukDataRequestContext['waitUntil'],
+  ): void {
+    const claimed = refreshing.get(key)
+    if (claimed !== undefined && startedAt - claimed < REFRESH_CLAIM_MS) return
+    refreshing.set(key, startedAt)
+    const refresh = run()
+      .then((entry) => {
+        remember(key, entry)
+        return entry
+      })
+      .finally(() => {
+        if (refreshing.get(key) === startedAt) refreshing.delete(key)
+      })
+    waitUntil?.(refresh.catch(() => {}))
+  }
+
+  /** The load of `key` this request scope already has in flight, or a new one. */
+  function flightFor(
+    key: string,
+    scope: object | undefined,
+    run: () => Promise<CacheEntry>,
+  ): Promise<CacheEntry> {
+    let flights = scope === undefined ? undefined : inFlight.get(scope)
+    if (scope !== undefined && !flights) {
+      flights = new Map()
+      inFlight.set(scope, flights)
+    }
+    const existing = flights?.get(key)
+    if (existing) return existing
+    const started: Promise<CacheEntry> = run()
+      .then((entry) => {
+        remember(key, entry)
+        return entry
+      })
+      .finally(() => {
+        if (flights?.get(key) === started) flights.delete(key)
+      })
+    flights?.set(key, started)
+    return started
+  }
+
   return {
     clear(productId) {
       if (productId === undefined) {
@@ -1453,21 +1521,19 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
         return present(memo, 'stale-if-error')
       }
 
-      let flight = inFlight.get(key)
-      if (!flight) {
-        const loadContext = serveWhileRevalidating ? { ...context, onPhase: undefined } : context
-        flight = load(product, loadContext, manifestUrl, segments, memo)
-          .then((entry) => {
-            remember(key, entry)
-            return entry
-          })
-          .finally(() => {
-            inFlight.delete(key)
-          })
-        inFlight.set(key, flight)
-        if (serveWhileRevalidating) context?.waitUntil?.(flight.catch(() => {}))
+      if (serveWhileRevalidating && memo) {
+        refreshInBackground(
+          key,
+          startedAt,
+          () => load(product, { ...context, onPhase: undefined }, manifestUrl, segments, memo),
+          context?.waitUntil,
+        )
+        return present(memo, 'swr')
       }
-      if (serveWhileRevalidating && memo) return present(memo, 'swr')
+
+      const flight = flightFor(key, context?.scope, () =>
+        load(product, context, manifestUrl, segments, memo),
+      )
 
       try {
         const loaded = await withCallerSignal(flight, context?.signal, manifestUrl)

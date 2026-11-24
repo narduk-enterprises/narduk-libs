@@ -346,7 +346,7 @@ describe('narduk-data client', () => {
     expect(upstream.calls.filter((call) => call.url === artifactUrl)).toHaveLength(2)
   })
 
-  it('coalesces concurrent readers of the same product onto one upstream read', async () => {
+  it('coalesces concurrent readers in one request onto one upstream read', async () => {
     const { release } = await successRoutes()
     let releaseArtifact = () => {}
     const gate = new Promise<void>((resolve) => {
@@ -363,7 +363,8 @@ describe('narduk-data client', () => {
     })
     const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
 
-    const readers = Array.from({ length: 5 }, () => client.read(productOf()))
+    const scope = {}
+    const readers = Array.from({ length: 5 }, () => client.read(productOf(), { scope }))
     await Promise.resolve()
     releaseArtifact()
     const results = await Promise.all(readers)
@@ -371,6 +372,60 @@ describe('narduk-data client', () => {
     expect(results.every((result) => result.freshness.source === 'upstream')).toBe(true)
     expect(upstream.calls.filter((call) => call.url === manifestUrl)).toHaveLength(1)
     expect(upstream.calls.filter((call) => call.url === artifactUrl)).toHaveLength(1)
+  })
+
+  it('never shares a load across requests, or between reads with no scope', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await Promise.all([
+      client.read(productOf(), { scope: {} }),
+      client.read(productOf(), { scope: {} }),
+      client.read(productOf()),
+    ])
+
+    expect(upstream.calls.filter((call) => call.url === artifactUrl)).toHaveLength(3)
+  })
+
+  // lakestat-us#484. On Workers a promise settles only in the request that
+  // created it: once request A ends, its load never settles. A later request
+  // that joined it failed at once ("This promise was created by a request that
+  // has since ended"), and because the load never settled its in-flight entry
+  // was never cleared, so every later read in the isolate failed the same way.
+  it('does not join a load whose request has ended and can never settle', async () => {
+    const { release } = await successRoutes()
+    const upstream = fakeFetch({
+      [artifactUrl]: [
+        // Request A's artifact read: its request ended, so it never settles.
+        () => new Promise<Response>(() => {}),
+        async () => json(release.artifactText),
+      ],
+      [manifestUrl]: [async () => json(release.manifestText)],
+    })
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      now: () => NOW,
+      origin: ORIGIN,
+      timeoutMs: 60_000,
+    })
+    const requestA = {}
+    const requestB = {}
+
+    void client.read(productOf(), { scope: requestA })
+    await vi.waitFor(() => {
+      expect(upstream.calls.some((call) => call.url === artifactUrl)).toBe(true)
+    })
+    const notSettled = Symbol('not settled')
+    const readB = client.read(productOf(), { scope: requestB })
+    const answer = await Promise.race([
+      readB,
+      new Promise((resolve) => setTimeout(() => resolve(notSettled), 200)),
+    ])
+
+    expect(answer).not.toBe(notSettled)
+    expect(answer).toMatchObject({ data: { stations: ['41008'] } })
+    expect(upstream.calls.filter((call) => call.url === artifactUrl)).toHaveLength(2)
   })
 
   it('retries an idempotent GET once by default and then succeeds', async () => {
@@ -734,8 +789,9 @@ describe('narduk-data client', () => {
     const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
     const controller = new AbortController()
 
-    const first = client.read(productOf(), { signal: controller.signal })
-    const second = client.read(productOf())
+    const scope = {}
+    const first = client.read(productOf(), { scope, signal: controller.signal })
+    const second = client.read(productOf(), { scope })
     await Promise.resolve()
     controller.abort()
     held.open()
