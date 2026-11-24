@@ -3519,11 +3519,12 @@ origin. No response tee buffers an unbounded second copy.
 
 Set `product.staleWhileRevalidateMs` to an absolute hard age and supply
 `context.waitUntil` to opt into background refresh. A soft-stale memo returns
-immediately with `freshness.source: 'swr'`, while one coalesced refresh runs.
-Failed refreshes never advance the hard age. At that age, or without
-`waitUntil`, the read blocks and propagates failure unless the caller separately
-opted into `maxStaleMs`. Keep that option unset when the hard age must fail
-closed. A read filled from the edge store reports `source: 'cache'`.
+immediately with `freshness.source: 'swr'`, while one background refresh runs
+(no other read awaits it). Failed refreshes never advance the hard age. At that
+age, or without `waitUntil`, the read blocks and propagates failure unless the
+caller separately opted into `maxStaleMs`. Keep that option unset when the hard
+age must fail closed. A read filled from the edge store reports
+`source: 'cache'`.
 
 `context.onPhase(phase, source?)` can connect manifest, artifact and product
 reads to an app's existing request timer. Background refresh does not retain or
@@ -3567,9 +3568,15 @@ features are opt-in; existing clients keep their existing behavior.
   a checksum mismatch are never repeated, and a non-GET is attempted exactly
   once whatever it returns. `retries` (default 1) is the number of extra
   attempts; there is no backoff sleep, so no timer is left behind.
-- **Single-flight** — concurrent readers of the same product join the read
-  already in flight instead of each issuing their own. The cache key includes
-  every ceiling, validator and hook that decides whether a value is valid, so a
+- **Single-flight, within one request** — concurrent reads of the same product
+  that pass the same `context.scope` (the H3Event or Request they serve) join
+  the read already in flight instead of each issuing their own. Reads from
+  different requests, or with no `scope`, never share a load: on Cloudflare
+  Workers a promise settles only in the request that created it, so a read
+  joined to another request's load failed once that request ended, and the
+  abandoned load poisoned the isolate for every later read (lakestat-us#484).
+  The memo is still shared by every request. The cache key includes every
+  ceiling, validator and hook that decides whether a value is valid, so a
   stricter caller is never answered from a permissive caller's entry.
 - **Revalidation downloads only what moved** — once `ttlMs` (default 60000)
   lapses the manifest is re-read. When it still names the same release and the
@@ -3613,8 +3620,8 @@ features are opt-in; existing clients keep their existing behavior.
   and `proxy-authorization` are dropped rather than forwarded; every URL is
   pinned to the configured origin and a redirect is an error (sent as
   `redirect: 'manual'`, which the Workers runtime accepts; a 3xx is never
-  followed). Single-flight means the joined callers are answered by a request
-  carrying the first caller's id.
+  followed). Single-flight means the callers joined within one request are
+  answered by a request carrying the first caller's id.
 
 Failures are a `NardukDataError` carrying `reason` (`aborted` | `checksum` |
 `http` | `missing` | `network` | `rejected` | `schema` | `timeout` |
