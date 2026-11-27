@@ -1721,9 +1721,9 @@ try {
             glob: '13.0.6',
             // nuxt 4.7.0 peers rolldown ~1.2.1, but vite 8.4.0 (2026-11-26) pulls
             // rolldown ~1.3.2, so this lockless install fails "unmet peer rolldown".
-            // vite ~8.3.5 resolves 8.3.8 (rolldown ~1.2.18), which also meets
+            // vite ~8.3.8 (rolldown ~1.2.18) also meets
             // @nuxt/vite-builder 4.7.0's vite ^8.3.8. Remove when nuxt peers rolldown 1.3.
-            vite: '~8.3.5',
+            vite: '~8.3.8',
           },
           peerDependencyRules: {
             allowAny: WORKSPACE_PEER_ALLOW_ANY,
