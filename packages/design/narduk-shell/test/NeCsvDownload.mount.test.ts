@@ -57,4 +57,20 @@ describe('NeCsvDownload', () => {
     expect(wrapper.emitted('download')![0]![1]).toBe('Rows.CSV')
     expect(wrapper.get('button').attributes('aria-label')).toBe('Download 1 row as CSV')
   })
+
+  // axe label-content-name-mismatch (WCAG 2.5.3): the accessible name must contain the visible label.
+  it('keeps the visible label inside the accessible name', async () => {
+    const name = (label: string | undefined, rows: unknown[]) =>
+      mount(NeCsvDownload, { props: { columns: [{ key: 'a', label: 'A' }], label, rows } })
+        .get('button')
+        .attributes('aria-label')
+    const ten = Array.from({ length: 10 }, (_, a) => ({ a }))
+    expect(name('Download CSV', ten)).toBe('Download CSV (10 rows)')
+    expect(name('Download sources CSV', [{ a: 1 }])).toBe('Download sources CSV (1 row)')
+    expect(name('csv', ten)).toBe('Download 10 rows as CSV')
+    expect(name('  ', ten)).toBe('Download 10 rows as CSV')
+    for (const label of ['Download CSV', 'Export', 'CSV']) {
+      expect(name(label, ten)!.toLowerCase()).toContain(label.toLowerCase())
+    }
+  })
 })

@@ -15,8 +15,14 @@
  *
  * Rendering is inert on the server: the button only builds the file when it
  * is clicked, in the browser.
+ *
+ * The accessible name says how many rows the file holds and always contains
+ * the visible `label` (WCAG 2.5.3, axe `label-content-name-mismatch`): the
+ * default "CSV" reads "Download 2 rows as CSV"; a label it does not already
+ * contain leads, "Download sources CSV (2 rows)".
  */
 import UButton from '@nuxt/ui/components/Button.vue'
+import { computed } from 'vue'
 
 import { toCsv } from '../utils/data-table'
 
@@ -30,6 +36,14 @@ const props = withDefaults(defineProps<NeCsvDownloadProps<TRow>>(), {
 })
 
 const emit = defineEmits<{ download: [csv: string, filename: string] }>()
+
+const accessibleName = computed(() => {
+  const count = props.rows.length === 1 ? '1 row' : `${props.rows.length} rows`
+  const phrase = `Download ${count} as CSV`
+  const visible = (props.label ?? '').replaceAll(/\s+/g, ' ').trim()
+  if (!visible || phrase.toLowerCase().includes(visible.toLowerCase())) return phrase
+  return `${visible} (${count})`
+})
 
 function download(): void {
   if (!import.meta.client) return
@@ -59,7 +73,7 @@ function download(): void {
     icon="i-lucide-download"
     :size="size"
     :label="label"
-    :aria-label="`Download ${rows.length === 1 ? '1 row' : `${rows.length} rows`} as CSV`"
+    :aria-label="accessibleName"
     @click="download"
   />
 </template>
