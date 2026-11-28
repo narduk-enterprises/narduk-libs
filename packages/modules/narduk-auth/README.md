@@ -11,8 +11,9 @@ the version the generator carries.
 
 ## Native app sign-in (opt-in, local backend)
 
-Apply `drizzle/0004_native_auth.sql` after the existing auth migrations, then
-configure explicit native clients and optional persistent email verification:
+Apply `drizzle/0004_native_auth.sql` and `drizzle/0007_native_refresh_reuse.sql`
+after the existing auth migrations, then configure explicit native clients and
+optional persistent email verification:
 
 ```ts
 runtimeConfig: {
@@ -57,6 +58,18 @@ requires browser sign-in again. `POST /api/auth/native/revoke` takes the same
 body and revokes that session. Password reset/change revokes all native sessions
 when the feature is enabled; deleting an account cascades to its credentials.
 
+A refresh token works once. Each rotated-away token's hash is kept in
+`auth_native_refreshes` (`drizzle/0007_native_refresh_reuse.sql`) until its
+session row is deleted, and presenting one again ends the session: both the
+holder that reused it and the one holding the newest token must sign in again
+(narduk-libs#2179). This is what makes a stolen refresh token short-lived: the
+thief and the app cannot both keep refreshing, however many times the thief
+rotates first. Two concurrent refreshes with the same token count as reuse too,
+which is why the client must serialize them (`NardukAuthKit` does). The spent
+token is recorded before the rotation, so if the rotation itself fails the retry
+counts as reuse and the session ends: it fails closed. An app on native sign-in
+must apply 0007 before deploying this version, or every refresh answers 500.
+
 ### Direct native sign-in: passkey and Sign in with Apple
 
 A native app can also get the same tokens without the browser, from a credential
@@ -91,7 +104,10 @@ clients are configured and 503 off the local backend.
   `drizzle/0003_webauthn_credentials.sql`.
 
 The sessions are ordinary native sessions: refresh, revoke, password-change and
-account-deletion revocation all apply.
+account-deletion revocation all apply. Deleting a passkey
+(`DELETE /api/auth/passkeys/:id`) also ends the user's passkey-minted native
+sessions. A session does not record which passkey minted it, so all of them end,
+not only the deleted credential's; Apple and browser-PKCE sessions are kept.
 
 Protected product APIs explicitly call `getNativeAuthSession(event)` from
 `server/utils/native-auth`, load the current account, and apply their own
@@ -266,6 +282,7 @@ Postgres see [Postgres (Hyperdrive)](#postgres-hyperdrive) below):
 4. `drizzle/0004_native_auth.sql`
 5. `drizzle/0005_mcp_oauth.sql`
 6. `drizzle/0006_identities_and_signin_links.sql`
+7. `drizzle/0007_native_refresh_reuse.sql`
 
 As of 1.20.0, `0002_local_email_auth.sql` is **required for the default local
 backend**, not just the optional email-link feature: every local email/password
@@ -294,11 +311,17 @@ both indexes) and keeps every row; on Postgres it swaps the named
 `auth_email_links_purpose_check` constraint. Apply it before upgrading to a
 version that ships these features, whether or not the app turns them on.
 
+`0007_native_refresh_reuse.sql` adds `auth_native_refreshes`, the spent native
+refresh tokens (see
+[Native app sign-in](#native-app-sign-in-opt-in-local-backend)). It is additive.
+An app with native clients must apply it before upgrading; on any other app it
+is a no-op table.
+
 ### Postgres (Hyperdrive)
 
 An app on narduk-core's `databaseBackend: 'postgres'` applies the Postgres
 translations in `drizzle-pg/` instead. They carry the same file names and the
-same tables as `drizzle/`, `drizzle-pg/0001`–`0006`, and are exported as
+same tables as `drizzle/`, `drizzle-pg/0001`–`0007`, and are exported as
 `@narduk-enterprises/narduk-auth/drizzle-pg/*`.
 
 **In a named schema** (narduk-libs#1953): set `nardukCore.postgresSchema` once
@@ -869,7 +892,9 @@ in the zone**, including any future or compromised subdomain. Do not do it
 ### Managing enrolled passkeys
 
 `/settings/passkeys` lists a user's credentials (name, created, last used) and
-revokes them. Up to 20 credentials per user.
+revokes them. Up to 20 credentials per user. Revoking one also ends the user's
+native-app sessions that signed in with a passkey (see
+[Direct native sign-in](#direct-native-sign-in-passkey-and-sign-in-with-apple)).
 
 ## Sign-in ends in a full page load
 

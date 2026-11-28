@@ -1,7 +1,7 @@
 import { and, eq, gt, isNull } from 'drizzle-orm'
 import { createError } from 'h3'
 
-import { authNativeSessions } from '#narduk-auth/schema'
+import { authNativeRefreshes, authNativeSessions } from '#narduk-auth/schema'
 
 import type {
   NativeAuthClient,
@@ -192,16 +192,50 @@ export function createNativeAuth(
     )
   }
 
+  /**
+   * Rotates a refresh token. A token this session already rotated away is a
+   * loose copy: whichever holder presents it, the session ends for both
+   * (narduk-libs#2179). The spent token's primary key in `auth_native_refreshes`
+   * is the single-use guard, so two concurrent presentations of one token end
+   * the session too, instead of minting two live successors.
+   */
   async function refresh(input: {
     clientId: string
     refreshToken: string
   }): Promise<NativeTokenResponse> {
     if (!permitted(input.clientId)) return invalidGrant()
+    const refreshHash = await nativeAuthDigest(input.refreshToken)
+    const [session] = await db
+      .select({ id: authNativeSessions.id })
+      .from(authNativeSessions)
+      .where(
+        and(
+          eq(authNativeSessions.clientId, input.clientId),
+          eq(authNativeSessions.refreshHash, refreshHash),
+          live(),
+        ),
+      )
+      .limit(1)
+    if (!session) {
+      const [spent] = await db
+        .select({ sessionId: authNativeRefreshes.sessionId })
+        .from(authNativeRefreshes)
+        .where(eq(authNativeRefreshes.refreshHash, refreshHash))
+        .limit(1)
+      if (spent) await revokeSession(spent.sessionId)
+      return invalidGrant()
+    }
+    const [claimed] = await db
+      .insert(authNativeRefreshes)
+      .values({ refreshHash, sessionId: session.id, rotatedAt: clock() })
+      .onConflictDoNothing()
+      .returning({ sessionId: authNativeRefreshes.sessionId })
+    if (!claimed) {
+      await revokeSession(session.id)
+      return invalidGrant()
+    }
     return rotate(
-      and(
-        eq(authNativeSessions.clientId, input.clientId),
-        eq(authNativeSessions.refreshHash, await nativeAuthDigest(input.refreshToken)),
-      ),
+      and(eq(authNativeSessions.id, session.id), eq(authNativeSessions.refreshHash, refreshHash)),
     )
   }
 
@@ -233,6 +267,13 @@ export function createNativeAuth(
       .where(eq(authNativeSessions.refreshHash, await nativeAuthDigest(refreshToken)))
   }
 
+  async function revokeSession(sessionId: string): Promise<void> {
+    await db
+      .update(authNativeSessions)
+      .set({ revokedAt: clock(), accessHash: null, refreshHash: null, codeHash: null })
+      .where(eq(authNativeSessions.id, sessionId))
+  }
+
   async function revokeUser(userId: string): Promise<void> {
     await db
       .update(authNativeSessions)
@@ -240,5 +281,32 @@ export function createNativeAuth(
       .where(eq(authNativeSessions.userId, userId))
   }
 
-  return { issueCode, issueSession, exchange, refresh, resolve, revoke, revokeUser }
+  /**
+   * Ends every session a user signed in to directly with `grant`. A session
+   * does not record which passkey (or Apple ID) minted it, so this is the
+   * narrowest revocation removing one credential can make.
+   */
+  async function revokeUserGrant(userId: string, grant: NativeDirectGrant): Promise<void> {
+    await db
+      .update(authNativeSessions)
+      .set({ revokedAt: clock(), accessHash: null, refreshHash: null, codeHash: null })
+      .where(
+        and(
+          eq(authNativeSessions.userId, userId),
+          eq(authNativeSessions.redirectUri, `native:${grant}`),
+          isNull(authNativeSessions.revokedAt),
+        ),
+      )
+  }
+
+  return {
+    issueCode,
+    issueSession,
+    exchange,
+    refresh,
+    resolve,
+    revoke,
+    revokeUser,
+    revokeUserGrant,
+  }
 }
