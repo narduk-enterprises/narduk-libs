@@ -513,7 +513,7 @@ function assertExactGeneratedPackagePins(
   }
 }
 
-function addTarballOverrides(generatedDirectory, packages, tarballs) {
+function addConsumerOverrides(generatedDirectory, packages, tarballs) {
   const rootManifestPath = join(generatedDirectory, 'package.json')
   const rootManifest = readJson(rootManifestPath)
   const tarballOverrides = Object.fromEntries(
@@ -528,6 +528,9 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
   // (narduk-libs#316), so the consumer keeps the Unhead its Nuxt resolves.
   rootManifest.pnpm.overrides = {
     ...(rootManifest.pnpm.overrides || {}),
+    // Each fixture installs without a lockfile. Vite 8.4 pulls Rolldown 1.3,
+    // outside Nuxt's ~1.2.1 peer. Remove once both consumer roots accept 1.3.
+    vite: '~8.3.8',
     ...tarballOverrides,
   }
   writeFileSync(rootManifestPath, `${JSON.stringify(rootManifest, null, 2)}\n`)
@@ -1283,7 +1286,7 @@ async function proveGeneratedConsumer({
 
   const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
   assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
-  addTarballOverrides(generatedDirectory, packages, tarballs)
+  addConsumerOverrides(generatedDirectory, packages, tarballs)
   configureConsumerFonts(generatedDirectory)
   addPackedCoreUiRuntimeSmoke(generatedDirectory)
   addPackedShellRootValueImportSmoke(generatedDirectory)
@@ -1292,7 +1295,7 @@ async function proveGeneratedConsumer({
   // The public app carries only the public capability set, so it has no
   // required-package list of its own; every pin it has must still be exact.
   assertExactGeneratedPackagePins(publicDirectory, packagesByName, [])
-  addTarballOverrides(publicDirectory, packages, tarballs)
+  addConsumerOverrides(publicDirectory, packages, tarballs)
   configureConsumerFonts(publicDirectory)
   assertNoForbiddenGeneratedReferences(publicDirectory)
   assertConsumerDependencyScope(loadWorkspace(root), [
@@ -1719,11 +1722,6 @@ try {
             'eslint-plugin-vitest>@typescript-eslint/utils': '8.64.0',
             '@nuxt/eslint': '1.15.2',
             glob: '13.0.6',
-            // nuxt 4.7.0 peers rolldown ~1.2.1, but vite 8.4.0 (2026-11-26) pulls
-            // rolldown ~1.3.2, so this lockless install fails "unmet peer rolldown".
-            // vite ~8.3.8 (rolldown ~1.2.18) also meets
-            // @nuxt/vite-builder 4.7.0's vite ^8.3.8. Remove when nuxt peers rolldown 1.3.
-            vite: '~8.3.8',
           },
           peerDependencyRules: {
             allowAny: WORKSPACE_PEER_ALLOW_ANY,
@@ -1734,7 +1732,7 @@ try {
       2,
     )}\n`,
   )
-  addTarballOverrides(consumerDirectory, packages, tarballs)
+  addConsumerOverrides(consumerDirectory, packages, tarballs)
 
   await runChecked('pnpm', ['install', '--ignore-scripts', '--no-frozen-lockfile'], {
     cwd: consumerDirectory,
