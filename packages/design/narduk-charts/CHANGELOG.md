@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.12.3
+
+### Patch Changes
+
+- e74c7a9: Removes the unused `tools/configure-package-registry-auth.mjs` (it
+  read the retired package-read secret). It was never published (`files` is
+  `dist` only).
+
 ## 2.12.2
 
 ### Patch Changes
