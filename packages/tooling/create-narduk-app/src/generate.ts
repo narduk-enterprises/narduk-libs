@@ -970,7 +970,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'Default installs (`pnpm install`, CI, Workers Builds `cf:build`) need no GitHub Packages token. `scripts/gh-packages-run.mjs` stays in the repo as an opt-in break-glass helper: temporarily point `.npmrc` at `https://npm.pkg.github.com` and run through that script with `GH_PACKAGES_READ` if the mirror is down. Never write the token into `~/.npmrc`, a tracked repository file, or a per-app alias.',
         '',
-        "Dependabot reads the same anonymous mirror. The generated `dependabot.yml` declares it as a scope-less `npm-nard-uk` registry, because Dependabot's proxy blocks undeclared hosts; its token is the org-level `NPM_NARD_UK_PLACEHOLDER` Dependabot secret, a non-credential value the mirror ignores. It does not need `NARDUK_PLATFORM_GH_PACKAGES_READ`.",
+        "Dependabot reads the same anonymous mirror. The generated `dependabot.yml` declares it as a scope-less `npm-nard-uk` registry, because Dependabot's proxy blocks undeclared hosts; its token is the org-level `NPM_NARD_UK_PLACEHOLDER` Dependabot secret, a non-credential value the mirror ignores. It needs no package-read secret.",
         '',
         'Before the first push, onboarding runs pnpm install and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',

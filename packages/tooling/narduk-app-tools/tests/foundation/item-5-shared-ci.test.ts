@@ -178,7 +178,7 @@ describe('item 5 -- shared CI', () => {
         '  narduk-packages:',
         '    type: npm-registry',
         '    url: https://npm.pkg.github.com',
-        '    token: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+        '    token: ${{ secrets.LEGACY_PACKAGE_READ_PAT }}',
         '    scope: "@narduk-enterprises"',
         'updates:',
         '  - package-ecosystem: "npm"',

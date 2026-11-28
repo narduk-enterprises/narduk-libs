@@ -15,7 +15,7 @@ import type { AppVisibility } from './types.js'
 // skip: #108 / `eb7983fc`; foundation-check skip: this SHA). Tokenless
 // private callers need both: #97's Configure package registry auth still
 // classified every `@narduk-enterprises/*` app as private and exited 1
-// without `NARDUK_PLATFORM_GH_PACKAGES_READ` (narduk-libs#568).
+// without the package-read secret, retired 2026-11-27 (narduk-libs#568).
 //
 // Still carries #97's `node-version-file` input and the always-run required
 // `caller-lint` job (workflow-level concurrency, top-level and per-job
