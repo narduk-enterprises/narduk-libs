@@ -1,0 +1,60 @@
+name: Prune GitHub Packages
+
+# Deletes old @narduk-enterprises versions from GitHub Packages once
+# npm.nard.uk archives them (scripts/prune-github-packages.mjs). Manual only;
+# a dry run unless `apply` is set. The job token can delete a version only
+# where this repository has the Admin role on the package.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete (otherwise a dry run)
+        type: boolean
+        default: false
+      packages:
+        description: Space-separated package names (empty = every npm package in the org)
+        type: string
+        default: ""
+      limit:
+        description: Most deletes this run
+        type: string
+        default: "1000"
+
+concurrency:
+  group: prune-github-packages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/prune-github-packages.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Prune
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY: ${{ inputs.apply }}
+          PACKAGES: ${{ inputs.packages }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          args=(--limit "$LIMIT")
+          [ "$APPLY" = "true" ] && args+=(--apply)
+          for p in $PACKAGES; do args+=(--package "$p"); done
+          node scripts/prune-github-packages.mjs "${args[@]}"
