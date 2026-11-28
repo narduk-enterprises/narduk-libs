@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.40.3
+
+### Patch Changes
+
+- 66861d5: Remove the dots that made the empty sign-in password field look
+  filled. Use sentence case for sign-in and account creation actions and page
+  titles.
+
 ## 1.40.2
 
 ### Patch Changes
