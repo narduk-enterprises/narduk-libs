@@ -1,10 +1,9 @@
-import { DEPENDABOT_COOLDOWN_DAYS, dependabotPolicyLines } from './dependency-policy.js'
+import { DEPENDABOT_COOLDOWN_DAYS } from './dependency-policy.js'
 import {
   applySchedule,
   hasScheduleSlot,
   readScheduleOverride,
   scheduleFor,
-  scheduleLines,
 } from './dependabot-schedule.js'
 import type { DependabotSchedule } from './dependabot-schedule.js'
 import { isDisowned, UNMANAGED_MARKER, unmanagedMarkerFor } from './ownership.js'
@@ -177,63 +176,6 @@ export function dependabotMatchesRegistry(
   )
 }
 
-/** Two-lane Dependabot file for an app that still installs from GitHub Packages. No placeholder token. */
-export function githubPackagesDependabot(
-  appName: string,
-  schedule: DependabotSchedule = scheduleFor(appName),
-): string {
-  return [
-    'version: 2',
-    'registries:',
-    '  npm-github:',
-    "    type: 'npm-registry'",
-    "    url: 'https://npm.pkg.github.com'",
-    "    token: '${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}'",
-    "    scope: '@narduk-enterprises'",
-    'updates:',
-    "  - package-ecosystem: 'npm'",
-    "    directory: '/'",
-    '    registries:',
-    "      - 'npm-github'",
-    '    schedule:',
-    "      interval: 'weekly'",
-    ...scheduleLines(schedule),
-    '    labels:',
-    "      - 'dependencies'",
-    '    open-pull-requests-limit: 2',
-    ...dependabotPolicyLines(),
-    '    groups:',
-    '      safe:',
-    '        applies-to: version-updates',
-    '        patterns:',
-    "          - '*'",
-    "          - '@narduk-enterprises/*'",
-    '        update-types:',
-    "          - 'minor'",
-    "          - 'patch'",
-    '      majors:',
-    '        applies-to: version-updates',
-    '        patterns:',
-    "          - '*'",
-    "          - '@narduk-enterprises/*'",
-    '        update-types:',
-    "          - 'major'",
-    "  - package-ecosystem: 'github-actions'",
-    "    directory: '/'",
-    '    schedule:',
-    "      interval: 'weekly'",
-    ...scheduleLines(schedule),
-    '    labels:',
-    "      - 'dependencies'",
-    '    open-pull-requests-limit: 1',
-    '    groups:',
-    '      github-actions:',
-    '        patterns:',
-    "          - '*'",
-    '',
-  ].join('\n')
-}
-
 export function resolveDependabot(
   current: string | null,
   mirrorTemplate: string,
@@ -244,14 +186,14 @@ export function resolveDependabot(
   // which a rewrite keeps.
   const override = current === null ? null : readScheduleOverride(current)
   const schedule = override ?? scheduleFor(appName)
-  const desired = applySchedule(
-    registry === 'github-packages' ? githubPackagesDependabot(appName) : mirrorTemplate,
-    schedule,
-    override,
-  )
-  if (desired.includes(PLACEHOLDER_SECRET) && registry === 'github-packages') {
+  const desired = applySchedule(mirrorTemplate, schedule, override)
+  if (registry === 'github-packages' && !(current !== null && isDisowned(current))) {
+    // No Dependabot credential reads GitHub Packages any more: the estate's
+    // package-read PAT was retired 2026-11-27 (no hand-made tokens), and
+    // Dependabot cannot use a job token. The route is the anonymous mirror.
     return {
-      detail: 'Refusing to add a placeholder-token registry to a GitHub Packages app.',
+      detail:
+        'This app still installs @narduk-enterprises from GitHub Packages, which Dependabot can no longer read (the package-read PAT was retired 2026-11-27). Route the scope to https://npm.nard.uk (.npmrc) and drop npm.pkg.github.com tarball URLs from the lockfile; upgrade then writes the mirror file.',
       status: 'unresolved',
     }
   }

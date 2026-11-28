@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   dependabotMatchesRegistry,
   detectPackageRegistry,
-  githubPackagesDependabot,
   hasPolicyCooldown,
   hasNpmUpdateBlock,
 } from '../src/dependabot-registry.js'
@@ -39,7 +38,7 @@ const githubWorking = [
   '  npm-github:',
   '    type: npm-registry',
   '    url: https://npm.pkg.github.com',
-  '    token: ${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}',
+  '    token: ${{secrets.LEGACY_PACKAGE_READ_PAT}}',
   "    scope: '@narduk-enterprises'",
   'updates:',
   "  - package-ecosystem: 'npm'",
@@ -127,8 +126,6 @@ describe('package registry detection', () => {
     expect(dependabotMatchesRegistry(githubWorking, 'github-packages')).toBe(true)
     expect(dependabotMatchesRegistry(githubWorking, 'narduk-mirror')).toBe(false)
     expect(dependabotMatchesRegistry(mirrorWorking, 'narduk-mirror')).toBe(true)
-    expect(githubPackagesDependabot('demo-app')).not.toContain(PLACEHOLDER)
-    expect(githubPackagesDependabot('demo-app')).toContain('https://npm.pkg.github.com')
   })
 
   it('requires an npm update block before calling a mirror file clean', () => {
@@ -153,7 +150,10 @@ describe('package registry detection', () => {
 })
 
 describe('upgrade dependabot registry', () => {
-  it('does not add a placeholder registry to a working GitHub Packages file', async () => {
+  // The package-read PAT was retired 2026-11-27: no Dependabot credential
+  // reads GitHub Packages, so a GitHub Packages app is reported, never
+  // rewritten, until it moves to npm.nard.uk.
+  it('reports a GitHub Packages file as unresolved and leaves it alone', async () => {
     const targetDir = await checkout()
     await write(targetDir, '.npmrc', '@narduk-enterprises:registry=https://npm.pkg.github.com\n')
     await write(targetDir, '.github/dependabot.yml', githubWorking)
@@ -166,7 +166,8 @@ describe('upgrade dependabot registry', () => {
     })
     const change = report.changes.find((entry) => entry.path === '.github/dependabot.yml')
 
-    expect(change?.status).toBe('clean')
+    expect(change?.status).toBe('unresolved')
+    expect(change?.detail).toContain('https://npm.nard.uk')
     expect(change?.diff).toBe('')
     expect(await readFile(join(targetDir, '.github/dependabot.yml'), 'utf8')).toBe(githubWorking)
     expect(githubWorking).not.toContain(PLACEHOLDER)
@@ -190,7 +191,7 @@ describe('upgrade dependabot registry', () => {
     expect(after).toBe(mirrorWorking)
   })
 
-  it('rewrites a GitHub Packages app onto the GitHub registry, never the placeholder', async () => {
+  it('never rewrites a GitHub Packages app, and never adds the placeholder', async () => {
     const targetDir = await checkout()
     await write(targetDir, '.npmrc', '@narduk-enterprises:registry=https://npm.pkg.github.com\n')
     await write(
@@ -207,12 +208,11 @@ describe('upgrade dependabot registry', () => {
     })
     const after = await readFile(join(targetDir, '.github/dependabot.yml'), 'utf8')
     expect(report.changes.find((entry) => entry.path === '.github/dependabot.yml')?.status).toBe(
-      'drift',
+      'unresolved',
     )
-    expect(after).toContain('https://npm.pkg.github.com')
-    expect(after).toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
     expect(after).not.toContain(PLACEHOLDER)
     expect(after).not.toContain('npm.nard.uk')
+    expect(after).toContain('default-days: 3')
   })
 
   it('rewrites a mirror file that has no npm update block', async () => {
@@ -296,14 +296,5 @@ describe('upgrade dependabot registry', () => {
     const report = await upgradeNardukApp({ only: ['.github/dependabot.yml'], targetDir })
     expect(report.changes[0]?.status).toBe('clean')
     expect(report.changes[0]?.diff).toBe('')
-  })
-})
-
-describe('githubPackagesDependabot', () => {
-  it('carries the toolchain ceilings and the estate cooldown exclusion', () => {
-    const text = githubPackagesDependabot('demo-app')
-    expect(text).toContain("dependency-name: 'typescript'")
-    expect(text).toContain("dependency-name: '@playwright/test'")
-    expect(text).toContain("      exclude:\n        - '@narduk-enterprises/*'")
   })
 })

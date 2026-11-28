@@ -4,13 +4,13 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { githubPackagesDependabot } from '../src/dependabot-registry.js'
 import {
   applySchedule,
   hasScheduleSlot,
   overrideComment,
   readScheduleOverride,
   scheduleFor,
+  scheduleLines,
 } from '../src/dependabot-schedule.js'
 import { createNardukApp, upgradeNardukApp } from '../src/index.js'
 
@@ -71,7 +71,20 @@ describe('schedule override', () => {
 
   it('applies a slot to every schedule block and keeps the comment', () => {
     const slot = { day: 'friday', time: '23:30' }
-    const text = applySchedule(githubPackagesDependabot('demo-app'), slot, slot)
+    const twoLanes = [
+      'version: 2',
+      'updates:',
+      "  - package-ecosystem: 'npm'",
+      '    schedule:',
+      "      interval: 'weekly'",
+      ...scheduleLines(scheduleFor('demo-app')),
+      "  - package-ecosystem: 'github-actions'",
+      '    schedule:',
+      "      interval: 'weekly'",
+      ...scheduleLines(scheduleFor('demo-app')),
+      '',
+    ].join('\n')
+    const text = applySchedule(twoLanes, slot, slot)
     expect(text.startsWith(overrideComment(slot))).toBe(true)
     expect(text.match(/day: 'friday'/gu)).toHaveLength(2)
     expect(text.match(/time: '23:30'/gu)).toHaveLength(2)
