@@ -4,7 +4,7 @@ import { sanitizeLocalRedirectPath } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
 
 useSeoMeta({
-  title: 'Sign In',
+  title: 'Sign in',
   description: 'Finish signing in with your email link.',
   robots: 'noindex, nofollow',
 })

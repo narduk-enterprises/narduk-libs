@@ -1,6 +1,6 @@
 <script setup lang="ts">
 useSeoMeta({
-  title: 'Sign In',
+  title: 'Sign in',
   description: 'Sign in to access your dashboard.',
   robots: 'noindex, nofollow',
 })

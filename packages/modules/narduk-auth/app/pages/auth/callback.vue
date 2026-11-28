@@ -1,6 +1,6 @@
 <script setup lang="ts">
 useSeoMeta({
-  title: 'Sign In Callback',
+  title: 'Sign-in callback',
   description: 'Completing the auth callback and creating your app session.',
   robots: 'noindex, nofollow',
 })

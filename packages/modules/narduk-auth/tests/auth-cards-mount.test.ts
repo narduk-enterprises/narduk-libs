@@ -193,8 +193,10 @@ describe('AuthLoginCard mount', () => {
     expect(wrapper.text()).toContain('Welcome back')
     expect(wrapper.text()).toContain('Sign in with your email and password.')
     expect(wrapper.find('[data-testid="auth-login-email"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="auth-login-password"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="auth-login-submit"]').text()).toContain('Sign In')
+    expect(
+      wrapper.get('[data-testid="auth-login-password"]').attributes('placeholder'),
+    ).toBeUndefined()
+    expect(wrapper.get('[data-testid="auth-login-submit"]').text()).toBe('Sign in')
     expect(wrapper.text()).toContain('Sign up')
     wrapper.unmount()
   })
@@ -275,7 +277,7 @@ describe('AuthRegisterCard mount', () => {
     expect(wrapper.find('[data-testid="auth-register-name"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="auth-register-email"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="auth-register-password"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="auth-register-submit"]').text()).toContain('Create Account')
+    expect(wrapper.get('[data-testid="auth-register-submit"]').text()).toBe('Create account')
     wrapper.unmount()
   })
 

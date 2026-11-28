@@ -42,7 +42,7 @@ describe('Auth* cards server rendering without a DOM', () => {
   it('AuthLoginCard renders the sign-in form instead of throwing', async () => {
     const html = await renderAuthCard(AuthLoginCard, { title: 'Welcome back' })
     expect(html).toContain('Welcome back')
-    expect(html).toContain('Sign In')
+    expect(html).toContain('Sign in')
     expect(html).toContain('auth-login-email')
     expect(html).toContain('auth-login-password')
   })
@@ -50,7 +50,7 @@ describe('Auth* cards server rendering without a DOM', () => {
   it('AuthRegisterCard renders the signup form instead of throwing', async () => {
     const html = await renderAuthCard(AuthRegisterCard, { title: 'Create an account' })
     expect(html).toContain('Create an account')
-    expect(html).toContain('Create Account')
+    expect(html).toContain('Create account')
     expect(html).toContain('auth-register-email')
   })
 

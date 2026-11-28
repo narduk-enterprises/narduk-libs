@@ -237,7 +237,6 @@ async function onPasskeySignIn() {
             v-model="state.password"
             type="password"
             autocomplete="current-password"
-            placeholder="••••••••"
             class="w-full"
             data-testid="auth-login-password"
           />
@@ -256,7 +255,7 @@ async function onPasskeySignIn() {
           :loading="loading"
           data-testid="auth-login-submit"
         >
-          Sign In
+          Sign in
         </UButton>
       </UForm>
 

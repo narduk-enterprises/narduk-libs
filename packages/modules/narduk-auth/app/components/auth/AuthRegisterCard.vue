@@ -176,7 +176,7 @@ async function onSubmit() {
           :loading="loading"
           data-testid="auth-register-submit"
         >
-          Create Account
+          Create account
         </UButton>
       </UForm>
     </div>
